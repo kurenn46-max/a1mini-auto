@@ -1,65 +1,393 @@
-<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>岡重機 揚程図 v4.2</title><style>
-*{box-sizing:border-box}
-html,body{margin:0;width:100%;height:100%;overflow:hidden;font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif;background:#eef1f4;color:#111827}
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<title>岡重機 画像作図 v5</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#e5e7eb;font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif;color:#111827}
 button,input,select{font:inherit}
-#app{height:100dvh;width:100vw;display:grid;grid-template-rows:auto minmax(0,1fr);overflow:hidden}
-.top{background:#fff;border-bottom:1px solid #cbd5e1;padding:8px;width:100%;z-index:10}
-.title{font-weight:800;font-size:18px;margin-bottom:8px}
-.toolbar{display:flex;flex-wrap:wrap;gap:6px;width:100%}
-.btn,.file,.tool{border:1px solid #94a3b8;background:#fff;border-radius:10px;min-height:44px;padding:7px 10px;font-weight:750;white-space:nowrap;font-size:14px}
+#app{width:100vw;height:100dvh;display:grid;grid-template-rows:auto minmax(0,1fr);overflow:hidden}
+header{background:#fff;border-bottom:1px solid #cbd5e1;padding:7px;z-index:10}
+.title{font-weight:800;font-size:17px;margin:0 0 7px}
+.toolbar{display:flex;flex-wrap:wrap;gap:6px}
+button,.file,label.ctrl{border:1px solid #9ca3af;background:#fff;border-radius:9px;min-height:42px;padding:6px 9px;font-weight:750;font-size:13px}
+button.active{background:#111827;color:#fff}
 .file{display:inline-flex;align-items:center}.file input{display:none}
-.tool.active{background:#111827;color:#fff}
-#stage{position:relative;min-width:0;min-height:0;overflow:hidden;background:#cdd4dc;touch-action:none}
-#workSvg{width:100%;height:100%;display:block;touch-action:none;overflow:hidden}
-.float{position:absolute;z-index:5}
-#hint{left:8px;right:8px;top:8px;background:rgba(255,255,255,.96);border:1px solid #cbd5e1;border-radius:10px;padding:7px 9px;font-size:12px;display:none}
-#coords{right:8px;top:8px;background:rgba(17,24,39,.86);color:#fff;border-radius:9px;padding:6px 9px;font-size:12px;max-width:60vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.status{font-size:11px;color:#475569;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sheet{position:fixed;inset:0;background:rgba(15,23,42,.4);z-index:20;display:none;align-items:flex-end}
-.sheet.show{display:flex}
-.card{width:100%;background:#fff;border-radius:18px 18px 0 0;padding:14px;max-height:80dvh;overflow:auto}
-.card h2{margin:0 0 10px;font-size:18px}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:#475569;min-width:0}
-.field input,.field select{width:100%;min-height:44px;border:1px solid #94a3b8;border-radius:9px;padding:7px;font-size:16px}
-.actions{display:flex;gap:8px;margin-top:12px}
-.actions button{flex:1;min-height:46px;border-radius:10px;border:1px solid #94a3b8;background:#fff;font-weight:800}
-.actions .ok{background:#111827;color:#fff}
-@media(max-width:430px){
-  .top{padding:7px}
-  .title{font-size:17px;margin-bottom:7px}
-  .btn,.file,.tool{font-size:13px;min-height:42px;padding:6px 9px}
+label.ctrl{display:flex;align-items:center;gap:5px;padding:3px 7px}
+input[type=color]{width:36px;height:32px;border:0;padding:0;background:transparent}
+select{border:0;background:#fff;min-height:32px;font-size:16px}
+#stage{position:relative;overflow:hidden;background:#cbd5e1;touch-action:none;min-width:0;min-height:0}
+canvas{display:block;width:100%;height:100%;touch-action:none}
+#status{position:absolute;left:7px;right:7px;bottom:7px;background:rgba(17,24,39,.82);color:#fff;border-radius:8px;padding:6px 8px;font-size:11px;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:420px){
+  header{padding:6px}
+  .title{font-size:16px;margin-bottom:6px}
+  button,.file,label.ctrl{font-size:12px;min-height:40px;padding:5px 8px}
 }
-@media(min-width:800px){.card{max-width:560px;margin:0 auto 10px;border-radius:18px}}
-</style></head><body>
+</style>
+</head>
+<body>
 <div id="app">
-  <div class="top">
-    <div class="title">岡重機 揚程図 v4.2</div>
-    <div class="toolbar">
-      <label class="file">画像<input id="file" type="file" accept="image/*"></label>
-      <button id="save" class="btn">保存</button>
-      <button class="tool active" data-mode="move">移動</button>
-      <button class="tool" id="calBtn">校正</button>
-      <button class="tool" id="buildingBtn">建物</button>
-      <button class="tool" id="targetBtn">作業点</button>
-      <button class="tool" data-mode="measure">寸法</button>
-      <button class="tool" data-mode="coord">座標</button>
-      <button class="tool" data-mode="line">直線</button>
-      <button id="zin" class="btn">＋</button>
-      <button id="zout" class="btn">−</button>
-      <button id="fit" class="btn">全体</button>
-      <button class="tool" id="undo">戻す</button>
-      <button class="tool" id="clear">全消去</button>
-    </div>
-    <div id="status" class="status">画像→校正→建物/作業点。2本指ズームも使えます。</div>
+<header>
+  <div class="title">岡重機 画像作図 v5</div>
+  <div class="toolbar">
+    <label class="file">画像を開く<input id="file" type="file" accept="image/*"></label>
+    <button data-tool="move" class="active">移動</button>
+    <button data-tool="pen">手書き</button>
+    <button data-tool="line">直線</button>
+    <button data-tool="rect">四角</button>
+    <button data-tool="arrow">矢印</button>
+    <label class="ctrl">色 <input id="color" type="color" value="#ef4444"></label>
+    <label class="ctrl">太さ
+      <select id="width">
+        <option value="2">2</option>
+        <option value="4" selected>4</option>
+        <option value="6">6</option>
+        <option value="8">8</option>
+        <option value="12">12</option>
+      </select>
+    </label>
+    <button id="undo">戻す</button>
+    <button id="clear">全消去</button>
+    <button id="fit">全体</button>
+    <button id="save">保存</button>
   </div>
-  <div id="stage">
-    <svg id="workSvg"><g id="scene"><image id="bg" x="0" y="0"/><g id="overlay"></g></g></svg>
-    <div id="hint" class="float"></div>
-    <div id="coords" class="float">未校正</div>
-  </div>
+</header>
+
+<div id="stage">
+  <canvas id="cv"></canvas>
+  <div id="status">画像を開いてください。移動＝1本指、ズーム＝2本指。</div>
 </div>
-<div id="calSheet" class="sheet"><div class="card"><h2>校正</h2><div class="grid"><label class="field">横軸基準(m)<input id="calX" type="number" value="5" step="0.1"></label><label class="field">縦軸基準(m)<input id="calY" type="number" value="5" step="0.1"></label></div><div class="actions"><button data-close="calSheet">閉じる</button><button id="calStart" class="ok">3点校正を開始</button></div></div></div>
-<div id="buildingSheet" class="sheet"><div class="card"><h2>建物</h2><div class="grid"><label class="field">手前距離(m)<input id="bFront" type="number" value="10" step="0.1"></label><label class="field">高さ(m)<input id="bHeight" type="number" value="12" step="0.1"></label><label class="field">奥行(m)<input id="bDepth" type="number" value="13" step="0.1"></label><label class="field">名称<input id="bName" value="建物"></label></div><div class="actions"><button data-close="buildingSheet">閉じる</button><button id="buildingAdd" class="ok">描く</button></div></div></div>
-<div id="targetSheet" class="sheet"><div class="card"><h2>作業点</h2><div class="grid"><label class="field">作業半径R(m)<input id="tR" type="number" value="20" step="0.1"></label><label class="field">高さH(m)<input id="tH" type="number" value="8" step="0.1"></label><label class="field">名称<input id="tName" value="作業点"></label><label class="field">ガイド<select id="tGuide"><option value="both">縦横</option><option value="vertical">縦のみ</option><option value="none">なし</option></select></label></div><div class="actions"><button data-close="targetSheet">閉じる</button><button id="targetAdd" class="ok">描く</button></div></div></div>
-<script src="app-v4.js?v=6"></script></body></html>
+</div>
+
+<script>
+(() => {
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+  const stage = document.getElementById('stage');
+  const status = document.getElementById('status');
+  const file = document.getElementById('file');
+
+  let img = null;
+  let iw = 1000, ih = 1400;
+  let tool = 'move';
+  let view = { s: 1, x: 0, y: 0 };
+  let items = [];
+  let active = null;
+
+  const pointers = new Map();
+  let panStart = null;
+  let pinch = null;
+
+  const dpr = () => Math.max(1, window.devicePixelRatio || 1);
+
+  function say(t){ status.textContent = t; }
+
+  function resize(){
+    const r = stage.getBoundingClientRect();
+    const d = dpr();
+    cv.width = Math.max(1, Math.round(r.width * d));
+    cv.height = Math.max(1, Math.round(r.height * d));
+    cv.style.width = r.width + 'px';
+    cv.style.height = r.height + 'px';
+    draw();
+  }
+
+  function fit(){
+    if(!img) return;
+    const w = stage.clientWidth, h = stage.clientHeight;
+    view.s = Math.min(w / iw, h / ih) * 0.96;
+    view.x = (w - iw * view.s) / 2;
+    view.y = (h - ih * view.s) / 2;
+    draw();
+  }
+
+  function pos(e){
+    const r = cv.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+
+  function toImage(p){
+    return { x: (p.x - view.x) / view.s, y: (p.y - view.y) / view.s };
+  }
+
+  function toScreen(p){
+    return { x: view.x + p.x * view.s, y: view.y + p.y * view.s };
+  }
+
+  function style(){
+    return {
+      color: document.getElementById('color').value,
+      width: Number(document.getElementById('width').value)
+    };
+  }
+
+  function drawArrowHead(a,b,color,width){
+    const A = toScreen(a), B = toScreen(b);
+    const ang = Math.atan2(B.y-A.y, B.x-A.x);
+    const len = 14 + width * 1.5;
+    ctx.beginPath();
+    ctx.moveTo(B.x,B.y);
+    ctx.lineTo(B.x-len*Math.cos(ang-.5), B.y-len*Math.sin(ang-.5));
+    ctx.moveTo(B.x,B.y);
+    ctx.lineTo(B.x-len*Math.cos(ang+.5), B.y-len*Math.sin(ang+.5));
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.stroke();
+  }
+
+  function drawItem(o){
+    ctx.save();
+    ctx.strokeStyle = o.color;
+    ctx.lineWidth = o.width;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    if(o.type === 'pen'){
+      if(o.points.length){
+        ctx.beginPath();
+        o.points.forEach((p,i)=>{
+          const q = toScreen(p);
+          if(i===0) ctx.moveTo(q.x,q.y); else ctx.lineTo(q.x,q.y);
+        });
+        ctx.stroke();
+      }
+    } else if(o.type === 'line' || o.type === 'arrow'){
+      const a = toScreen(o.a), b = toScreen(o.b);
+      ctx.beginPath();
+      ctx.moveTo(a.x,a.y);
+      ctx.lineTo(b.x,b.y);
+      ctx.stroke();
+      if(o.type === 'arrow') drawArrowHead(o.a,o.b,o.color,o.width);
+    } else if(o.type === 'rect'){
+      const a = toScreen(o.a), b = toScreen(o.b);
+      ctx.strokeRect(a.x,a.y,b.x-a.x,b.y-a.y);
+    }
+    ctx.restore();
+  }
+
+  function draw(){
+    const d = dpr();
+    const w = cv.width/d, h = cv.height/d;
+    ctx.setTransform(d,0,0,d,0,0);
+    ctx.clearRect(0,0,w,h);
+    ctx.fillStyle = '#cbd5e1';
+    ctx.fillRect(0,0,w,h);
+
+    if(img){
+      ctx.drawImage(img,view.x,view.y,iw*view.s,ih*view.s);
+    }else{
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0,0,w,h);
+      ctx.fillStyle = '#6b7280';
+      ctx.font = '18px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillText('画像を開いてください',w/2,h/2);
+    }
+
+    items.forEach(drawItem);
+    if(active) drawItem(active);
+  }
+
+  function setTool(t){
+    tool = t;
+    active = null;
+    document.querySelectorAll('[data-tool]').forEach(b=>b.classList.toggle('active',b.dataset.tool===t));
+    const msg = {
+      move:'移動：1本指で画像を動かす。2本指でズーム。',
+      pen:'手書き：1本指で自由に描く。2本指でズーム。',
+      line:'直線：始点から終点までドラッグ。',
+      rect:'四角：対角線方向へドラッグ。',
+      arrow:'矢印：始点から終点までドラッグ。'
+    }[t];
+    say(msg);
+    draw();
+  }
+
+  document.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>setTool(b.dataset.tool));
+
+  file.onchange = (e)=>{
+    const f = e.target.files && e.target.files[0];
+    if(!f) return;
+    const url = URL.createObjectURL(f);
+    const n = new Image();
+    n.onload = ()=>{
+      img = n;
+      iw = n.naturalWidth;
+      ih = n.naturalHeight;
+      items = [];
+      active = null;
+      URL.revokeObjectURL(url);
+      fit();
+      say('画像を読み込みました。');
+    };
+    n.onerror = ()=>{
+      URL.revokeObjectURL(url);
+      say('画像を読み込めませんでした。');
+    };
+    n.src = url;
+  };
+
+  cv.addEventListener('pointerdown',(e)=>{
+    if(!img) return;
+    const p = pos(e);
+    pointers.set(e.pointerId,p);
+    try{cv.setPointerCapture(e.pointerId)}catch(_){}
+
+    if(pointers.size === 2){
+      const a = [...pointers.values()];
+      const mid = {x:(a[0].x+a[1].x)/2,y:(a[0].y+a[1].y)/2};
+      pinch = {
+        d: Math.hypot(a[1].x-a[0].x,a[1].y-a[0].y),
+        s: view.s,
+        img: toImage(mid)
+      };
+      panStart = null;
+      active = null;
+      return;
+    }
+
+    if(tool === 'move'){
+      panStart = {p, x:view.x, y:view.y};
+      return;
+    }
+
+    const ip = toImage(p);
+    const st = style();
+    if(tool === 'pen'){
+      active = {type:'pen',points:[ip],...st};
+    }else{
+      active = {type:tool,a:ip,b:ip,...st};
+    }
+  });
+
+  cv.addEventListener('pointermove',(e)=>{
+    if(!pointers.has(e.pointerId)) return;
+    const p = pos(e);
+    pointers.set(e.pointerId,p);
+
+    if(pointers.size >= 2 && pinch){
+      const a = [...pointers.values()];
+      const mid = {x:(a[0].x+a[1].x)/2,y:(a[0].y+a[1].y)/2};
+      const d = Math.hypot(a[1].x-a[0].x,a[1].y-a[0].y);
+      const ns = Math.min(12,Math.max(0.05,pinch.s * d / Math.max(1,pinch.d)));
+      view.s = ns;
+      view.x = mid.x - pinch.img.x * ns;
+      view.y = mid.y - pinch.img.y * ns;
+      draw();
+      return;
+    }
+
+    if(tool === 'move' && panStart){
+      view.x = panStart.x + (p.x - panStart.p.x);
+      view.y = panStart.y + (p.y - panStart.p.y);
+      draw();
+      return;
+    }
+
+    if(active){
+      const ip = toImage(p);
+      if(active.type === 'pen') active.points.push(ip);
+      else active.b = ip;
+      draw();
+    }
+  });
+
+  function endPointer(e){
+    pointers.delete(e.pointerId);
+    if(pointers.size < 2) pinch = null;
+    if(pointers.size === 0) panStart = null;
+
+    if(active && pointers.size === 0){
+      items.push(active);
+      active = null;
+      draw();
+    }
+  }
+
+  cv.addEventListener('pointerup',endPointer);
+  cv.addEventListener('pointercancel',endPointer);
+
+  document.getElementById('undo').onclick = ()=>{
+    if(items.length) items.pop();
+    draw();
+  };
+
+  document.getElementById('clear').onclick = ()=>{
+    items = [];
+    active = null;
+    draw();
+  };
+
+  document.getElementById('fit').onclick = fit;
+
+  document.getElementById('save').onclick = ()=>{
+    if(!img) return say('先に画像を開いてください。');
+
+    const out = document.createElement('canvas');
+    out.width = iw;
+    out.height = ih;
+    const oc = out.getContext('2d');
+    oc.drawImage(img,0,0,iw,ih);
+
+    function exportArrow(a,b,color,width){
+      const ang = Math.atan2(b.y-a.y,b.x-a.x);
+      const len = 20 + width*1.5;
+      oc.beginPath();
+      oc.moveTo(b.x,b.y);
+      oc.lineTo(b.x-len*Math.cos(ang-.5),b.y-len*Math.sin(ang-.5));
+      oc.moveTo(b.x,b.y);
+      oc.lineTo(b.x-len*Math.cos(ang+.5),b.y-len*Math.sin(ang+.5));
+      oc.strokeStyle=color;
+      oc.lineWidth=width;
+      oc.stroke();
+    }
+
+    for(const o of items){
+      oc.save();
+      oc.strokeStyle = o.color;
+      oc.lineWidth = o.width;
+      oc.lineCap = 'round';
+      oc.lineJoin = 'round';
+
+      if(o.type === 'pen'){
+        oc.beginPath();
+        o.points.forEach((p,i)=>{ if(i===0) oc.moveTo(p.x,p.y); else oc.lineTo(p.x,p.y); });
+        oc.stroke();
+      }else if(o.type === 'line' || o.type === 'arrow'){
+        oc.beginPath();
+        oc.moveTo(o.a.x,o.a.y);
+        oc.lineTo(o.b.x,o.b.y);
+        oc.stroke();
+        if(o.type === 'arrow') exportArrow(o.a,o.b,o.color,o.width);
+      }else if(o.type === 'rect'){
+        oc.strokeRect(o.a.x,o.a.y,o.b.x-o.a.x,o.b.y-o.a.y);
+      }
+      oc.restore();
+    }
+
+    out.toBlob((blob)=>{
+      if(!blob) return say('保存に失敗しました。');
+      const u = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = u;
+      a.download = '画像作図.png';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(()=>URL.revokeObjectURL(u),1500);
+      say('PNGで保存しました。');
+    },'image/png');
+  };
+
+  new ResizeObserver(resize).observe(stage);
+  resize();
+  draw();
+})();
+</script>
+</body>
+</html>
