@@ -4,388 +4,115 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="theme-color" content="#111827">
-<title>岡重機 揚程図ツール v2</title>
-<style>
-*{box-sizing:border-box}
-html,body{margin:0;padding:0;background:#eef1f4;color:#111827;font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif}
-header{position:sticky;top:0;z-index:20;background:#fff;border-bottom:1px solid #d1d5db;padding:8px}
-h1{font-size:16px;margin:0 0 7px}
-.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-.row+.row{margin-top:6px}
-button,.file,label.ctrl{
-  min-height:42px;border:1px solid #9ca3af;border-radius:9px;background:#fff;
-  padding:7px 10px;font-weight:700;font-size:14px
-}
-button.active{background:#111827;color:#fff}
-button:disabled{opacity:.45}
-.file{display:inline-flex;align-items:center}.file input{display:none}
-label.ctrl{display:flex;align-items:center;gap:5px;padding:3px 7px}
-input[type=color]{width:36px;height:32px;border:0;padding:0;background:transparent}
-select{border:0;background:#fff;min-height:32px;font-size:16px}
-#zoomLabel{min-width:64px;text-align:center;font-variant-numeric:tabular-nums}
-#stage{
-  position:relative;margin:8px;background:#cfd5dc;border:1px solid #9ca3af;border-radius:10px;
-  overflow:hidden;height:72vh;min-height:420px;touch-action:none
-}
-canvas{display:block;width:100%;height:100%;touch-action:none;background:#d1d5db}
-#status{margin:8px;padding:9px 11px;background:#111827;color:#fff;border-radius:9px;font-size:13px}
-.help{margin:8px 10px 14px;color:#4b5563;font-size:12px;line-height:1.5}
-.badge{display:inline-block;padding:2px 6px;border-radius:999px;background:#e5e7eb;font-size:11px}
-@media(max-width:520px){
-  button,.file,label.ctrl{font-size:13px;padding:6px 8px}
-  #stage{height:68vh;min-height:380px}
-}
-</style>
+<title>岡重機 揚程図作図 v3</title>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header>
-<h1>岡重機 揚程図ツール v2</h1>
-<div class="row">
-  <label class="file">画像を開く<input id="file" type="file" accept="image/*"></label>
-  <button data-tool="pan" class="active">移動</button>
-  <button data-tool="pen">手書き</button>
-  <button data-tool="line">直線</button>
-  <button data-tool="arrow">矢印</button>
-  <button data-tool="rect">四角</button>
+<div id="app">
+  <div class="top">
+    <div class="topline">
+      <div class="title">岡重機 揚程図作図 v3</div>
+      <label class="filebtn">画像<input id="file" type="file" accept="image/*"></label>
+      <button id="save" class="btn">保存</button>
+    </div>
+  </div>
+
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="hint" class="floating"></div>
+    <div id="coords" class="floating">未校正</div>
+    <div class="zoom floating">
+      <button id="zin">＋</button>
+      <button id="zout">−</button>
+      <button id="fit" class="fit">全体</button>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <div class="tools">
+      <button class="tool active" data-mode="pan">移動</button>
+      <button class="tool" id="calBtn">校正</button>
+      <button class="tool" id="buildingBtn">建物</button>
+      <button class="tool" id="pointBtn">作業点</button>
+      <button class="tool" data-mode="measure">寸法</button>
+      <button class="tool" data-mode="coord">座標</button>
+      <button class="tool" data-mode="line">直線</button>
+      <button class="tool" data-mode="arrow">矢印</button>
+      <button class="tool" id="editBtn">管理</button>
+    </div>
+    <div id="status" class="status">まず画像を開く → 校正。2本指ズームはいつでも使えます。</div>
+  </div>
 </div>
-<div class="row">
-  <button id="zoomOut">−</button>
-  <span id="zoomLabel" class="badge">100%</span>
-  <button id="zoomIn">＋</button>
-  <button id="fit">全体</button>
-  <button id="actual">100%</button>
-  <button id="undo">↶</button>
-  <button id="redo">↷</button>
-  <button id="save">PNG保存</button>
-</div>
-<div class="row">
-  <label class="ctrl">色 <input id="color" type="color" value="#ef4444"></label>
-  <label class="ctrl">太さ
-    <select id="width"><option>2</option><option selected>4</option><option>6</option><option>8</option><option>12</option></select>
-  </label>
-  <button id="clear">線を消す</button>
-</div>
-</header>
 
-<div id="stage"><canvas id="cv"></canvas></div>
-<div id="status">画像を開いてください。<b>移動</b>モードなら1本指で移動、2本指ならいつでもピンチズームできます。</div>
-<div class="help">
-  <b>操作：</b>「移動」＝1本指ドラッグで移動。2本指＝ピンチズーム（どのモードでも可）。
-  「直線・矢印・四角」＝始点から終点まで1本指でドラッグ。拡大したまま描けます。
-  「全体」で画像全体を画面に戻します。
+<div id="sheetCal" class="sheetback">
+  <div class="sheet">
+    <h2>① 揚程図を校正</h2>
+    <p>3点だけ指定します。<b>原点</b> → 横軸の既知点 → 縦軸の既知点。画像が少し傾いていても補正します。</p>
+    <div class="grid">
+      <label class="field">横軸の基準距離 (m)<input id="calX" type="number" value="5" step="0.1"></label>
+      <label class="field">縦軸の基準高さ (m)<input id="calY" type="number" value="5" step="0.1"></label>
+    </div>
+    <div class="actions">
+      <button data-close="sheetCal">閉じる</button>
+      <button id="startCal" class="ok">校正開始</button>
+    </div>
+  </div>
 </div>
 
-<script>
-(function(){
-  const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
-  const stage=document.getElementById('stage');
-  const status=document.getElementById('status');
-  const zoomLabel=document.getElementById('zoomLabel');
+<div id="sheetBuilding" class="sheetback">
+  <div class="sheet">
+    <h2>② 建物を実寸入力</h2>
+    <div class="grid">
+      <label class="field">旋回芯から手前 (m)<input id="bFront" type="number" value="10" step="0.1"></label>
+      <label class="field">高さ (m)<input id="bHeight" type="number" value="12" step="0.1"></label>
+      <label class="field">奥行 (m)<input id="bDepth" type="number" value="13" step="0.1"></label>
+      <label class="field">名称<input id="bName" type="text" value="建物"></label>
+    </div>
+    <p>奥端は自動で「手前＋奥行」で計算します。</p>
+    <div class="actions">
+      <button data-close="sheetBuilding">閉じる</button>
+      <button id="addBuilding" class="ok">建物を描く</button>
+    </div>
+  </div>
+</div>
 
-  let img=null, iw=1000, ih=1400;
-  let tool='pan';
-  let view={scale:1, x:0, y:0};
-  let items=[], redoStack=[], active=null;
-  let pointers=new Map();
-  let gesture=null;
-  let dragging=false;
-  let startImg=null;
-  let lastScreen=null;
+<div id="sheetPoint" class="sheetback">
+  <div class="sheet">
+    <h2>③ 作業点・作業半径</h2>
+    <div class="grid">
+      <label class="field">作業半径 R (m)<input id="pRadius" type="number" value="20" step="0.1"></label>
+      <label class="field">高さ H (m)<input id="pHeight" type="number" value="8" step="0.1"></label>
+      <label class="field">名称<input id="pName" type="text" value="作業点"></label>
+      <label class="field">ガイド線
+        <select id="pGuide"><option value="both">縦横</option><option value="vertical">縦のみ</option><option value="none">なし</option></select>
+      </label>
+    </div>
+    <div class="actions">
+      <button data-close="sheetPoint">閉じる</button>
+      <button id="addPoint" class="ok">作業点を描く</button>
+    </div>
+  </div>
+</div>
 
-  const dpr=()=>Math.max(1,window.devicePixelRatio||1);
+<div id="sheetEdit" class="sheetback">
+  <div class="sheet">
+    <h2>書込み管理</h2>
+    <p id="countText">0個</p>
+    <div class="smallrow">
+      <label>線色 <input id="drawColor" class="color" type="color" value="#ef4444"></label>
+      <label class="field" style="width:100px">線幅
+        <select id="drawWidth"><option>2</option><option selected>4</option><option>6</option><option>8</option></select>
+      </label>
+    </div>
+    <div class="actions">
+      <button id="undo">1つ戻す</button>
+      <button id="clearAll">全部消す</button>
+    </div>
+    <div class="actions"><button data-close="sheetEdit" class="ok">閉じる</button></div>
+  </div>
+</div>
 
-  function say(t){status.innerHTML=t}
-
-  function resize(){
-    const r=stage.getBoundingClientRect(), d=dpr();
-    cv.width=Math.max(1,Math.round(r.width*d));
-    cv.height=Math.max(1,Math.round(r.height*d));
-    cv.style.width=r.width+'px';
-    cv.style.height=r.height+'px';
-    redraw();
-  }
-
-  function fit(){
-    if(!img)return;
-    const w=stage.clientWidth,h=stage.clientHeight;
-    view.scale=Math.min(w/iw,h/ih)*0.97;
-    view.x=(w-iw*view.scale)/2;
-    view.y=(h-ih*view.scale)/2;
-    updateZoom();
-    redraw();
-  }
-
-  function actual(){
-    if(!img)return;
-    const w=stage.clientWidth,h=stage.clientHeight;
-    view.scale=1;
-    view.x=(w-iw)/2;
-    view.y=(h-ih)/2;
-    updateZoom();
-    redraw();
-  }
-
-  function clampScale(s){return Math.min(10,Math.max(0.08,s))}
-
-  function zoomAt(factor,cx,cy){
-    if(!img)return;
-    const old=view.scale, next=clampScale(old*factor);
-    const ix=(cx-view.x)/old, iy=(cy-view.y)/old;
-    view.scale=next;
-    view.x=cx-ix*next;
-    view.y=cy-iy*next;
-    updateZoom();
-    redraw();
-  }
-
-  function updateZoom(){zoomLabel.textContent=Math.round(view.scale*100)+'%'}
-
-  function screenPos(e){
-    const r=cv.getBoundingClientRect();
-    return {x:e.clientX-r.left,y:e.clientY-r.top};
-  }
-
-  function toImg(p){return {x:(p.x-view.x)/view.scale,y:(p.y-view.y)/view.scale}}
-  function toScreen(p){return {x:view.x+p.x*view.scale,y:view.y+p.y*view.scale}}
-
-  function currentStyle(){
-    return {color:document.getElementById('color').value,width:Number(document.getElementById('width').value)}
-  }
-
-  function arrowHead(a,b,color,width){
-    const A=toScreen(a),B=toScreen(b),ang=Math.atan2(B.y-A.y,B.x-A.x),L=14+width*1.2;
-    ctx.beginPath();
-    ctx.moveTo(B.x,B.y);
-    ctx.lineTo(B.x-L*Math.cos(ang-.5),B.y-L*Math.sin(ang-.5));
-    ctx.moveTo(B.x,B.y);
-    ctx.lineTo(B.x-L*Math.cos(ang+.5),B.y-L*Math.sin(ang+.5));
-    ctx.strokeStyle=color;ctx.lineWidth=width;ctx.stroke();
-  }
-
-  function drawItem(o){
-    ctx.save();
-    ctx.strokeStyle=o.color;ctx.fillStyle=o.color;
-    ctx.lineWidth=o.width;ctx.lineCap='round';ctx.lineJoin='round';
-
-    if(o.type==='pen'){
-      if(o.points.length>0){
-        ctx.beginPath();
-        o.points.forEach((p,i)=>{const s=toScreen(p); i?ctx.lineTo(s.x,s.y):ctx.moveTo(s.x,s.y)});
-        ctx.stroke();
-      }
-    } else if(o.type==='line'||o.type==='arrow'){
-      const a=toScreen(o.a),b=toScreen(o.b);
-      ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
-      if(o.type==='arrow')arrowHead(o.a,o.b,o.color,o.width);
-    } else if(o.type==='rect'){
-      const a=toScreen(o.a),b=toScreen(o.b);
-      ctx.strokeRect(a.x,a.y,b.x-a.x,b.y-a.y);
-    }
-    ctx.restore();
-  }
-
-  function redraw(){
-    const d=dpr(),w=cv.width/d,h=cv.height/d;
-    ctx.setTransform(d,0,0,d,0,0);
-    ctx.clearRect(0,0,w,h);
-    ctx.fillStyle='#cfd5dc';ctx.fillRect(0,0,w,h);
-
-    if(img){
-      ctx.drawImage(img,view.x,view.y,iw*view.scale,ih*view.scale);
-    }else{
-      ctx.fillStyle='#fff';ctx.fillRect(0,0,w,h);
-      ctx.fillStyle='#6b7280';ctx.font='20px system-ui';ctx.textAlign='center';
-      ctx.fillText('画像を開いてください',w/2,h/2);
-    }
-    items.forEach(drawItem);
-    if(active)drawItem(active);
-  }
-
-  function beginDraw(p){
-    if(!img)return;
-    const s=currentStyle(), ip=toImg(p);
-    startImg=ip;
-    if(tool==='pen')active={type:'pen',points:[ip],...s};
-    else active={type:tool,a:ip,b:ip,...s};
-    dragging=true;
-    redraw();
-  }
-
-  function moveDraw(p){
-    if(!dragging||!active)return;
-    const ip=toImg(p);
-    if(tool==='pen')active.points.push(ip);
-    else active.b=ip;
-    redraw();
-  }
-
-  function endDraw(){
-    if(!dragging)return;
-    dragging=false;
-    if(active){
-      items.push(active);
-      redoStack=[];
-      active=null;
-      redraw();
-    }
-  }
-
-  function startPinch(){
-    const arr=[...pointers.values()];
-    if(arr.length<2)return;
-    const a=arr[0],b=arr[1];
-    const cx=(a.x+b.x)/2,cy=(a.y+b.y)/2;
-    const dist=Math.hypot(b.x-a.x,b.y-a.y);
-    gesture={
-      type:'pinch',
-      startDist:Math.max(1,dist),
-      startScale:view.scale,
-      imgMid:toImg({x:cx,y:cy})
-    };
-    dragging=false;active=null;
-  }
-
-  function updatePinch(){
-    const arr=[...pointers.values()];
-    if(arr.length<2||!gesture)return;
-    const a=arr[0],b=arr[1];
-    const cx=(a.x+b.x)/2,cy=(a.y+b.y)/2;
-    const dist=Math.hypot(b.x-a.x,b.y-a.y);
-    const next=clampScale(gesture.startScale*(dist/gesture.startDist));
-    view.scale=next;
-    view.x=cx-gesture.imgMid.x*next;
-    view.y=cy-gesture.imgMid.y*next;
-    updateZoom();redraw();
-  }
-
-  document.querySelectorAll('[data-tool]').forEach(b=>{
-    b.addEventListener('click',()=>{
-      tool=b.dataset.tool;
-      document.querySelectorAll('[data-tool]').forEach(x=>x.classList.toggle('active',x===b));
-      if(tool==='pan')say('<b>移動：</b>1本指で画像を動かせます。2本指でピンチズーム。');
-      else say('<b>'+b.textContent+'：</b>1本指でドラッグして描画。2本指でピンチズーム。');
-    });
-  });
-
-  document.getElementById('file').addEventListener('change',e=>{
-    const f=e.target.files&&e.target.files[0]; if(!f)return;
-    const url=URL.createObjectURL(f), n=new Image();
-    n.onload=()=>{
-      img=n; iw=n.naturalWidth; ih=n.naturalHeight;
-      items=[];redoStack=[];active=null;
-      fit();
-      URL.revokeObjectURL(url);
-      say('画像を読み込みました。<b>移動</b>で位置調整、2本指でズームできます。');
-    };
-    n.onerror=()=>{URL.revokeObjectURL(url);say('画像を読み込めませんでした。')};
-    n.src=url;
-  });
-
-  cv.addEventListener('pointerdown',e=>{
-    if(!img)return;
-    const p=screenPos(e);
-    pointers.set(e.pointerId,p);
-    try{cv.setPointerCapture(e.pointerId)}catch(_){}
-    if(pointers.size===2){startPinch();return;}
-    if(pointers.size>2)return;
-    lastScreen=p;
-    gesture=null;
-    if(tool==='pan'){dragging=true;}
-    else beginDraw(p);
-  });
-
-  cv.addEventListener('pointermove',e=>{
-    if(!pointers.has(e.pointerId))return;
-    const p=screenPos(e);
-    pointers.set(e.pointerId,p);
-
-    if(pointers.size>=2){
-      if(!gesture||gesture.type!=='pinch')startPinch();
-      updatePinch();return;
-    }
-    if(!dragging)return;
-
-    if(tool==='pan'){
-      view.x+=p.x-lastScreen.x;
-      view.y+=p.y-lastScreen.y;
-      lastScreen=p;
-      redraw();
-    }else{
-      moveDraw(p);
-    }
-  });
-
-  function pointerEnd(e){
-    pointers.delete(e.pointerId);
-    if(gesture&&gesture.type==='pinch'){
-      if(pointers.size<2)gesture=null;
-      dragging=false;active=null;
-      return;
-    }
-    if(tool!=='pan')endDraw();
-    else dragging=false;
-  }
-
-  cv.addEventListener('pointerup',pointerEnd);
-  cv.addEventListener('pointercancel',pointerEnd);
-
-  document.getElementById('zoomIn').onclick=()=>zoomAt(1.25,stage.clientWidth/2,stage.clientHeight/2);
-  document.getElementById('zoomOut').onclick=()=>zoomAt(0.8,stage.clientWidth/2,stage.clientHeight/2);
-  document.getElementById('fit').onclick=fit;
-  document.getElementById('actual').onclick=actual;
-
-  document.getElementById('undo').onclick=()=>{
-    if(items.length){redoStack.push(items.pop());redraw();}
-  };
-  document.getElementById('redo').onclick=()=>{
-    if(redoStack.length){items.push(redoStack.pop());redraw();}
-  };
-  document.getElementById('clear').onclick=()=>{
-    items=[];redoStack=[];active=null;redraw();say('書込みを消しました。');
-  };
-
-  document.getElementById('save').onclick=()=>{
-    if(!img){say('先に画像を開いてください。');return;}
-    const out=document.createElement('canvas');out.width=iw;out.height=ih;
-    const oc=out.getContext('2d'); oc.drawImage(img,0,0,iw,ih);
-
-    function exportItem(o){
-      oc.save();oc.strokeStyle=o.color;oc.fillStyle=o.color;
-      const w=Math.max(1,o.width/view.scale);
-      oc.lineWidth=w;oc.lineCap='round';oc.lineJoin='round';
-      if(o.type==='pen'){
-        oc.beginPath();
-        o.points.forEach((p,i)=>i?oc.lineTo(p.x,p.y):oc.moveTo(p.x,p.y));
-        oc.stroke();
-      }else if(o.type==='line'||o.type==='arrow'){
-        oc.beginPath();oc.moveTo(o.a.x,o.a.y);oc.lineTo(o.b.x,o.b.y);oc.stroke();
-        if(o.type==='arrow'){
-          const ang=Math.atan2(o.b.y-o.a.y,o.b.x-o.a.x),L=18/view.scale+w*2;
-          oc.beginPath();oc.moveTo(o.b.x,o.b.y);
-          oc.lineTo(o.b.x-L*Math.cos(ang-.5),o.b.y-L*Math.sin(ang-.5));
-          oc.moveTo(o.b.x,o.b.y);
-          oc.lineTo(o.b.x-L*Math.cos(ang+.5),o.b.y-L*Math.sin(ang+.5));
-          oc.stroke();
-        }
-      }else if(o.type==='rect'){
-        oc.strokeRect(o.a.x,o.a.y,o.b.x-o.a.x,o.b.y-o.a.y);
-      }
-      oc.restore();
-    }
-    items.forEach(exportItem);
-
-    out.toBlob(blob=>{
-      if(!blob){say('保存に失敗しました。');return;}
-      const a=document.createElement('a'),u=URL.createObjectURL(blob);
-      a.href=u;a.download='oka_crane_chart.png';document.body.appendChild(a);a.click();a.remove();
-      setTimeout(()=>URL.revokeObjectURL(u),1500);
-      say('PNGを書き出しました。');
-    },'image/png');
-  };
-
-  if(window.ResizeObserver)new ResizeObserver(resize).observe(stage);
-  resize();
-})();
-</script>
+<script src="core.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
