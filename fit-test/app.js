@@ -24,6 +24,9 @@ let manifest=null;
 let parts=new Map();
 let lastSource=null;
 let running=false;
+let manualTest=null;
+let manualMin=0;
+let manualMax=180;
 
 function resize(){const r=viewer.getBoundingClientRect();renderer.setSize(r.width,r.height,false);camera.aspect=r.width/r.height;camera.updateProjectionMatrix()}
 addEventListener('resize',resize);resize();
@@ -93,6 +96,61 @@ function showManifestInfo(){
   $('plan').textContent=planText(manifest)||'テスト計画なし';
   $('partsInfo').textContent=(manifest.parts||[]).map(p=>`${p.id}: ${p.name||p.file}`).join('\n');
   $('rerunBtn').disabled=false;
+  setupManualControl();
+}
+function setManualEnabled(enabled){
+  ['manualAngle','minus10','minus1','plus1','plus10'].forEach(id=>$(id).disabled=!enabled);
+}
+function setupManualControl(){
+  manualTest=(manifest?.tests||[]).find(t=>t.type==='rotate')||null;
+  if(!manualTest){
+    setManualEnabled(false);
+    $('manualCollision').className='pill';
+    $('manualCollision').textContent='回転テストなし';
+    $('manualHint').textContent='このテストファイルには回転動作がありません。';
+    return;
+  }
+  const ends=(manualTest.segments||[]).flatMap(s=>[Number(s.from),Number(s.to)]).filter(Number.isFinite);
+  manualMin=ends.length?Math.min(...ends):0;
+  manualMax=ends.length?Math.max(...ends):180;
+  if(manualMax===manualMin)manualMax=manualMin+1;
+  const slider=$('manualAngle');
+  slider.min=manualMin; slider.max=manualMax; slider.step=1; slider.value=manualMin;
+  $('gaugeMinLabel').textContent=formatAngle(manualMin);
+  $('gaugeMidLabel').textContent=formatAngle((manualMin+manualMax)/2);
+  $('gaugeMaxLabel').textContent=formatAngle(manualMax);
+  $('manualHint').textContent=(manualTest.name||'回転テスト')+'を手動操作中。角度を動かすたびに干渉を即判定します。';
+  setManualEnabled(true);
+  updateGauge(manualMin);
+}
+function formatAngle(v){
+  const n=Math.round(Number(v)*10)/10;
+  return n+'°';
+}
+function updateGauge(value){
+  const v=Math.max(manualMin,Math.min(manualMax,Number(value)||0));
+  const span=Math.max(0.0001,manualMax-manualMin);
+  const ratio=(v-manualMin)/span;
+  const deg=-90+ratio*180;
+  $('gaugeNeedle').style.transform=`rotate(${deg}deg)`;
+  $('gaugeValue').textContent=formatAngle(v);
+}
+function manualSetAngle(value,announce=true){
+  if(!manualTest||running)return;
+  const v=Math.max(manualMin,Math.min(manualMax,Number(value)||0));
+  restoreAll();
+  applyTestValue(manualTest,v);
+  const hit=testCollision(manualTest);
+  setMovingColor(manualTest.moving,hit);
+  $('manualAngle').value=v;
+  updateGauge(v);
+  const p=$('manualCollision');
+  p.className='pill '+(hit?'manualHit':'manualOk');
+  p.textContent=hit?'干渉あり':'干渉なし';
+  if(announce)setStatus(`手動 ${formatAngle(v)}：${hit?'干渉あり':'干渉なし'}`,hit?'hit':'ok');
+}
+function nudgeManual(delta){
+  manualSetAngle((Number($('manualAngle').value)||0)+delta);
 }
 function addResultCard(r){
   const d=document.createElement('div');d.className='resultCard '+(r.hit?'hit':'ok');
@@ -101,7 +159,7 @@ function addResultCard(r){
 }
 async function runAll(){
   if(!manifest||running)return;
-  running=true;$('results').innerHTML='';$('summary').className='summary run';$('summary').textContent='自動テスト中…';setStatus('自動作動テスト中…','run');restoreAll();
+  running=true;setManualEnabled(false);$('results').innerHTML='';$('summary').className='summary run';$('summary').textContent='自動テスト中…';setStatus('自動作動テスト中…','run');restoreAll();
   const tests=manifest.tests||[]; let anyHit=false,done=0,total=tests.reduce((n,t)=>n+expandSamples(t.segments).length,0)||1;
   for(const t of tests){
     const samples=expandSamples(t.segments); let firstHit=null,hitValues=[];
@@ -125,7 +183,8 @@ async function runAll(){
   $('summary').className='summary '+(anyHit?'hit':'ok');
   $('summary').textContent=anyHit?'❌ 干渉あり。印刷前に修正必要':'✅ 指定した作動範囲では干渉なし';
   setStatus(anyHit?'テスト完了：干渉あり':'テスト完了：合格',anyHit?'hit':'ok');
-  fitView();running=false;
+  fitView();running=false;setManualEnabled(!!manualTest);
+  if(manualTest)manualSetAngle(Number($('manualAngle').value)||manualMin,false);
 }
 async function loadManifestWithBuffers(m,getBuffer,label){
   manifest=normalizeManifest(m);clearScene();$('results').innerHTML='';$('summary').className='summary idle';$('summary').textContent='読込中…';setStatus('部品を自動組立中…','run');
@@ -170,6 +229,12 @@ async function loadLast(){
   if(!ab){$('lastBtn').disabled=true;return}
   await loadPackageBuffer(ab,localStorage.getItem('oka3d_last_name')||'前回のAIテスト',false);
 }
+
+$('manualAngle').addEventListener('input',e=>manualSetAngle(e.target.value));
+$('minus10').onclick=()=>nudgeManual(-10);
+$('minus1').onclick=()=>nudgeManual(-1);
+$('plus1').onclick=()=>nudgeManual(1);
+$('plus10').onclick=()=>nudgeManual(10);
 
 $('lastBtn').disabled=!readLastPackage();
 $('lastBtn').onclick=loadLast;
