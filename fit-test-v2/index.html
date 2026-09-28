@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
   <meta name="theme-color" content="#08111f">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <title>岡重機 3D Auto Test V2.2</title>
-  <link rel="stylesheet" href="./style.css?v=22">
+  <title>岡重機 3D Auto Test V3.0</title>
+  <link rel="stylesheet" href="./style.css?v=30">
 </head>
 <body>
 <header>
   <div>
-    <h1>岡重機 3D Auto Test <small>V2.2</small></h1>
-    <p>AI指示どおりに自動組立 → 自動作動 → 干渉判定</p>
+    <h1>岡重機 3D Auto Test <small>V3.0</small></h1>
+    <p>自動組立 → 作動 → ネジ/はめ合い → 干渉・抜け止め判定</p>
   </div>
   <button id="fitBtn" class="ghost">全体表示</button>
 </header>
@@ -23,7 +23,15 @@
       <input id="packageInput" type="file" accept=".zip,.okafit" hidden>
     </label>
     <button id="lastBtn" class="big ghost" disabled>前回のテストを自動実行</button>
-    <div class="muted small">テストファイルを1個選ぶだけ。組立・回転/直動・細かく見る区間・干渉判定は全部自動です。選んだファイルは端末に保存され、次回は「前回のテスト」で再実行できます。</div>
+    <div class="muted small">テストファイルを1個選ぶだけ。組立、回転・直動、ネジのらせん運動、はめ込み、圧入、スナップ、抜け止めまで自動判定できます。</div>
+  </section>
+
+  <section class="panel capabilityPanel">
+    <div class="eyebrow">V3.0 締結・はめ合い</div>
+    <div class="capGrid">
+      <span>🔩 ネジ締結</span><span>↔ はめ込み</span><span>🗜 圧入</span><span>🪝 スナップ</span><span>🔒 抜け止め</span>
+    </div>
+    <div class="muted small">ネジは回転と軸移動を同期して試験。はめ合い系はSTL同士の干渉に加え、AIテストファイルに入れた寸法・許容差も照合します。</div>
   </section>
 
   <section id="viewerWrap">
@@ -32,12 +40,11 @@
     <div id="progress" class="progress hidden"><div id="progressBar"></div></div>
   </section>
 
-
   <section class="panel" id="manualPanel">
     <div class="row between">
       <div>
         <div class="eyebrow">手動作動</div>
-        <h2>角度計</h2>
+        <h2 id="manualTitle">角度計</h2>
       </div>
       <div id="manualCollision" class="pill">未読込</div>
     </div>
@@ -56,6 +63,7 @@
         <text id="gaugeMidLabel" class="gaugeLabel" x="160" y="18" text-anchor="middle">90°</text>
         <text id="gaugeMaxLabel" class="gaugeLabel" x="295" y="174" text-anchor="end">180°</text>
         <text id="gaugeValue" class="gaugeValue" x="160" y="118" text-anchor="middle">0°</text>
+        <text id="manualSubValue" class="gaugeSubValue" x="160" y="140" text-anchor="middle"></text>
       </svg>
     </div>
 
@@ -66,7 +74,7 @@
       <button id="plus1" class="ghost" disabled>＋1°</button>
       <button id="plus10" class="ghost" disabled>＋10°</button>
     </div>
-    <div class="muted small" id="manualHint">回転テストを含むAIテストファイルを読み込むと使えます。動かすたびに干渉を即判定します。</div>
+    <div class="muted small" id="manualHint">回転またはネジテストを含むAIテストファイルを読み込むと使えます。</div>
   </section>
 
   <section class="panel">
@@ -86,12 +94,12 @@
     <div id="results" class="results"></div>
   </section>
 
-
   <details>
     <summary class="panel detailsSummary">詳細表示</summary>
     <section class="panel small">
       <div id="partsInfo" class="muted">部品情報なし</div>
-      <p class="muted">AIテスト指示は部品ごとに変えられます。回転・直動・複数区間・区間ごとの刻み幅に対応。たとえば閉じ際だけ1°刻み、その他は5°刻みにできます。</p>
+      <p class="muted">V3形式では rotate / translate / screw / fit / pressfit / snapfit / retention を指定できます。ネジは pitchMm と axialSign、はめ合い系は寸法・許容差を assembly.json に持たせると自動判定できます。</p>
+      <p class="muted">※ スナップや圧入は幾何＋指定許容差の判定です。材料の弾性・破壊まで計算するFEM解析ではありません。</p>
     </section>
   </details>
 </main>
@@ -103,6 +111,6 @@
   "three-mesh-bvh":"https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.8.3/build/index.module.js"
 }}
 </script>
-<script type="module" src="./app.js?v=22"></script>
+<script type="module" src="./app.js?v=30"></script>
 </body>
 </html>
