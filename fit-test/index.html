@@ -48,6 +48,42 @@
     <div id="results" class="results"></div>
   </section>
 
+  <section class="panel" id="manualPanel">
+    <div class="row between">
+      <div>
+        <div class="eyebrow">手動作動</div>
+        <h2>角度計</h2>
+      </div>
+      <div id="manualCollision" class="pill">未読込</div>
+    </div>
+
+    <div class="gaugeWrap" aria-label="手動角度計">
+      <svg id="angleGauge" viewBox="0 0 320 180" role="img" aria-label="現在角度">
+        <path class="gaugeArc" d="M30 155 A130 130 0 0 1 290 155"></path>
+        <line class="gaugeTick" x1="30" y1="155" x2="45" y2="155"></line>
+        <line class="gaugeTick" x1="68" y1="63" x2="79" y2="74"></line>
+        <line class="gaugeTick" x1="160" y1="25" x2="160" y2="40"></line>
+        <line class="gaugeTick" x1="252" y1="63" x2="241" y2="74"></line>
+        <line class="gaugeTick" x1="290" y1="155" x2="275" y2="155"></line>
+        <line id="gaugeNeedle" class="gaugeNeedle" x1="160" y1="155" x2="160" y2="42"></line>
+        <circle class="gaugeHub" cx="160" cy="155" r="8"></circle>
+        <text id="gaugeMinLabel" class="gaugeLabel" x="25" y="174">0°</text>
+        <text id="gaugeMidLabel" class="gaugeLabel" x="160" y="18" text-anchor="middle">90°</text>
+        <text id="gaugeMaxLabel" class="gaugeLabel" x="295" y="174" text-anchor="end">180°</text>
+        <text id="gaugeValue" class="gaugeValue" x="160" y="118" text-anchor="middle">0°</text>
+      </svg>
+    </div>
+
+    <input id="manualAngle" class="angleSlider" type="range" min="0" max="180" step="1" value="0" disabled aria-label="手動角度">
+    <div class="manualBtns">
+      <button id="minus10" class="ghost" disabled>−10°</button>
+      <button id="minus1" class="ghost" disabled>−1°</button>
+      <button id="plus1" class="ghost" disabled>＋1°</button>
+      <button id="plus10" class="ghost" disabled>＋10°</button>
+    </div>
+    <div class="muted small" id="manualHint">回転テストを含むAIテストファイルを読み込むと使えます。動かすたびに干渉を即判定します。</div>
+  </section>
+
   <details>
     <summary class="panel detailsSummary">詳細表示</summary>
     <section class="panel small">
