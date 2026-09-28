@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="theme-color" content="#08111f">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <title>岡重機 3D Auto Test V2.2</title>
+  <link rel="stylesheet" href="./style.css?v=22">
+</head>
+<body>
+<header>
+  <div>
+    <h1>岡重機 3D Auto Test <small>V2.2</small></h1>
+    <p>AI指示どおりに自動組立 → 自動作動 → 干渉判定</p>
+  </div>
+  <button id="fitBtn" class="ghost">全体表示</button>
+</header>
+
+<main>
+  <section class="hero panel">
+    <label class="big fileBtn">AIテストファイルを選ぶ
+      <input id="packageInput" type="file" accept=".zip,.okafit" hidden>
+    </label>
+    <button id="lastBtn" class="big ghost" disabled>前回のテストを自動実行</button>
+    <div class="muted small">テストファイルを1個選ぶだけ。組立・回転/直動・細かく見る区間・干渉判定は全部自動です。選んだファイルは端末に保存され、次回は「前回のテスト」で再実行できます。</div>
+  </section>
+
+  <section id="viewerWrap">
+    <div id="viewer"></div>
+    <div id="status" class="badge idle">テスト待ち</div>
+    <div id="progress" class="progress hidden"><div id="progressBar"></div></div>
+  </section>
+
+
+  <section class="panel" id="manualPanel">
+    <div class="row between">
+      <div>
+        <div class="eyebrow">手動作動</div>
+        <h2>角度計</h2>
+      </div>
+      <div id="manualCollision" class="pill">未読込</div>
+    </div>
+
+    <div class="gaugeWrap" aria-label="手動角度計">
+      <svg id="angleGauge" viewBox="0 0 320 180" role="img" aria-label="現在角度">
+        <path class="gaugeArc" d="M30 155 A130 130 0 0 1 290 155"></path>
+        <line class="gaugeTick" x1="30" y1="155" x2="45" y2="155"></line>
+        <line class="gaugeTick" x1="68" y1="63" x2="79" y2="74"></line>
+        <line class="gaugeTick" x1="160" y1="25" x2="160" y2="40"></line>
+        <line class="gaugeTick" x1="252" y1="63" x2="241" y2="74"></line>
+        <line class="gaugeTick" x1="290" y1="155" x2="275" y2="155"></line>
+        <line id="gaugeNeedle" class="gaugeNeedle" x1="160" y1="155" x2="160" y2="42"></line>
+        <circle class="gaugeHub" cx="160" cy="155" r="8"></circle>
+        <text id="gaugeMinLabel" class="gaugeLabel" x="25" y="174">0°</text>
+        <text id="gaugeMidLabel" class="gaugeLabel" x="160" y="18" text-anchor="middle">90°</text>
+        <text id="gaugeMaxLabel" class="gaugeLabel" x="295" y="174" text-anchor="end">180°</text>
+        <text id="gaugeValue" class="gaugeValue" x="160" y="118" text-anchor="middle">0°</text>
+      </svg>
+    </div>
+
+    <input id="manualAngle" class="angleSlider" type="range" min="0" max="180" step="1" value="0" disabled aria-label="手動角度">
+    <div class="manualBtns">
+      <button id="minus10" class="ghost" disabled>−10°</button>
+      <button id="minus1" class="ghost" disabled>−1°</button>
+      <button id="plus1" class="ghost" disabled>＋1°</button>
+      <button id="plus10" class="ghost" disabled>＋10°</button>
+    </div>
+    <div class="muted small" id="manualHint">回転テストを含むAIテストファイルを読み込むと使えます。動かすたびに干渉を即判定します。</div>
+  </section>
+
+  <section class="panel">
+    <div class="row between">
+      <div>
+        <div class="eyebrow">テスト対象</div>
+        <h2 id="testName">未読込</h2>
+      </div>
+      <button id="rerunBtn" class="ghost" disabled>もう一度</button>
+    </div>
+    <div id="plan" class="plan muted">テストファイルを読み込むと、ここにAIの作動テスト計画が出ます。</div>
+  </section>
+
+  <section class="panel">
+    <div class="eyebrow">判定結果</div>
+    <div id="summary" class="summary idle">まだテストしていません</div>
+    <div id="results" class="results"></div>
+  </section>
+
+
+  <details>
+    <summary class="panel detailsSummary">詳細表示</summary>
+    <section class="panel small">
+      <div id="partsInfo" class="muted">部品情報なし</div>
+      <p class="muted">AIテスト指示は部品ごとに変えられます。回転・直動・複数区間・区間ごとの刻み幅に対応。たとえば閉じ際だけ1°刻み、その他は5°刻みにできます。</p>
+    </section>
+  </details>
+</main>
+
+<script type="importmap">
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/",
+  "three-mesh-bvh":"https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.8.3/build/index.module.js"
+}}
+</script>
+<script type="module" src="./app.js?v=22"></script>
+</body>
+</html>
