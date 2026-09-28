@@ -132,24 +132,48 @@ async function loadManifestWithBuffers(m,getBuffer,label){
   for(const p of manifest.parts||[]){const ab=await getBuffer(p.file);const mesh=meshFromBuffer(ab,p);parts.set(p.id,{mesh,def:p,base:null});saveBase(parts.get(p.id))}
   showManifestInfo();fitView();lastSource=label;setStatus('自動組立完了','ok');await runAll();
 }
-async function loadRemoteLatest(){
+function saveLastPackage(ab,name){
   try{
-    const base='./tests/latest/';
-    const m=await (await fetch(base+'assembly.json',{cache:'no-store'})).json();
-    await loadManifestWithBuffers(m,async f=>(await fetch(base+f,{cache:'no-store'})).arrayBuffer(),'latest');
-  }catch(e){console.error(e);setStatus('最新テストの読込失敗','hit');$('summary').className='summary hit';$('summary').textContent='最新テストを読み込めませんでした'}
+    const u=new Uint8Array(ab);
+    let s=''; const chunk=0x8000;
+    for(let i=0;i<u.length;i+=chunk)s+=String.fromCharCode(...u.subarray(i,i+chunk));
+    localStorage.setItem('oka3d_last_package',btoa(s));
+    localStorage.setItem('oka3d_last_name',name||'前回のAIテスト');
+    $('lastBtn').disabled=false;
+  }catch(e){console.warn('cache save failed',e)}
 }
-async function loadPackage(file){
+function readLastPackage(){
   try{
-    const zip=unzipSync(new Uint8Array(await file.arrayBuffer()));
+    const b64=localStorage.getItem('oka3d_last_package');if(!b64)return null;
+    const s=atob(b64),u=new Uint8Array(s.length);for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i);
+    return u.buffer;
+  }catch(e){console.warn('cache read failed',e);return null}
+}
+async function loadPackageBuffer(ab,label,remember=false){
+  try{
+    const zip=unzipSync(new Uint8Array(ab));
     const key=Object.keys(zip).find(k=>k.toLowerCase().endsWith('assembly.json'));if(!key)throw new Error('assembly.jsonなし');
     const m=JSON.parse(strFromU8(zip[key]));
-    await loadManifestWithBuffers(m,async f=>{const u=zip[f];if(!u)throw new Error('STLなし: '+f);return u.buffer.slice(u.byteOffset,u.byteOffset+u.byteLength)},file.name);
-  }catch(e){console.error(e);setStatus('テストファイル読込失敗','hit');$('summary').className='summary hit';$('summary').textContent='読込失敗: '+e.message}
+    await loadManifestWithBuffers(m,async f=>{const u=zip[f];if(!u)throw new Error('STLなし: '+f);return u.buffer.slice(u.byteOffset,u.byteOffset+u.byteLength)},label);
+    if(remember)saveLastPackage(ab,label);
+  }catch(e){
+    console.error(e);setStatus('テストファイル読込失敗','hit');
+    $('summary').className='summary hit';$('summary').textContent='読込失敗: '+e.message;
+  }
+}
+async function loadPackage(file){
+  const ab=await file.arrayBuffer();
+  await loadPackageBuffer(ab,file.name,true);
+}
+async function loadLast(){
+  const ab=readLastPackage();
+  if(!ab){$('lastBtn').disabled=true;return}
+  await loadPackageBuffer(ab,localStorage.getItem('oka3d_last_name')||'前回のAIテスト',false);
 }
 
-$('latestBtn').onclick=loadRemoteLatest;
+$('lastBtn').disabled=!readLastPackage();
+$('lastBtn').onclick=loadLast;
 $('rerunBtn').onclick=runAll;
 $('fitBtn').onclick=fitView;
 $('packageInput').onchange=e=>{const f=e.target.files?.[0];if(f)loadPackage(f);e.target.value=''};
-if(new URLSearchParams(location.search).get('auto')==='latest')loadRemoteLatest();
+if(new URLSearchParams(location.search).get('auto')==='last' && readLastPackage())loadLast();
