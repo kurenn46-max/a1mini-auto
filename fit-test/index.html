@@ -11,63 +11,69 @@
   <header>
     <div>
       <h1>岡重機 3D Fit Test</h1>
-      <p>STL仮組み・ヒンジ作動・干渉チェック</p>
+      <p>AI指示ファイルで自動組立・作動・干渉テスト</p>
     </div>
     <button id="fitViewBtn" class="ghost">全体表示</button>
   </header>
 
   <main>
+    <section class="panel">
+      <label class="fileBtn grow" style="display:block;font-size:17px;padding:15px">
+        AIテストパッケージを開く
+        <input id="packageInput" type="file" accept=".zip,.okafit" hidden />
+      </label>
+      <div class="small muted" style="margin-top:8px">ナイトが作った .okafit.zip を1個選ぶだけ。部品配置・固定/可動・ヒンジ軸・角度範囲を自動設定して、そのままテストします。</div>
+    </section>
+
     <section id="viewerWrap">
       <div id="viewer"></div>
-      <div id="statusBadge" class="badge idle">STLを読み込んでください</div>
+      <div id="statusBadge" class="badge idle">テストパッケージを開いてください</div>
       <div id="pickHint" class="hint hidden">モデル上のヒンジ中心をタップ</div>
     </section>
 
     <section class="panel">
-      <div class="row gap">
-        <label class="fileBtn grow">STLを追加
-          <input id="fileInput" type="file" accept=".stl,model/stl" multiple hidden />
+      <div id="packageInfo" class="result">AIテストパッケージ待ち</div>
+    </section>
+
+    <details>
+      <summary class="panel" style="cursor:pointer;font-weight:700">手動設定を開く</summary>
+      <section class="panel">
+        <div class="row gap">
+          <label class="fileBtn grow">STLを追加
+            <input id="fileInput" type="file" accept=".stl,model/stl" multiple hidden />
+          </label>
+          <button id="clearBtn" class="danger">全消去</button>
+        </div>
+        <div id="partsList" class="parts empty">まだ部品がありません</div>
+      </section>
+
+      <section class="panel grid2">
+        <label>固定部品<select id="fixedSelect"></select></label>
+        <label>可動部品<select id="movingSelect"></select></label>
+        <label>操作対象<select id="activeSelect"></select></label>
+        <label>移動操作
+          <select id="transformMode"><option value="translate">移動</option><option value="rotate">回転</option></select>
         </label>
-        <button id="clearBtn" class="danger">全消去</button>
-      </div>
-      <div id="partsList" class="parts empty">まだ部品がありません</div>
-    </section>
+      </section>
 
-    <section class="panel grid2">
-      <label>固定部品
-        <select id="fixedSelect"></select>
-      </label>
-      <label>可動部品
-        <select id="movingSelect"></select>
-      </label>
-      <label>操作対象
-        <select id="activeSelect"></select>
-      </label>
-      <label>移動操作
-        <select id="transformMode">
-          <option value="translate">移動</option>
-          <option value="rotate">回転</option>
-        </select>
-      </label>
-    </section>
-
-    <section class="panel">
-      <h2>ヒンジ軸</h2>
-      <div class="axisRow">
-        <button class="axis active" data-axis="x">X</button>
-        <button class="axis" data-axis="y">Y</button>
-        <button class="axis" data-axis="z">Z</button>
-      </div>
-      <div class="row gap">
-        <button id="pickPivotBtn" class="primary grow">モデルをタップして軸中心設定</button>
-        <button id="centerPivotBtn" class="ghost">可動部品中心</button>
-      </div>
-      <div class="xyz">
-        <label>X<input id="pivotX" type="number" step="0.1" value="0"></label>
-        <label>Y<input id="pivotY" type="number" step="0.1" value="0"></label>
-        <label>Z<input id="pivotZ" type="number" step="0.1" value="0"></label>
-      </div>
-    </section>
+      <section class="panel">
+        <h2>ヒンジ軸</h2>
+        <div class="axisRow">
+          <button class="axis active" data-axis="x">X</button>
+          <button class="axis" data-axis="y">Y</button>
+          <button class="axis" data-axis="z">Z</button>
+        </div>
+        <div class="row gap">
+          <button id="pickPivotBtn" class="primary grow">モデルをタップして軸中心設定</button>
+          <button id="centerPivotBtn" class="ghost">可動部品中心</button>
+        </div>
+        <div class="xyz">
+          <label>X<input id="pivotX" type="number" step="0.1" value="0"></label>
+          <label>Y<input id="pivotY" type="number" step="0.1" value="0"></label>
+          <label>Z<input id="pivotZ" type="number" step="0.1" value="0"></label>
+        </div>
+      </section>
+    </details>
 
     <section class="panel">
       <h2>作動テスト</h2>
@@ -81,27 +87,24 @@
         <label>刻み°<input id="sweepStep" type="number" value="5" min="1" step="1"></label>
       </div>
       <div class="row gap">
-        <button id="checkBtn" class="primary grow">現在角度を干渉チェック</button>
+        <button id="checkBtn" class="primary grow">現在角度をチェック</button>
         <button id="sweepBtn" class="primary grow">全角度テスト</button>
       </div>
-      <div id="result" class="result">固定部品と可動部品を選んでください。</div>
+      <div id="result" class="result">テスト待ち</div>
     </section>
 
     <section class="panel small">
-      <b>使い方</b><br>
-      ① STLを追加 → ② 固定/可動を選択 → ③ 必要なら移動ツールで位置合わせ → ④ ヒンジ中心をタップ → ⑤ X/Y/Z軸を選択 → ⑥ スライダーまたは全角度テスト。<br>
-      <span class="muted">※ v1はSTL対応。干渉は三角メッシュ同士を判定します。STEP対応は次段階。</span>
+      <b>AIテストパッケージ方式</b><br>
+      CAD作成時に assembly.json を一緒に作り、STLとZIP化します。アプリは指示どおりに自動組立して作動テストします。APIキーは不要で、秘密情報もGitHub Pagesに置きません。
     </section>
   </main>
 
   <script type="importmap">
-  {
-    "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/",
-      "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.8.3/build/index.module.js"
-    }
-  }
+  {"imports":{
+    "three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+    "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/",
+    "three-mesh-bvh":"https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.8.3/build/index.module.js"
+  }}
   </script>
   <script type="module" src="./app.js"></script>
 </body>
