@@ -18,11 +18,11 @@
 
 <main>
   <section class="hero panel">
-    <button id="latestBtn" class="big primary">最新テストを自動実行</button>
-    <label class="big fileBtn">別のAIテストファイルを開く
+    <label class="big fileBtn">AIテストファイルを選ぶ
       <input id="packageInput" type="file" accept=".zip,.okafit" hidden>
     </label>
-    <div class="muted small">基本は上の「最新テスト」を押すだけ。ナイトが部品ごとの動作範囲・細かく見る角度・直動量をテスト指示に入れます。</div>
+    <button id="lastBtn" class="big ghost" disabled>前回のテストを自動実行</button>
+    <div class="muted small">テストファイルを1個選ぶだけ。組立・回転/直動・細かく見る区間・干渉判定は全部自動です。選んだファイルは端末に保存され、次回は「前回のテスト」で再実行できます。</div>
   </section>
 
   <section id="viewerWrap">
