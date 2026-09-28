@@ -1,111 +1,69 @@
 <!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <meta name="theme-color" content="#0b1220" />
-  <title>岡重機 3D Fit Test</title>
-  <link rel="stylesheet" href="./style.css" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="theme-color" content="#08111f">
+  <title>岡重機 3D Auto Test</title>
+  <link rel="stylesheet" href="./style.css">
 </head>
 <body>
-  <header>
-    <div>
-      <h1>岡重機 3D Fit Test</h1>
-      <p>AI指示ファイルで自動組立・作動・干渉テスト</p>
+<header>
+  <div>
+    <h1>岡重機 3D Auto Test</h1>
+    <p>AI指示どおりに自動組立 → 自動作動 → 干渉判定</p>
+  </div>
+  <button id="fitBtn" class="ghost">全体表示</button>
+</header>
+
+<main>
+  <section class="hero panel">
+    <button id="latestBtn" class="big primary">最新テストを自動実行</button>
+    <label class="big fileBtn">別のAIテストファイルを開く
+      <input id="packageInput" type="file" accept=".zip,.okafit" hidden>
+    </label>
+    <div class="muted small">基本は上の「最新テスト」を押すだけ。ナイトが部品ごとの動作範囲・細かく見る角度・直動量をテスト指示に入れます。</div>
+  </section>
+
+  <section id="viewerWrap">
+    <div id="viewer"></div>
+    <div id="status" class="badge idle">テスト待ち</div>
+    <div id="progress" class="progress hidden"><div id="progressBar"></div></div>
+  </section>
+
+  <section class="panel">
+    <div class="row between">
+      <div>
+        <div class="eyebrow">テスト対象</div>
+        <h2 id="testName">未読込</h2>
+      </div>
+      <button id="rerunBtn" class="ghost" disabled>もう一度</button>
     </div>
-    <button id="fitViewBtn" class="ghost">全体表示</button>
-  </header>
+    <div id="plan" class="plan muted">テストファイルを読み込むと、ここにAIの作動テスト計画が出ます。</div>
+  </section>
 
-  <main>
-    <section class="panel">
-      <label class="fileBtn grow" style="display:block;font-size:17px;padding:15px">
-        AIテストパッケージを開く
-        <input id="packageInput" type="file" accept=".zip,.okafit" hidden />
-      </label>
-      <div class="small muted" style="margin-top:8px">ナイトが作った .okafit.zip を1個選ぶだけ。部品配置・固定/可動・ヒンジ軸・角度範囲を自動設定して、そのままテストします。</div>
-    </section>
+  <section class="panel">
+    <div class="eyebrow">判定結果</div>
+    <div id="summary" class="summary idle">まだテストしていません</div>
+    <div id="results" class="results"></div>
+  </section>
 
-    <section id="viewerWrap">
-      <div id="viewer"></div>
-      <div id="statusBadge" class="badge idle">テストパッケージを開いてください</div>
-      <div id="pickHint" class="hint hidden">モデル上のヒンジ中心をタップ</div>
-    </section>
-
-    <section class="panel">
-      <div id="packageInfo" class="result">AIテストパッケージ待ち</div>
-    </section>
-
-    <details>
-      <summary class="panel" style="cursor:pointer;font-weight:700">手動設定を開く</summary>
-      <section class="panel">
-        <div class="row gap">
-          <label class="fileBtn grow">STLを追加
-            <input id="fileInput" type="file" accept=".stl,model/stl" multiple hidden />
-          </label>
-          <button id="clearBtn" class="danger">全消去</button>
-        </div>
-        <div id="partsList" class="parts empty">まだ部品がありません</div>
-      </section>
-
-      <section class="panel grid2">
-        <label>固定部品<select id="fixedSelect"></select></label>
-        <label>可動部品<select id="movingSelect"></select></label>
-        <label>操作対象<select id="activeSelect"></select></label>
-        <label>移動操作
-          <select id="transformMode"><option value="translate">移動</option><option value="rotate">回転</option></select>
-        </label>
-      </section>
-
-      <section class="panel">
-        <h2>ヒンジ軸</h2>
-        <div class="axisRow">
-          <button class="axis active" data-axis="x">X</button>
-          <button class="axis" data-axis="y">Y</button>
-          <button class="axis" data-axis="z">Z</button>
-        </div>
-        <div class="row gap">
-          <button id="pickPivotBtn" class="primary grow">モデルをタップして軸中心設定</button>
-          <button id="centerPivotBtn" class="ghost">可動部品中心</button>
-        </div>
-        <div class="xyz">
-          <label>X<input id="pivotX" type="number" step="0.1" value="0"></label>
-          <label>Y<input id="pivotY" type="number" step="0.1" value="0"></label>
-          <label>Z<input id="pivotZ" type="number" step="0.1" value="0"></label>
-        </div>
-      </section>
-    </details>
-
-    <section class="panel">
-      <h2>作動テスト</h2>
-      <div class="angleLine">
-        <input id="angleSlider" type="range" min="0" max="180" step="1" value="0" />
-        <strong><span id="angleValue">0</span>°</strong>
-      </div>
-      <div class="grid3">
-        <label>開始°<input id="sweepFrom" type="number" value="0" step="1"></label>
-        <label>終了°<input id="sweepTo" type="number" value="180" step="1"></label>
-        <label>刻み°<input id="sweepStep" type="number" value="5" min="1" step="1"></label>
-      </div>
-      <div class="row gap">
-        <button id="checkBtn" class="primary grow">現在角度をチェック</button>
-        <button id="sweepBtn" class="primary grow">全角度テスト</button>
-      </div>
-      <div id="result" class="result">テスト待ち</div>
-    </section>
-
+  <details>
+    <summary class="panel detailsSummary">詳細表示</summary>
     <section class="panel small">
-      <b>AIテストパッケージ方式</b><br>
-      CAD作成時に assembly.json を一緒に作り、STLとZIP化します。アプリは指示どおりに自動組立して作動テストします。APIキーは不要で、秘密情報もGitHub Pagesに置きません。
+      <div id="partsInfo" class="muted">部品情報なし</div>
+      <p class="muted">AIテスト指示は部品ごとに変えられます。回転・直動・複数区間・区間ごとの刻み幅に対応。たとえば閉じ際だけ1°刻み、その他は5°刻みにできます。</p>
     </section>
-  </main>
+  </details>
+</main>
 
-  <script type="importmap">
-  {"imports":{
-    "three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
-    "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/",
-    "three-mesh-bvh":"https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.8.3/build/index.module.js"
-  }}
-  </script>
-  <script type="module" src="./app.js"></script>
+<script type="importmap">
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/",
+  "three-mesh-bvh":"https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.8.3/build/index.module.js"
+}}
+</script>
+<script type="module" src="./app.js"></script>
 </body>
 </html>
