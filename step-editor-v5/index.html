@@ -6,14 +6,14 @@
   <meta name="theme-color" content="#091522">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
-  <title>岡重機 STEP Editor V5.3 SOLID TOUCH</title>
-  <link rel="stylesheet" href="./style.css?v=5.3.0">
+  <title>岡重機 STEP Editor V5.4 MOBILE PRECISION</title>
+  <link rel="stylesheet" href="./style.css?v=5.4.0">
 </head>
 <body>
 <header class="topbar">
   <div>
-    <h1>岡重機 STEP Editor <small>V5.3 SOLID TOUCH</small></h1>
-    <p>見る・測る・選ぶ・簡単編集・ナイト用データ書出し</p>
+    <h1>岡重機 STEP Editor <small>V5.4 MOBILE PRECISION</small></h1>
+    <p>見る・測る・選ぶ・数値で精密編集・ナイト用データ書出し</p>
   </div>
   <button id="fitBtn" class="toolBtn" disabled>全体表示</button>
 </header>
@@ -148,7 +148,12 @@
     </div>
 
     <div id="editTargetInfo" class="editTargetInfo">
-      「🔎 詳細面」に切り替えて面をタップ。黄色になった端面をもう一度つかんで指でドラッグすると、つながる境界も一緒に動いて部品自体が伸び縮みします。
+      「🔎 詳細面」に切り替えて編集したい面をタップしてください。黄色になったら「この面を編集」で確定します。
+    </div>
+
+    <div class="confirmEditRow">
+      <button id="confirmEditFaceBtn" class="confirmFaceBtn" disabled>✓ この面を編集</button>
+      <button id="touchDragToggleBtn" class="dragAssistBtn" disabled>指ドラッグ補助 OFF</button>
     </div>
 
     <div class="editBlock">
@@ -170,7 +175,7 @@
         </label>
         <button id="applyPushPullBtn" class="editPrimary" disabled>この面を変更</button>
       </div>
-      <p class="editNote">黄色の面は指で直接ドラッグできます。＋は面の法線方向、−は反対方向。端面を選べば長さ変更として使えます。</p>
+      <p class="editNote">基本は数値編集です。＋は面の法線方向、−は反対方向。端面なら部品の長さ変更として使えます。</p>
     </div>
 
     <div class="editBlock">
@@ -264,6 +269,6 @@
   "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
 }}
 </script>
-<script type="module" src="./app.js?v=5.3.0"></script>
+<script type="module" src="./app.js?v=5.4.0"></script>
 </body>
 </html>
