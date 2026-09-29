@@ -67,6 +67,9 @@ scene.add(dimensionGroup);
 const faceHighlightGroup = new THREE.Group();
 scene.add(faceHighlightGroup);
 
+const axisSignGroup = new THREE.Group();
+scene.add(axisSignGroup);
+
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 
@@ -251,6 +254,7 @@ function disposeModel() {
   clearMeasurement();
   clearPartDimensions();
   clearGroup(faceHighlightGroup);
+  clearGroup(axisSignGroup);
   selectedPatch = null;
   for (const part of parts) {
     modelGroup.remove(part.mesh);
@@ -331,6 +335,7 @@ function recomputeModelStats(fit = false) {
   $('saveStlBtn').disabled = !hasCad;
   $('clearCadBtn').disabled = !hasCad;
   updateVisibleCount();
+  updateAxisSigns();
   if (fit) fitView('iso');
 }
 
@@ -1543,14 +1548,52 @@ function setAxisControlsEnabled(enabled){
   document.querySelectorAll('[data-axis-delta]').forEach(btn=>btn.disabled=!enabled);
 }
 
+
+function makeAxisSign(text, cls){
+  const el=document.createElement('div');
+  el.className='axisSignLabel '+cls;
+  el.textContent=text;
+  return new CSS2DObject(el);
+}
+
+function updateAxisSigns(){
+  clearGroup(axisSignGroup);
+  if(!selectedAxis) return;
+  const resolved=getAxisPart();
+  if(!resolved) return;
+
+  const box=new THREE.Box3().setFromObject(resolved.part.mesh);
+  if(box.isEmpty()) return;
+
+  const center=box.getCenter(new THREE.Vector3());
+  const size=box.getSize(new THREE.Vector3());
+  const maxDim=Math.max(size.x,size.y,size.z,1);
+  const pad=Math.max(maxDim*0.07,0.6);
+
+  const minP=center.clone();
+  const maxP=center.clone();
+  minP[selectedAxis]=box.min[selectedAxis]-pad;
+  maxP[selectedAxis]=box.max[selectedAxis]+pad;
+
+  const minus=makeAxisSign('−'+selectedAxis.toUpperCase(),'minus');
+  const plus=makeAxisSign('＋'+selectedAxis.toUpperCase(),'plus');
+  minus.position.copy(minP);
+  plus.position.copy(maxP);
+
+  axisSignGroup.add(minus,plus);
+}
+
 function updateAxisPanel(){
   ['x','y','z'].forEach(a=>$('axis'+a.toUpperCase()+'Card').classList.toggle('active',selectedAxis===a));
+  updateAxisSigns();
   ['anchorMinBtn','anchorCenterBtn','anchorMaxBtn'].forEach(id=>$(id).classList.remove('active'));
   if(axisAnchor==='min') $('anchorMinBtn').classList.add('active');
   else if(axisAnchor==='center') $('anchorCenterBtn').classList.add('active');
   else $('anchorMaxBtn').classList.add('active');
 
   if(!selectedAxis){
+    $('anchorMinBtn').textContent='−側固定';
+    $('anchorMaxBtn').textContent='＋側固定';
     $('axisEditTitle').textContent='X / Y / Z をタップ';
     $('axisEditBadge').textContent='軸 未選択';
     $('axisEditHelp').textContent='上の X・Y・Z をタップすると、その軸だけ編集できます。';
@@ -1565,6 +1608,9 @@ function updateAxisPanel(){
   }
   const size=partWorldSize(resolved.part);
   const dim=size[selectedAxis];
+  const axisLabel=selectedAxis.toUpperCase();
+  $('anchorMinBtn').textContent='−'+axisLabel+'側固定';
+  $('anchorMaxBtn').textContent='＋'+axisLabel+'側固定';
   $('axisEditTitle').textContent=selectedAxis.toUpperCase()+'方向を編集';
   $('axisEditBadge').textContent=selectedAxis.toUpperCase()+' 選択中';
   $('axisEditHelp').textContent=
