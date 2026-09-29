@@ -335,7 +335,7 @@ function recomputeModelStats(fit = false) {
   $('saveStlBtn').disabled = !hasCad;
   $('clearCadBtn').disabled = !hasCad;
   updateVisibleCount();
-  updateAxisSigns();
+  updateAxisSignsOnly();
   if (fit) fitView('iso');
 }
 
@@ -638,41 +638,6 @@ function showBoxDimensions(box, owner = 'part') {
   );
 
   dimensionOwner = owner;
-  updateDimensionButtons();
-}
-
-function showSingleAxisDimension(box, axis, owner='axis') {
-  if (!box || box.isEmpty() || !['x','y','z'].includes(axis)) return;
-  clearGroup(dimensionGroup);
-
-  const b=box.clone();
-  const size=b.getSize(new THREE.Vector3());
-  const maxDim=Math.max(size.x,size.y,size.z,0.1);
-  const off=Math.max(maxDim*0.085,0.5);
-
-  if(axis==='x'){
-    const a=new THREE.Vector3(b.min.x,b.min.y-off,b.min.z-off);
-    const c=new THREE.Vector3(b.max.x,b.min.y-off,b.min.z-off);
-    addDimensionLine(a,c,
-      new THREE.Vector3(b.min.x,b.min.y,b.min.z),
-      new THREE.Vector3(b.max.x,b.min.y,b.min.z),
-      'X '+formatLength(size.x),'axisX',0xff6868);
-  }else if(axis==='y'){
-    const a=new THREE.Vector3(b.min.x-off,b.min.y,b.min.z-off);
-    const c=new THREE.Vector3(b.min.x-off,b.max.y,b.min.z-off);
-    addDimensionLine(a,c,
-      new THREE.Vector3(b.min.x,b.min.y,b.min.z),
-      new THREE.Vector3(b.min.x,b.max.y,b.min.z),
-      'Y '+formatLength(size.y),'axisY',0x69df7b);
-  }else{
-    const a=new THREE.Vector3(b.min.x-off,b.min.y-off,b.min.z);
-    const c=new THREE.Vector3(b.min.x-off,b.min.y-off,b.max.z);
-    addDimensionLine(a,c,
-      new THREE.Vector3(b.min.x,b.min.y,b.min.z),
-      new THREE.Vector3(b.min.x,b.min.y,b.max.z),
-      'Z '+formatLength(size.z),'axisZ',0x5da8ff);
-  }
-  dimensionOwner=owner;
   updateDimensionButtons();
 }
 
@@ -1080,9 +1045,6 @@ function updateFaceReadout(part, patchIndex, stats) {
 }
 
 function selectPatch(partIndex, patchIndex, scroll=true) {
-  selectedAxis=null;
-  clearGroup(axisSignGroup);
-  updateAxisPanel();
   const part=parts[partIndex];
   if (!part) return;
   ensureDetailPatches(part);
@@ -1192,12 +1154,6 @@ function setSelectionMode(mode) {
   if(faceDrag){ controls.enabled=true; faceDrag=null; $('dragHud').classList.add('hidden'); }
   resetEditConfirmation();
   selectionMode=mode==='face'?'face':'part';
-
-  if(selectionMode==='face'){
-    selectedAxis=null;
-    clearGroup(axisSignGroup);
-    updateAxisPanel();
-  }
   $('partModeBtn').classList.toggle('active',selectionMode==='part');
   $('faceModeBtn').classList.toggle('active',selectionMode==='face');
   $('tapHint').textContent=selectionMode==='face'
@@ -1217,14 +1173,6 @@ function setSelectionMode(mode) {
     if (selectionMode==='part' && selectedDimsOn && part.mesh.visible) {
       showBoxDimensions(new THREE.Box3().setFromObject(part.mesh),'part');
     } else if (selectionMode==='face') {
-      if(selectedPatch && selectedPatch.partIndex===selectedIndex){
-        const patch=part.patches?.[selectedPatch.patchIndex];
-        if(patch){
-          const stats=computePatchStats(part,patch);
-          highlightPatch(part,patch);
-          showBoxDimensions(stats.box,'face');
-        }
-      }
       $('tapPoint').textContent='詳細面モード：面をタップ → 黄色になったら編集面を確定';
     }
   }
@@ -1433,18 +1381,6 @@ function updateEditTarget(part,patchIndex,stats){
 }
 
 function refreshEditSelection(){
-  if(selectedAxis){
-    const resolved=getAxisPart();
-    if(selectedPatch){
-      const part=parts[selectedPatch.partIndex];
-      const patch=part?.patches?.[selectedPatch.patchIndex];
-      if(part&&patch) highlightPatch(part,patch);
-    }
-    if(resolved?.part?.mesh?.visible){
-      showSingleAxisDimension(new THREE.Box3().setFromObject(resolved.part.mesh),selectedAxis,'axis');
-    }
-    return;
-  }
   if(!selectedPatch) return;
   const part=parts[selectedPatch.partIndex];
   const patch=part?.patches?.[selectedPatch.patchIndex];
@@ -1620,19 +1556,18 @@ function makeAxisSign(text, cls){
   return new CSS2DObject(el);
 }
 
-function updateAxisSigns(){
+function updateAxisSignsOnly(){
   clearGroup(axisSignGroup);
   if(!selectedAxis) return;
   const resolved=getAxisPart();
-  if(!resolved) return;
+  if(!resolved?.part?.mesh?.visible) return;
 
   const box=new THREE.Box3().setFromObject(resolved.part.mesh);
   if(box.isEmpty()) return;
 
   const center=box.getCenter(new THREE.Vector3());
   const size=box.getSize(new THREE.Vector3());
-  const maxDim=Math.max(size.x,size.y,size.z,1);
-  const pad=Math.max(maxDim*0.07,0.6);
+  const pad=Math.max(Math.max(size.x,size.y,size.z,1)*0.06,0.5);
 
   const minP=center.clone();
   const maxP=center.clone();
@@ -1643,13 +1578,12 @@ function updateAxisSigns(){
   const plus=makeAxisSign('＋'+selectedAxis.toUpperCase(),'plus');
   minus.position.copy(minP);
   plus.position.copy(maxP);
-
   axisSignGroup.add(minus,plus);
 }
 
 function updateAxisPanel(){
   ['x','y','z'].forEach(a=>$('axis'+a.toUpperCase()+'Card').classList.toggle('active',selectedAxis===a));
-  updateAxisSigns();
+  updateAxisSignsOnly();
   ['anchorMinBtn','anchorCenterBtn','anchorMaxBtn'].forEach(id=>$(id).classList.remove('active'));
   if(axisAnchor==='min') $('anchorMinBtn').classList.add('active');
   else if(axisAnchor==='center') $('anchorCenterBtn').classList.add('active');
@@ -1691,16 +1625,8 @@ function updateAxisPanel(){
 
 function selectAxis(axis){
   selectedAxis=axis;
-  resetEditConfirmation();
-
-  const resolved=getAxisPart();
-  if(resolved?.part?.mesh?.visible){
-    showSingleAxisDimension(new THREE.Box3().setFromObject(resolved.part.mesh),axis,'axis');
-    $('tapPoint').textContent=
-      axis.toUpperCase()+'軸表示：部品全体 '+formatRawMm(partWorldSize(resolved.part)[axis])+' mm（選択モードはそのまま）';
-  }
   updateAxisPanel();
-  setStatus(axis.toUpperCase()+'軸を表示・選択モードは変更しません','ok');
+  setStatus(axis.toUpperCase()+'軸を選択しました','ok');
 }
 
 function commitAxisDimension(axis,target){
