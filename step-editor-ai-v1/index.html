@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="theme-color" content="#091522">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <title>岡重機 STEP Editor AI IMPLEMENTATION V1</title>
+  <link rel="stylesheet" href="./style.css?v=ai-v1">
+</head>
+<body>
+<header class="topbar">
+  <div>
+    <h1>岡重機 STEP Editor <small>AI IMPLEMENTATION V1</small></h1>
+    <p>AI実装 第1版・文章指示で寸法編集・部品削除・測定・データ書出し</p>
+  </div>
+  <button id="fitBtn" class="toolBtn" disabled>全体表示</button>
+</header>
+
+<main>
+  <section class="openCard">
+    <label class="openFileBtn" for="stepInput">
+      <span class="openIcon">📂</span>
+      <span>
+        <strong>STEP / STLファイルを選ぶ</strong>
+        <small>Androidの「Files」から .step / .stp / .stl を選択</small>
+      </span>
+      <input id="stepInput" type="file">
+    </label>
+    <div id="fileInfo" class="fileInfo">まだファイルを選んでいません</div>
+    <div id="loadProgress" class="loadProgress hidden"><div id="loadProgressBar"></div></div>
+  </section>
+
+  <section class="viewerCard">
+    <div id="viewer"></div>
+    <div id="status" class="status idle">STEP / STLファイル待ち</div>
+    <div id="loading" class="loading hidden">
+      <div class="spinner"></div>
+      <div id="loadingText">読み込み中…</div>
+    </div>
+    <div id="measureHud" class="measureHud hidden">測定: 1点目をタップ</div>
+    <div id="dragHud" class="dragHud hidden">面をドラッグ</div>
+    <div id="tapHint" class="tapHint">部品モード：タップで外形寸法</div>
+  </section>
+
+  <section class="viewTools">
+    <button id="isoBtn" disabled>アイソメ</button>
+    <button id="frontBtn" disabled>正面</button>
+    <button id="rightBtn" disabled>右</button>
+    <button id="backBtn" disabled>背面</button>
+    <button id="leftBtn" disabled>左</button>
+    <button id="topBtn" disabled>上</button>
+    <button id="bottomBtn" disabled>下</button>
+  </section>
+
+  <section class="quickTools">
+    <button id="modelDimBtn" disabled>📐 全体寸法</button>
+    <button id="measureBtn" disabled>📏 2点測定</button>
+    <button id="clearMeasureBtn" disabled>測定消去</button>
+    <button id="unitBtn" disabled>単位 mm</button>
+    <button id="saveGlbBtn" disabled>💾 GLB保存</button>
+    <button id="gridBtn">グリッド</button>
+  </section>
+
+  <section class="selectModePanel">
+    <div class="modeLabel">選択モード</div>
+    <div class="modeButtons">
+      <button id="partModeBtn" class="active" disabled>🧩 部品</button>
+      <button id="faceModeBtn" disabled>🔎 詳細面</button>
+    </div>
+    <div id="modeHelp" class="modeHelp">部品全体を選択して X・Y・Z 外形寸法を表示します。</div>
+    <div class="detailLevel">
+      <span>詳細面の分け方</span>
+      <button id="fineLevelBtn" class="active" disabled>細かい</button>
+      <button id="normalLevelBtn" disabled>標準</button>
+      <button id="coarseLevelBtn" disabled>粗い</button>
+    </div>
+  </section>
+
+  <section class="statsGrid">
+    <button id="axisXCard" class="stat axisStat" type="button" data-axis="x" disabled><span>X・左右</span><strong id="sizeX">—</strong><small id="unitX">mm</small></button>
+    <button id="axisYCard" class="stat axisStat" type="button" data-axis="y" disabled><span>Y・前後</span><strong id="sizeY">—</strong><small id="unitY">mm</small></button>
+    <button id="axisZCard" class="stat axisStat" type="button" data-axis="z" disabled><span>Z・上下</span><strong id="sizeZ">—</strong><small id="unitZ">mm</small></button>
+    <div class="stat"><span>部品</span><strong id="partCount">—</strong><small>個</small></div>
+  </section>
+
+  <section class="panel nightPromptPanel">
+    <div class="panelHead">
+      <div>
+        <div class="eyebrow">🌙 ナイト操作</div>
+        <h2>文章でサイズ変更</h2>
+      </div>
+      <span class="pill nightLocalPill">端末内</span>
+    </div>
+
+    <div class="nightPromptHint">
+      例：「Xを80mm、左固定」「このパーツを消して」「02_POSTを削除」「元に戻して」
+    </div>
+
+    <textarea id="nightPrompt" class="nightPromptInput" rows="3"
+      placeholder="ナイト、Xを80mmにして左を固定"></textarea>
+
+    <div class="nightPromptActions">
+      <button id="nightRunBtn" class="nightRunBtn" type="button">▶ ナイト実行</button>
+      <button id="nightClearBtn" type="button">消す</button>
+    </div>
+
+    <div class="nightExamples">
+      <button type="button" data-night-example="Xを80mm、左固定">X80 左固定</button>
+      <button type="button" data-night-example="Zを50mm、下固定">Z50 下固定</button>
+      <button type="button" data-night-example="Xを10mm伸ばして、右固定">X +10 右固定</button>
+      <button type="button" data-night-example="このパーツを消して">このパーツ削除</button>
+      <button type="button" data-night-example="元に戻して">↶ 戻す</button>
+    </div>
+
+    <div id="nightReply" class="nightReply idle">
+      ナイト待機中。モデルを開いて、変更したい寸法を文章で指示してください。
+    </div>
+    <p class="editNote">※この版のナイトはAPIキー不要の端末内コマンド解析。第3基本版の編集機能を文章から操作します。</p>
+  </section>
+
+  <section class="panel axisEditPanel">
+    <div class="panelHead">
+      <div>
+        <div class="eyebrow">かんたん寸法編集</div>
+        <h2 id="axisEditTitle">X / Y / Z をタップ</h2>
+      </div>
+      <span id="axisEditBadge" class="pill">軸 未選択</span>
+    </div>
+
+    <div id="axisEditHelp" class="axisEditHelp">
+      上の X・Y・Z をタップすると、その軸だけ編集できます。
+    </div>
+
+    <div class="anchorChoice">
+      <span>どこを固定する？</span>
+      <div class="anchorButtons">
+        <button id="anchorMinBtn" class="active" type="button" disabled>−側固定</button>
+        <button id="anchorCenterBtn" type="button" disabled>中心固定</button>
+        <button id="anchorMaxBtn" type="button" disabled>＋側固定</button>
+      </div>
+    </div>
+
+    <div class="axisQuick">
+      <button type="button" data-axis-delta="-1" disabled>−1.0</button>
+      <button type="button" data-axis-delta="-0.5" disabled>−0.5</button>
+      <button type="button" data-axis-delta="-0.2" disabled>−0.2</button>
+      <button type="button" data-axis-delta="0.2" disabled>+0.2</button>
+      <button type="button" data-axis-delta="0.5" disabled>+0.5</button>
+      <button type="button" data-axis-delta="1" disabled>+1.0</button>
+    </div>
+
+    <div class="axisTargetRow">
+      <label>目標寸法 mm
+        <input id="axisTargetInput" type="number" inputmode="decimal" min="0.01" step="0.1" placeholder="例 45.0" disabled>
+      </label>
+      <button id="applyAxisTargetBtn" class="axisApplyBtn" type="button" disabled>この寸法にする</button>
+    </div>
+
+    <div class="matchHead">他の軸をこの寸法に合わせる</div>
+    <div class="matchButtons">
+      <button id="matchAxis1Btn" type="button" disabled>—</button>
+      <button id="matchAxis2Btn" type="button" disabled>—</button>
+    </div>
+
+    <div class="axisHistoryBar">
+      <button id="axisUndoBtn" type="button" disabled>↶ 戻る</button>
+      <button id="axisRedoBtn" type="button" disabled>↷ やり直す</button>
+    </div>
+    <p class="editNote">※画面上は編集プレビュー。ナイト用データには「どの軸を何mmにしたか」を正確に記録します。</p>
+  </section>
+
+  <section class="panel selectedPanel">
+    <div class="panelHead">
+      <div>
+        <div class="eyebrow">選択部品</div>
+        <h2 id="selectedName">未選択</h2>
+        <div id="selectedPath" class="selectedPath"></div>
+      </div>
+      <div class="selectedDims" id="selectedDims">モデルをタップ</div>
+    </div>
+    <div id="tapPoint" class="tapPoint">タップした部品の外形 X・Y・Z を3D上に自動表示します</div>
+    <div class="partActions">
+      <button id="focusBtn" disabled>選択を拡大</button>
+      <button id="isolateBtn" disabled>これだけ表示</button>
+      <button id="hideBtn" disabled>非表示</button>
+      <button id="showAllBtn" disabled>全て表示</button>
+      <button id="dimSelectedBtn" disabled>寸法線 ON</button>
+      <button id="wireBtn" disabled>ワイヤー</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panelHead">
+      <div>
+        <div class="eyebrow">部品一覧</div>
+        <h2>STEP / CAD パーツ</h2>
+      </div>
+      <span id="visibleCount" class="pill">0 / 0</span>
+    </div>
+    <div id="partsList" class="partsList">
+      <div class="empty">STEPを開くか、下のCAD作成から部品を追加してください</div>
+    </div>
+  </section>
+
+  <section class="panel" id="facesPanel">
+    <div class="panelHead">
+      <div>
+        <div class="eyebrow">詳細面一覧</div>
+        <h2 id="facesTitle">部品を選択してください</h2>
+      </div>
+      <span id="faceCount" class="pill">0 面</span>
+    </div>
+    <div id="faceInfo" class="tapPoint">「詳細面」モードに切り替えると、面・穴まわり・R部などを個別にタップできます。</div>
+    <div id="facesList" class="partsList compactFaces">
+      <div class="empty">部品を選ぶと詳細面がここに並びます</div>
+    </div>
+  </section>
+
+  <section class="panel editPanel">
+    <div class="panelHead">
+      <div>
+        <div class="eyebrow">かんたん編集 V5</div>
+        <h2>選んだ詳細面を直接編集</h2>
+      </div>
+      <span id="editBadge" class="pill">編集 0件</span>
+    </div>
+
+    <div class="historyBar">
+      <button id="undoBtn" disabled>↶ 戻る</button>
+      <button id="redoBtn" disabled>↷ やり直す</button>
+      <button id="resetEditBtn" disabled>元モデルへ戻す</button>
+    </div>
+
+    <div id="editTargetInfo" class="editTargetInfo">
+      「🔎 詳細面」に切り替えて編集したい面をタップしてください。黄色になったら「この面を編集」で確定します。
+    </div>
+
+    <div class="confirmEditRow">
+      <button id="confirmEditFaceBtn" class="confirmFaceBtn" disabled>✓ この面を編集</button>
+      <button id="touchDragToggleBtn" class="dragAssistBtn" disabled>指ドラッグ補助 OFF</button>
+    </div>
+
+    <div class="editBlock">
+      <div class="editBlockHead">
+        <strong>↔ 面を伸ばす / 縮める</strong>
+        <small>平らな端面・爪・一辺側の調整向け</small>
+      </div>
+      <div class="quickNudge">
+        <button type="button" data-push="-1">−1.0</button>
+        <button type="button" data-push="-0.5">−0.5</button>
+        <button type="button" data-push="-0.2">−0.2</button>
+        <button type="button" data-push="0.2">+0.2</button>
+        <button type="button" data-push="0.5">+0.5</button>
+        <button type="button" data-push="1">+1.0</button>
+      </div>
+      <div class="editInputRow">
+        <label>変更量 mm
+          <input id="pushPullAmount" type="number" inputmode="decimal" step="0.1" value="1.0">
+        </label>
+        <button id="applyPushPullBtn" class="editPrimary" disabled>この面を変更</button>
+      </div>
+      <p class="editNote">基本は数値編集です。＋は面の法線方向、−は反対方向。端面なら部品の長さ変更として使えます。</p>
+    </div>
+
+    <div class="editBlock">
+      <div class="editBlockHead">
+        <strong>◯ 穴径を広げる / 狭める</strong>
+        <small>穴の内周など曲面を選択</small>
+      </div>
+      <div class="holeReadout">
+        <span>推定現在径</span><strong id="holeCurrentDia">—</strong>
+        <span>推定軸</span><strong id="holeAxis">—</strong>
+      </div>
+      <div class="editInputRow">
+        <label>変更後 Ø mm
+          <input id="holeTargetDia" type="number" inputmode="decimal" min="0.01" step="0.1" placeholder="例 3.6">
+        </label>
+        <button id="applyHoleBtn" class="editPrimary" disabled>穴径を変更</button>
+      </div>
+      <p class="editNote">ここでは形状プレビューを変更し、正確な再構築用の指示データも同時に記録します。</p>
+    </div>
+
+    <div class="exportGrid">
+      <button id="exportNightBtn" class="nightBtn" disabled>📦 ナイト用データ</button>
+      <button id="saveEditedStlBtn" disabled>💾 編集後の仮STL</button>
+    </div>
+    <p class="editNote">「ナイト用データ」は元STEP＋編集履歴を1ファイル（.okacad）にまとめます。チャットに渡せば正確なCAD/STL再構築に使えます。</p>
+
+    <div class="historyTitle">編集履歴</div>
+    <div id="editHistory" class="editHistory"><div class="empty">まだ編集していません</div></div>
+  </section>
+
+  <section class="panel cadPanel">
+    <div class="panelHead">
+      <div>
+        <div class="eyebrow">簡易CAD</div>
+        <h2>寸法を入れて3D部品を作成</h2>
+      </div>
+      <span class="pill">mm</span>
+    </div>
+
+    <div class="cadBlock">
+      <h3>■ 箱</h3>
+      <div class="cadFields three">
+        <label>X<input id="boxX" type="number" inputmode="decimal" min="0.01" step="0.1" value="40"></label>
+        <label>Y<input id="boxY" type="number" inputmode="decimal" min="0.01" step="0.1" value="30"></label>
+        <label>Z<input id="boxZ" type="number" inputmode="decimal" min="0.01" step="0.1" value="10"></label>
+      </div>
+      <button id="addBoxBtn" class="cadPrimary">箱を追加</button>
+    </div>
+
+    <div class="cadBlock">
+      <h3>● 円柱</h3>
+      <div class="cadFields two">
+        <label>直径<input id="cylD" type="number" inputmode="decimal" min="0.01" step="0.1" value="20"></label>
+        <label>高さ<input id="cylH" type="number" inputmode="decimal" min="0.01" step="0.1" value="20"></label>
+      </div>
+      <button id="addCylinderBtn" class="cadPrimary">円柱を追加</button>
+    </div>
+
+    <div class="cadBlock">
+      <h3>選択CADの位置</h3>
+      <div class="cadFields three">
+        <label>X<input id="posX" type="number" inputmode="decimal" step="0.1" value="0"></label>
+        <label>Y<input id="posY" type="number" inputmode="decimal" step="0.1" value="0"></label>
+        <label>Z<input id="posZ" type="number" inputmode="decimal" step="0.1" value="0"></label>
+      </div>
+      <div class="cadActions">
+        <button id="applyPosBtn" disabled>位置を反映</button>
+        <button id="deleteCadBtn" class="dangerBtn" disabled>選択CADを削除</button>
+      </div>
+    </div>
+
+    <div class="cadActions">
+      <button id="saveStlBtn" disabled>💾 CADをSTL保存</button>
+      <button id="clearCadBtn" disabled>CADだけ全削除</button>
+    </div>
+    <p class="cadNote">STEP部品はそのまま残し、その上にCAD部品を追加できます。CADはSTLで保存できます。</p>
+  </section>
+
+  <details class="panel tips">
+    <summary>操作方法</summary>
+    <p>「部品」モードは部品全体、「詳細面」モードは平面・穴内周・R部などの滑らかにつながる面グループを選択します。選択した範囲の X・Y・Z・面積を表示します。1本指ドラッグ＝回転、2本指＝移動、ピンチ＝拡大縮小。</p>
+    <p>「2点測定」はモデル上の2点間の直線距離を測ります。表示寸法と測定値はSTEPを表示用に三角形化した形状から計算します。</p>
+    <p class="privacy">STEP / STLファイルは端末内で処理し、サーバーへアップロードしません。</p>
+  </details>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.js"></script>
+<script type="importmap">
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+}}
+</script>
+<script type="module" src="./app.js?v=ai-v1"></script>
+</body>
+</html>
