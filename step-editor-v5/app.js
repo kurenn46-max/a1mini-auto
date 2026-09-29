@@ -1244,6 +1244,34 @@ function patchLocalCenter(part, patch) {
   return c.multiplyScalar(1/ids.length);
 }
 
+function patchAxisSide(part, patch, axis) {
+  if(!part||!patch||!['x','y','z'].includes(axis)) return null;
+  const geometry=part.mesh.geometry;
+  geometry.computeBoundingBox();
+  const box=geometry.boundingBox;
+  if(!box || box.isEmpty()) return null;
+
+  const center=patchLocalCenter(part,patch);
+  const extent=Math.max(box.max[axis]-box.min[axis],1e-9);
+  const tol=Math.max(extent*0.025,0.12);
+  const dMin=Math.abs(center[axis]-box.min[axis]);
+  const dMax=Math.abs(box.max[axis]-center[axis]);
+
+  if(dMin<=tol && dMin<dMax) return 'min';
+  if(dMax<=tol && dMax<dMin) return 'max';
+  return null;
+}
+
+function moveFaceVertexIndices(part, patch) {
+  return expandCoincidentVertexIndices(part,uniquePatchVertexIndices(part,patch));
+}
+
+function worldAxisScale(part, axis) {
+  const ws=new THREE.Vector3();
+  part.mesh.getWorldScale(ws);
+  return Math.max(Math.abs(ws[axis]),1e-9);
+}
+
 function estimateHole(part, patch) {
   const geometry=part.mesh.geometry;
   const ids=uniquePatchVertexIndices(part,patch);
@@ -1421,22 +1449,32 @@ function applyEditCommand(cmd){
       );
     }
   }else if(cmd.type==='axisDimension'){
-    geometry.computeBoundingBox();
-    const box=geometry.boundingBox;
-    const axis=cmd.axis;
-    const min=box.min[axis], max=box.max[axis];
-    const current=Math.max(max-min,1e-9);
-    const target=Math.max(Number(cmd.toDimensionMm)||current,0.0001);
-    const scale=target/current;
-    let fixed=min;
-    if(cmd.anchor==='max') fixed=max;
-    else if(cmd.anchor==='center') fixed=(min+max)/2;
-    for(let i=0;i<attr.count;i++){
-      let x=attr.getX(i), y=attr.getY(i), z=attr.getZ(i);
-      if(axis==='x') x=fixed+(x-fixed)*scale;
-      else if(axis==='y') y=fixed+(y-fixed)*scale;
-      else z=fixed+(z-fixed)*scale;
-      attr.setXYZ(i,x,y,z);
+    if(cmd.mode==='move-face' && Array.isArray(cmd.vertexIndices) && cmd.vertexIndices.length){
+      const delta=Number(cmd.deltaLocalMm)||0;
+      for(const i of cmd.vertexIndices){
+        if(cmd.axis==='x') attr.setX(i,attr.getX(i)+delta);
+        else if(cmd.axis==='y') attr.setY(i,attr.getY(i)+delta);
+        else attr.setZ(i,attr.getZ(i)+delta);
+      }
+    }else{
+      // Legacy fallback for old edit histories only.
+      geometry.computeBoundingBox();
+      const box=geometry.boundingBox;
+      const axis=cmd.axis;
+      const min=box.min[axis], max=box.max[axis];
+      const current=Math.max(max-min,1e-9);
+      const target=Math.max(Number(cmd.toDimensionMm)||current,0.0001);
+      const scale=target/current;
+      let fixed=min;
+      if(cmd.anchor==='max') fixed=max;
+      else if(cmd.anchor==='center') fixed=(min+max)/2;
+      for(let i=0;i<attr.count;i++){
+        let x=attr.getX(i), y=attr.getY(i), z=attr.getZ(i);
+        if(axis==='x') x=fixed+(x-fixed)*scale;
+        else if(axis==='y') y=fixed+(y-fixed)*scale;
+        else z=fixed+(z-fixed)*scale;
+        attr.setXYZ(i,x,y,z);
+      }
     }
   }else if(cmd.type==='holeDiameter'){
     const c=new THREE.Vector3(cmd.center[0],cmd.center[1],cmd.center[2]);
@@ -1478,7 +1516,8 @@ function editDescription(cmd){
     return '面を '+sign+Number(cmd.deltaMm.toFixed(3))+' mm 移動';
   }
   if(cmd.type==='axisDimension'){
-    return cmd.axis.toUpperCase()+'寸法 '+Number(cmd.fromDimensionMm.toFixed(3))+' → '+Number(cmd.toDimensionMm.toFixed(3))+' mm';
+    const prefix=cmd.mode==='move-face'?'面移動 ':'';
+    return prefix+cmd.axis.toUpperCase()+'寸法 '+Number(cmd.fromDimensionMm.toFixed(3))+' → '+Number(cmd.toDimensionMm.toFixed(3))+' mm';
   }
   if(cmd.type==='holeDiameter'){
     return '穴径 Ø'+Number(cmd.fromDiameterMm.toFixed(3))+' → Ø'+Number(cmd.toDiameterMm.toFixed(3))+' mm';
@@ -1611,10 +1650,40 @@ function updateAxisPanel(){
   $('anchorMaxBtn').textContent='＋'+axisLabel+'側固定';
   $('axisEditTitle').textContent=selectedAxis.toUpperCase()+'方向を編集';
   $('axisEditBadge').textContent=selectedAxis.toUpperCase()+' 選択中';
-  $('axisEditHelp').textContent=
-    resolved.part.name+' の '+selectedAxis.toUpperCase()+'寸法 '+formatRawMm(dim)+' mm を変更します。';
+  const part=resolved.part;
+  const patch=(selectedPatch && selectedPatch.partIndex===resolved.index)
+    ? part.patches?.[selectedPatch.patchIndex] : null;
+  const side=patch ? patchAxisSide(part,patch,selectedAxis) : null;
+
   $('axisTargetInput').value=Number(dim.toFixed(3));
-  setAxisControlsEnabled(true);
+
+  if(!patch){
+    $('axisEditHelp').textContent=
+      '先に「詳細面」で動かす端面を選んでください。軸編集は全体スケールせず、選んだ面だけを移動します。';
+    setAxisControlsEnabled(false);
+  }else if(!side){
+    $('axisEditHelp').textContent=
+      'この面は '+selectedAxis.toUpperCase()+'軸の端面ではありません。'+
+      selectedAxis.toUpperCase()+'方向のいちばん端の平らな面を選んでください。';
+    setAxisControlsEnabled(false);
+  }else{
+    axisAnchor=side==='max'?'min':'max';
+    $('axisEditHelp').textContent=
+      resolved.part.name+' の '+selectedAxis.toUpperCase()+'寸法 '+formatRawMm(dim)+
+      ' mm。選択した '+(side==='max'?'＋':'−')+selectedAxis.toUpperCase()+
+      '端面だけを移動します。';
+    setAxisControlsEnabled(true);
+    $('anchorCenterBtn').disabled=true;
+    if(side==='max'){
+      $('anchorMaxBtn').disabled=true;
+      $('anchorMinBtn').disabled=false;
+    }else{
+      $('anchorMinBtn').disabled=true;
+      $('anchorMaxBtn').disabled=false;
+    }
+    ['anchorMinBtn','anchorCenterBtn','anchorMaxBtn'].forEach(id=>$(id).classList.remove('active'));
+    $(axisAnchor==='min'?'anchorMinBtn':'anchorMaxBtn').classList.add('active');
+  }
 
   const others=['x','y','z'].filter(a=>a!==selectedAxis);
   $('matchAxis1Btn').textContent=others[0].toUpperCase()+'を'+selectedAxis.toUpperCase()+'に合わせる';
@@ -1625,31 +1694,72 @@ function updateAxisPanel(){
 
 function selectAxis(axis){
   selectedAxis=axis;
+  const resolved=getAxisPart();
+  const patch=(resolved && selectedPatch && selectedPatch.partIndex===resolved.index)
+    ? resolved.part.patches?.[selectedPatch.patchIndex] : null;
+  const side=patch ? patchAxisSide(resolved.part,patch,axis) : null;
+  if(side) axisAnchor=side==='max'?'min':'max';
   updateAxisPanel();
-  setStatus(axis.toUpperCase()+'軸を選択しました','ok');
+  setStatus(side
+    ? axis.toUpperCase()+'軸：選択端面をMove Face編集'
+    : axis.toUpperCase()+'軸を選択・先に端面を選んでください','ok');
 }
 
 function commitAxisDimension(axis,target){
   const resolved=getAxisPart();
   if(!resolved){setStatus('先に編集する部品を選んでください','error');return;}
-  const current=partWorldSize(resolved.part)[axis];
+  if(!selectedPatch || selectedPatch.partIndex!==resolved.index){
+    setStatus('先に詳細面で動かす端面を選んでください','error'); return;
+  }
+
+  const part=resolved.part;
+  const patch=part.patches?.[selectedPatch.patchIndex];
+  if(!patch){setStatus('選択面を取得できません','error');return;}
+
+  const side=patchAxisSide(part,patch,axis);
+  if(!side){
+    setStatus(axis.toUpperCase()+'軸の端面を選んでください','error'); return;
+  }
+
+  const requiredAnchor=side==='max'?'min':'max';
+  if(axisAnchor!==requiredAnchor){
+    setStatus('選んだ面を動かすため '+(requiredAnchor==='min'?'−':'＋')+
+      axis.toUpperCase()+'側を固定してください','error');
+    return;
+  }
+
+  const current=partWorldSize(part)[axis];
   const to=Number(target);
   if(!Number.isFinite(to)||to<=0){setStatus('目標寸法を確認してください','error');return;}
   if(Math.abs(to-current)<0.0001){setStatus('現在と同じ寸法です','error');return;}
+
+  const deltaWorld=to-current;
+  const deltaLocal=(side==='max'?deltaWorld:-deltaWorld)/worldAxisScale(part,axis);
+  const vertexIndices=moveFaceVertexIndices(part,patch);
+  if(!vertexIndices.length){setStatus('選択面の頂点を取得できません','error');return;}
+
+  const stats=computePatchStats(part,patch);
   const cmd={
     type:'axisDimension',
+    mode:'move-face',
     partIndex:resolved.index,
+    patchIndex:selectedPatch.patchIndex,
+    vertexIndices,
     axis,
-    anchor:axisAnchor,
+    side,
+    anchor:requiredAnchor,
+    deltaWorldMm:deltaWorld,
+    deltaLocalMm:deltaLocal,
     fromDimensionMm:current,
     toDimensionMm:to,
     feature:{
-      partName:resolved.part.name,
-      partPath:resolved.part.path||resolved.part.name,
+      ...featureSignature(part,selectedPatch.patchIndex,stats),
       axis,
-      anchor:axisAnchor
+      side,
+      anchor:requiredAnchor,
+      editMode:'move-face'
     },
-    inputMethod:'axis-card'
+    inputMethod:'axis-card-move-face'
   };
   commitEdit(cmd);
   updateAxisPanel();
@@ -1768,7 +1878,7 @@ async function exportNightPackage(){
   const payload={
     format:'OKA-CAD-EDIT',
     version:1,
-    app:'岡重機 STEP Editor V5',
+    app:'岡重機 STEP Editor V5.5.5 MOVE FACE',
     createdAt:new Date().toISOString(),
     sourceFile:originalStepName,
     unit:'mm',
@@ -2379,6 +2489,46 @@ $('applyPosBtn').addEventListener('click',applyCadPosition);
 $('deleteCadBtn').addEventListener('click',deleteSelectedCad);
 $('clearCadBtn').addEventListener('click',clearCadParts);
 $('saveStlBtn').addEventListener('click',saveCadStl);
+
+if(new URLSearchParams(location.search).has('ui-smoke')){
+  window.__okaTest={
+    state(){
+      const part=(selectedIndex>=0&&parts[selectedIndex])?parts[selectedIndex]:null;
+      let bounds=null,totalVertices=0;
+      if(part){
+        part.mesh.geometry.computeBoundingBox();
+        const b=part.mesh.geometry.boundingBox;
+        bounds={
+          min:{x:b.min.x,y:b.min.y,z:b.min.z},
+          max:{x:b.max.x,y:b.max.y,z:b.max.z}
+        };
+        totalVertices=part.mesh.geometry.getAttribute('position')?.count||0;
+      }
+      const cmd=editCursor>0?editHistory[editCursor-1]:null;
+      return {
+        selectionMode,selectedAxis,selectedPatch: selectedPatch?{...selectedPatch}:null,
+        selectedIndex,editCursor,
+        partSize:part?{x:partWorldSize(part).x,y:partWorldSize(part).y,z:partWorldSize(part).z}:null,
+        bounds,totalVertices,
+        lastCommand:cmd?{
+          type:cmd.type,mode:cmd.mode,axis:cmd.axis,side:cmd.side,anchor:cmd.anchor,
+          deltaWorldMm:cmd.deltaWorldMm,deltaLocalMm:cmd.deltaLocalMm,
+          fromDimensionMm:cmd.fromDimensionMm,toDimensionMm:cmd.toDimensionMm,
+          vertexCount:Array.from(cmd.vertexIndices||[]).length
+        }:null
+      };
+    },
+    extremePatch(axis,side){
+      const part=(selectedIndex>=0&&parts[selectedIndex])?parts[selectedIndex]:null;
+      if(!part) return null;
+      ensureDetailPatches(part);
+      for(let i=0;i<(part.patches?.length||0);i++){
+        if(patchAxisSide(part,part.patches[i],axis)===side) return i;
+      }
+      return null;
+    }
+  };
+}
 
 setModelButtons(false);
 setSelectedButtons(false);
