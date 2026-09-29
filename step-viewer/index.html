@@ -57,7 +57,7 @@ document.addEventListener("DOMContentLoaded",()=>{
       <label for="nativePicker">📂 ファイルを選択</label>
       <input id="nativePicker" type="file">
     </div>
-    <div id="pickedName"></div>
+    <div id="pickedName"></div><button id="startLoadBtn" type="button" style="display:none;width:100%;margin-top:10px;border:0;border-radius:12px;background:#2563eb;color:white;font-weight:900;font-size:17px;padding:13px">▶ 選んだファイルを表示</button>
     <div class="note">STEP / STP / STL を選択できます。<br>ファイルはサーバーへ送信せず、この端末のブラウザ内で処理します。</div>
     <div id="bootError"></div>
   </div>
@@ -83,12 +83,22 @@ document.addEventListener("DOMContentLoaded",()=>{
     <button class="tool" id="fitBtn"><span class="ico">◎</span><span>全体</span></button>
   </div>
 </section>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+  }
+}
+</script>
 <script type="module">
-import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js";
-import {OrbitControls} from "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/controls/OrbitControls.js";
-import {STLLoader} from "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/loaders/STLLoader.js";
+import * as THREE from "three";
+import {OrbitControls} from "three/addons/controls/OrbitControls.js";
+import {STLLoader} from "three/addons/loaders/STLLoader.js";
 
-const landing=document.getElementById("landing"),viewerPage=document.getElementById("viewerPage"),wrap=document.getElementById("viewerWrap"),picker=document.getElementById("nativePicker"),pickedName=document.getElementById("pickedName"),bootError=document.getElementById("bootError"),loading=document.getElementById("loading"),toast=document.getElementById("toast"),partsEl=document.getElementById("parts"),drawer=document.getElementById("drawer"),infoName=document.getElementById("infoName"),infoDims=document.getElementById("infoDims"),measureText=document.getElementById("measureText"),overallDims=document.getElementById("overallDims"),fileName=document.getElementById("fileName"),partCount=document.getElementById("partCount");
+const landing=document.getElementById("landing"),viewerPage=document.getElementById("viewerPage"),wrap=document.getElementById("viewerWrap"),picker=document.getElementById("nativePicker"),pickedName=document.getElementById("pickedName"),bootError=document.getElementById("bootError"),loading=document.getElementById("loading"),toast=document.getElementById("toast"),partsEl=document.getElementById("parts"),drawer=document.getElementById("drawer"),infoName=document.getElementById("infoName"),infoDims=document.getElementById("infoDims"),measureText=document.getElementById("measureText"),overallDims=document.getElementById("overallDims"),fileName=document.getElementById("fileName"),partCount=document.getElementById("partCount"),startLoadBtn=document.getElementById("startLoadBtn");
+let selectedFile=null;
+window.__okaViewerModuleReady=true;
 
 const scene=new THREE.Scene();scene.background=new THREE.Color(0x0b1020);
 const camera=new THREE.PerspectiveCamera(45,1,.01,100000);camera.position.set(120,90,120);
@@ -109,8 +119,15 @@ function walkNode(node,srcMeshes,used,path){if(!node)return;const label=node.nam
 async function loadStep(buf){if(!occtPromise){if(typeof window.occtimportjs!=="function")throw new Error("STEPエンジンを読み込めませんでした");occtPromise=window.occtimportjs({locateFile:path=>path.endsWith(".wasm")?"https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.wasm":path})}const occt=await occtPromise;const result=occt.ReadStepFile(new Uint8Array(buf),{linearUnit:"millimeter",linearDeflectionType:"bounding_box_ratio",linearDeflection:.001,angularDeflection:.5});if(!result?.success)throw new Error("STEPの解析に失敗しました");const used=new Set();walkNode(result.root,result.meshes,used,"");result.meshes.forEach((m,i)=>{if(!used.has(i))addPart(m.name,[i],result.meshes,used)});if(!parts.length)throw new Error("表示できるパーツがありません")}
 function loadStl(buf){const g=new STLLoader().parse(buf);g.computeVertexNormals();const obj=new THREE.Mesh(g,makeMaterial(null)),pg=new THREE.Group();pg.add(obj);modelRoot.add(pg);const p={name:"STL パーツ",group:pg,meshes:[obj],size:new THREE.Vector3(),center:new THREE.Vector3(),explodeTarget:new THREE.Vector3()};parts=[p];meshToPart.set(obj,p);flash("STLは単位情報がないためmmとして表示します")}
 function finalizeParts(){modelRoot.updateMatrixWorld(true);const whole=new THREE.Box3().setFromObject(modelRoot);whole.getCenter(assemblyCenter);whole.getSize(originalAssemblySize);assemblyDiagonal=Math.max(originalAssemblySize.length(),1);parts.forEach((p,i)=>{const b=new THREE.Box3().setFromObject(p.group);b.getSize(p.size);b.getCenter(p.center);let dir=p.center.clone().sub(assemblyCenter);if(dir.length()<.001)dir.set(Math.cos(i*2.399),.25*Math.sin(i),Math.sin(i*2.399));p.explodeTarget.copy(dir.normalize().multiplyScalar(assemblyDiagonal*.23))});overallDims.textContent=dimsText(originalAssemblySize);partCount.textContent="("+parts.length+")";buildPartList();selectPart(parts[0]||null,false);fitCamera()}
-async function openFile(file){if(!file)return;const ext=(file.name.split(".").pop()||"").toLowerCase();if(!["step","stp","stl"].includes(ext)){alert("STEP / STP / STL ファイルを選んでください。");picker.value="";return}pickedName.textContent="選択: "+file.name;landing.style.display="none";viewerPage.style.display="block";fileName.textContent=file.name;requestAnimationFrame(()=>{resize();loading.classList.add("show")});try{disposeRoot();const buf=await file.arrayBuffer();if(ext==="stl")loadStl(buf);else await loadStep(buf);finalizeParts()}catch(e){console.error(e);viewerPage.style.display="none";landing.style.display="flex";bootError.textContent="読み込み失敗: "+(e.message||e);bootError.style.display="block"}finally{loading.classList.remove("show");picker.value=""}}
-picker.addEventListener("change",()=>openFile(picker.files?.[0]));
+async function openFile(file){if(!file)return;const ext=(file.name.split(".").pop()||"").toLowerCase();if(!["step","stp","stl"].includes(ext)){alert("STEP / STP / STL ファイルを選んでください。");picker.value="";return}pickedName.textContent="選択: "+file.name;landing.style.display="none";viewerPage.style.display="block";fileName.textContent=file.name;requestAnimationFrame(()=>{resize();loading.classList.add("show")});try{disposeRoot();const buf=await file.arrayBuffer();if(ext==="stl")loadStl(buf);else await loadStep(buf);finalizeParts()}catch(e){console.error(e);viewerPage.style.display="none";landing.style.display="flex";bootError.textContent="読み込み失敗: "+(e.message||e)+"。下の青いボタンでもう一度試せます。";bootError.style.display="block";startLoadBtn.style.display="block"}finally{loading.classList.remove("show")}}
+picker.addEventListener("change",()=>{
+    selectedFile=picker.files?.[0]||null;
+    if(!selectedFile)return;
+    startLoadBtn.style.display="block";
+    startLoadBtn.textContent="▶ 選んだファイルを表示";
+    openFile(selectedFile);
+  });
+  startLoadBtn.addEventListener("click",()=>{if(selectedFile)openFile(selectedFile)});
 function buildPartList(){partsEl.innerHTML="";parts.forEach((p,i)=>{const b=document.createElement("button");b.className="part";const d=document.createElement("span");d.className="dot";const t=document.createElement("div");t.className="ptext";const n=document.createElement("div");n.className="pname";n.textContent=(i+1)+". "+p.name;const s=document.createElement("div");s.className="pdim";s.textContent=dimsText(p.size);t.append(n,s);b.append(d,t);b.onclick=()=>selectPart(p,true);p.listEl=b;partsEl.appendChild(b)})}
 function setPartAppearance(mode){parts.forEach(p=>p.meshes.forEach(m=>{m.visible=mode!=="isolate"||p===selectedPart;m.material.opacity=(mode==="ghost"&&selectedPart&&p!==selectedPart)?.12:1;m.material.depthWrite=!(mode==="ghost"&&selectedPart&&p!==selectedPart)}))}
 function selectPart(p,fromList){selectedPart=p;parts.forEach(x=>{x.listEl?.classList.toggle("active",x===p);x.meshes.forEach(m=>{m.material.emissive.setHex(x===p?0x17345b:0);m.material.emissiveIntensity=x===p?.7:0})});if(p){infoName.textContent=p.name;infoDims.textContent=dimsText(p.size);if(!measureMode)measureText.textContent="このパーツの外形寸法";if(fromList){drawer.classList.remove("open");focusPart(p)}}}
