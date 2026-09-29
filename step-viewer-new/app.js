@@ -64,6 +64,9 @@ scene.add(measureGroup);
 const dimensionGroup = new THREE.Group();
 scene.add(dimensionGroup);
 
+const faceHighlightGroup = new THREE.Group();
+scene.add(faceHighlightGroup);
+
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 
@@ -81,6 +84,9 @@ let unitMode = 'mm';
 let selectedDimsOn = true;
 let dimensionOwner = null;
 let lastTapPoint = null;
+let selectionMode = 'part';
+let detailAngleDeg = 12;
+let selectedPatch = null;
 
 function setStatus(text, type = 'idle') {
   const el = $('status');
@@ -224,6 +230,8 @@ function clearPartDimensions() {
 function disposeModel() {
   clearMeasurement();
   clearPartDimensions();
+  clearGroup(faceHighlightGroup);
+  selectedPatch = null;
   for (const part of parts) {
     modelGroup.remove(part.mesh);
     part.mesh.geometry.dispose();
@@ -243,6 +251,10 @@ function disposeModel() {
   $('selectedPath').textContent = '';
   $('selectedDims').textContent = 'モデルをタップ';
   $('tapPoint').textContent = 'タップした部品の外形 X・Y・Z を3D上に自動表示します';
+  $('facesTitle').textContent = '部品を選択してください';
+  $('faceCount').textContent = '0 面';
+  $('faceInfo').textContent = '「詳細面」モードに切り替えると、面・穴まわり・R部などを個別にタップできます。';
+  $('facesList').innerHTML = '<div class="empty">部品を選ぶと詳細面がここに並びます</div>';
   updateVisibleCount();
   setModelButtons(false);
   setSelectedButtons(false);
@@ -252,7 +264,7 @@ function setModelButtons(enabled) {
   [
     'fitBtn','isoBtn','frontBtn','rightBtn','backBtn','leftBtn','topBtn','bottomBtn',
     'modelDimBtn','measureBtn','clearMeasureBtn','unitBtn','saveGlbBtn',
-    'showAllBtn','wireBtn'
+    'showAllBtn','wireBtn','partModeBtn','faceModeBtn','fineLevelBtn','normalLevelBtn','coarseLevelBtn'
   ].forEach(id => $(id).disabled = !enabled);
 }
 
@@ -384,7 +396,11 @@ function buildModel(result) {
       : Math.floor(geometry.getAttribute('position').count / 3);
 
     parts.push({
-      mesh, name, path: info.path || name, localBox, localSize, triangles, source:'step'
+      mesh, name, path: info.path || name, localBox, localSize, triangles, source:'step',
+      brepFaces: Array.isArray(meshData.brep_faces) ? meshData.brep_faces.map(f => ({
+        first:Number(f.first)||0, last:Number(f.last)||0, color:f.color||null
+      })) : [],
+      patches:null, triToPatch:null, patchMode:null, patchAngle:null
     });
   });
 
@@ -430,7 +446,8 @@ function renderPartsList() {
     small.textContent =
       formatLengthValue(size.x) + ' × ' +
       formatLengthValue(size.y) + ' × ' +
-      formatLengthValue(size.z) + ' ' + unitName();
+      formatLengthValue(size.z) + ' ' + unitName() +
+      (part.patches ? ' ・ 詳細 ' + part.patches.length : '');
     nameWrap.append(strong, small);
 
     const select = document.createElement('button');
@@ -503,6 +520,8 @@ function selectPart(index, scrollIntoView = false, tapPoint = null) {
 
   updateSelectedInfo(part);
   setSelectedButtons(true);
+  ensureDetailPatches(part);
+  renderFacesList(part, index);
 
   const isCad = part.source === 'cad';
   $('applyPosBtn').disabled = !isCad;
@@ -514,10 +533,15 @@ function selectPart(index, scrollIntoView = false, tapPoint = null) {
     $('posZ').value = Number((part.mesh.position.z - baseZ).toFixed(3));
   }
 
-  if (selectedDimsOn && part.mesh.visible) {
+  clearGroup(faceHighlightGroup);
+  selectedPatch = null;
+  if (selectionMode === 'part' && selectedDimsOn && part.mesh.visible) {
     showBoxDimensions(new THREE.Box3().setFromObject(part.mesh), 'part');
   } else {
     clearPartDimensions();
+    if (selectionMode === 'face') {
+      $('tapPoint').textContent = '詳細面モード：見たい面・穴内周・R部を直接タップしてください';
+    }
   }
   updateDimensionButtons();
 }
@@ -657,6 +681,7 @@ function focusSelected() {
 }
 
 function showAll() {
+  clearFaceHighlight();
   for (const part of parts) part.mesh.visible = true;
   document.querySelectorAll('.partRow').forEach(row => row.style.opacity = '1');
   document.querySelectorAll('.eyeBtn').forEach(btn => btn.textContent = '👁');
@@ -668,6 +693,7 @@ function showAll() {
 
 function isolateSelected() {
   if (selectedIndex < 0) return;
+  clearFaceHighlight();
   parts.forEach((part, i) => part.mesh.visible = i === selectedIndex);
   document.querySelectorAll('.partRow').forEach((row, i) => {
     row.style.opacity = i === selectedIndex ? '1' : '.55';
@@ -680,6 +706,7 @@ function isolateSelected() {
 
 function hideSelected() {
   if (selectedIndex < 0) return;
+  clearFaceHighlight();
   parts[selectedIndex].mesh.visible = false;
   const row = document.querySelector('.partRow[data-index="' + selectedIndex + '"]');
   if (row) {
@@ -712,6 +739,13 @@ function toggleUnit() {
     if (box) showBoxDimensions(box, 'model');
   } else if (dimensionOwner === 'part' && selectedIndex >= 0 && parts[selectedIndex]) {
     showBoxDimensions(new THREE.Box3().setFromObject(parts[selectedIndex].mesh), 'part');
+  } else if (dimensionOwner === 'face' && selectedPatch) {
+    const p = parts[selectedPatch.partIndex];
+    if (p && p.patches?.[selectedPatch.patchIndex]) {
+      const st = computePatchStats(p, p.patches[selectedPatch.patchIndex]);
+      showBoxDimensions(st.box, 'face');
+      updateFaceReadout(p, selectedPatch.patchIndex, st);
+    }
   }
 
   if (measurePoints.length === 2) {
@@ -766,6 +800,371 @@ function finishMeasurement(a, b, createLine = true) {
   measureMode = false;
 }
 
+
+function triangleVertexIndex(geometry, triIndex, corner) {
+  if (geometry.index) return geometry.index.getX(triIndex * 3 + corner);
+  return triIndex * 3 + corner;
+}
+
+function trianglePoint(geometry, triIndex, corner, target = new THREE.Vector3()) {
+  const i = triangleVertexIndex(geometry, triIndex, corner);
+  const pos = geometry.getAttribute('position');
+  return target.set(pos.getX(i), pos.getY(i), pos.getZ(i));
+}
+
+function triangleNormal(geometry, triIndex, target = new THREE.Vector3()) {
+  const a=trianglePoint(geometry,triIndex,0,new THREE.Vector3());
+  const b=trianglePoint(geometry,triIndex,1,new THREE.Vector3());
+  const c=trianglePoint(geometry,triIndex,2,new THREE.Vector3());
+  return target.subVectors(b,a).cross(new THREE.Vector3().subVectors(c,a)).normalize();
+}
+
+function triangleCountFor(geometry) {
+  return geometry.index ? Math.floor(geometry.index.count / 3) : Math.floor(geometry.getAttribute('position').count / 3);
+}
+
+function positionWeldId(geometry, vertexIndex, cache, map) {
+  if (cache.has(vertexIndex)) return cache.get(vertexIndex);
+  const p=geometry.getAttribute('position');
+  const q=100000;
+  const key=
+    Math.round(p.getX(vertexIndex)*q)+','+
+    Math.round(p.getY(vertexIndex)*q)+','+
+    Math.round(p.getZ(vertexIndex)*q);
+  let id=map.get(key);
+  if (id === undefined) { id=map.size; map.set(key,id); }
+  cache.set(vertexIndex,id);
+  return id;
+}
+
+function buildPatchesFromBrep(part) {
+  const geometry=part.mesh.geometry;
+  const triCount=triangleCountFor(geometry);
+  const faces=(part.brepFaces||[]).filter(f =>
+    Number.isFinite(f.first) && Number.isFinite(f.last) && f.last>=f.first &&
+    f.first>=0 && f.first<triCount
+  );
+  if (faces.length < 2) return null;
+  // If STEP conversion made almost every triangle a separate BREP face, use smooth grouping instead.
+  if (faces.length > 250 || faces.length > triCount * 0.45) return null;
+
+  const patches=[];
+  const triToPatch=new Int32Array(triCount); triToPatch.fill(-1);
+  for (const f of faces) {
+    const triangles=[];
+    const first=Math.max(0,Math.floor(f.first));
+    const last=Math.min(triCount-1,Math.floor(f.last));
+    for (let t=first;t<=last;t++) triangles.push(t);
+    if (!triangles.length) continue;
+    const idx=patches.length;
+    triangles.forEach(t=>triToPatch[t]=idx);
+    patches.push({triangles,source:'brep'});
+  }
+  return patches.length ? {patches,triToPatch,mode:'STEP面'} : null;
+}
+
+function buildSmoothPatches(part, angleDeg) {
+  const geometry=part.mesh.geometry;
+  const triCount=triangleCountFor(geometry);
+  if (!triCount) return {patches:[],triToPatch:new Int32Array(0),mode:'自動分割'};
+  const normals=new Array(triCount);
+  const edgeMap=new Map();
+  const weldMap=new Map(), weldCache=new Map();
+
+  for (let t=0;t<triCount;t++) {
+    normals[t]=triangleNormal(geometry,t,new THREE.Vector3());
+    const ids=[0,1,2].map(c => {
+      const vi=triangleVertexIndex(geometry,t,c);
+      return positionWeldId(geometry,vi,weldCache,weldMap);
+    });
+    for (const [u,v] of [[ids[0],ids[1]],[ids[1],ids[2]],[ids[2],ids[0]]]) {
+      const key=u<v ? u+':'+v : v+':'+u;
+      let arr=edgeMap.get(key);
+      if (!arr) { arr=[]; edgeMap.set(key,arr); }
+      arr.push(t);
+    }
+  }
+
+  const neighbors=Array.from({length:triCount},()=>[]);
+  for (const arr of edgeMap.values()) {
+    if (arr.length < 2) continue;
+    for (let i=0;i<arr.length;i++) for (let j=i+1;j<arr.length;j++) {
+      neighbors[arr[i]].push(arr[j]);
+      neighbors[arr[j]].push(arr[i]);
+    }
+  }
+
+  const cosLimit=Math.cos(THREE.MathUtils.degToRad(angleDeg));
+  const triToPatch=new Int32Array(triCount); triToPatch.fill(-1);
+  const patches=[];
+
+  for (let start=0;start<triCount;start++) {
+    if (triToPatch[start] !== -1) continue;
+    const patchIndex=patches.length;
+    const queue=[start], triangles=[];
+    triToPatch[start]=patchIndex;
+    while(queue.length) {
+      const t=queue.pop();
+      triangles.push(t);
+      const n=normals[t];
+      for (const nb of neighbors[t]) {
+        if (triToPatch[nb] !== -1) continue;
+        if (n.dot(normals[nb]) >= cosLimit) {
+          triToPatch[nb]=patchIndex;
+          queue.push(nb);
+        }
+      }
+    }
+    patches.push({triangles,source:'smooth'});
+  }
+  return {patches,triToPatch,mode:'自動分割 '+angleDeg+'°'};
+}
+
+function ensureDetailPatches(part) {
+  if (!part) return;
+  if (part.patches && part.patchAngle === detailAngleDeg) return;
+  part.mesh.updateMatrixWorld(true);
+
+  let built = part.source === 'step' ? buildPatchesFromBrep(part) : null;
+  if (!built) built = buildSmoothPatches(part, detailAngleDeg);
+
+  part.patches=built.patches;
+  part.triToPatch=built.triToPatch;
+  part.patchMode=built.mode;
+  part.patchAngle=detailAngleDeg;
+  part.patches.forEach((p,i)=>p.index=i);
+}
+
+function computePatchStats(part, patch) {
+  const geometry=part.mesh.geometry;
+  part.mesh.updateMatrixWorld(true);
+  const matrix=part.mesh.matrixWorld;
+  const box=new THREE.Box3();
+  let area=0;
+  const normals=[];
+  const a=new THREE.Vector3(), b=new THREE.Vector3(), c=new THREE.Vector3();
+
+  for (const t of patch.triangles) {
+    trianglePoint(geometry,t,0,a).applyMatrix4(matrix);
+    trianglePoint(geometry,t,1,b).applyMatrix4(matrix);
+    trianglePoint(geometry,t,2,c).applyMatrix4(matrix);
+    box.expandByPoint(a); box.expandByPoint(b); box.expandByPoint(c);
+    const ab=new THREE.Vector3().subVectors(b,a);
+    const ac=new THREE.Vector3().subVectors(c,a);
+    const cross=new THREE.Vector3().crossVectors(ab,ac);
+    area += cross.length() * 0.5;
+    if (cross.lengthSq()>1e-16) normals.push(cross.normalize().clone());
+  }
+
+  let planar=true;
+  if (normals.length>1) {
+    const base=normals[0];
+    const cos2=Math.cos(THREE.MathUtils.degToRad(2));
+    for (let i=1;i<normals.length;i++) {
+      if (base.dot(normals[i]) < cos2) { planar=false; break; }
+    }
+  }
+  const size=box.isEmpty()?new THREE.Vector3():box.getSize(new THREE.Vector3());
+  return {box,size,area,type:planar?'平面':'曲面',triangles:patch.triangles.length};
+}
+
+function clearFaceHighlight() {
+  clearGroup(faceHighlightGroup);
+  selectedPatch=null;
+  document.querySelectorAll('.faceRow.selected').forEach(el=>el.classList.remove('selected'));
+}
+
+function highlightPatch(part, patch) {
+  clearGroup(faceHighlightGroup);
+  const geometry=part.mesh.geometry;
+  part.mesh.updateMatrixWorld(true);
+  const pos=[];
+  const v=new THREE.Vector3();
+  for (const t of patch.triangles) {
+    for (let c=0;c<3;c++) {
+      trianglePoint(geometry,t,c,v).applyMatrix4(part.mesh.matrixWorld);
+      pos.push(v.x,v.y,v.z);
+    }
+  }
+  if (!pos.length) return;
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  g.computeVertexNormals();
+  const m=new THREE.MeshBasicMaterial({
+    color:0xffc247,transparent:true,opacity:.48,side:THREE.DoubleSide,
+    depthTest:false,depthWrite:false
+  });
+  const mesh=new THREE.Mesh(g,m);
+  mesh.renderOrder=80;
+  faceHighlightGroup.add(mesh);
+}
+
+function updateFaceReadout(part, patchIndex, stats) {
+  const patch=part.patches?.[patchIndex];
+  if (!patch) return;
+  $('selectedName').textContent = part.name + ' / 詳細面 ' + (patchIndex+1);
+  $('selectedPath').textContent = part.path || '';
+  $('selectedDims').innerHTML =
+    'X '+formatLength(stats.size.x)+'<br>'+
+    'Y '+formatLength(stats.size.y)+'<br>'+
+    'Z '+formatLength(stats.size.z);
+  $('tapPoint').innerHTML =
+    stats.type+' ・ 面積 '+formatLengthValue(stats.area)+(unitMode==='m'?' m²':' mm²')+
+    ' ・ '+stats.triangles+' triangles';
+  $('faceInfo').innerHTML =
+    '<strong>詳細面 '+(patchIndex+1)+'</strong>　'+stats.type+
+    '　面積 '+formatLengthValue(stats.area)+(unitMode==='m'?' m²':' mm²')+
+    '<br>X '+formatLength(stats.size.x)+' / Y '+formatLength(stats.size.y)+' / Z '+formatLength(stats.size.z);
+}
+
+function selectPatch(partIndex, patchIndex, scroll=true) {
+  const part=parts[partIndex];
+  if (!part) return;
+  ensureDetailPatches(part);
+  const patch=part.patches?.[patchIndex];
+  if (!patch) return;
+
+  if (selectedIndex !== partIndex) {
+    selectedIndex=partIndex;
+    clearSelectionHighlight();
+    if (part.mesh.material?.emissive) {
+      part.mesh.material.emissive.setHex(0x168fd2);
+      part.mesh.material.emissiveIntensity=.18;
+    }
+    const row=document.querySelector('.partRow[data-index="'+partIndex+'"]');
+    if (row) row.classList.add('selected');
+    renderFacesList(part,partIndex);
+  }
+
+  const stats=computePatchStats(part,patch);
+  clearPartDimensions();
+  highlightPatch(part,patch);
+  showBoxDimensions(stats.box,'face');
+  selectedPatch={partIndex,patchIndex};
+  updateFaceReadout(part,patchIndex,stats);
+
+  document.querySelectorAll('.faceRow.selected').forEach(el=>el.classList.remove('selected'));
+  const row=document.querySelector('.faceRow[data-face-index="'+patchIndex+'"]');
+  if (row) {
+    row.classList.add('selected');
+    if (scroll) row.scrollIntoView({block:'nearest',behavior:'smooth'});
+  }
+  setSelectedButtons(true);
+}
+
+function selectPatchFromHit(hit) {
+  const partIndex=hit.object.userData.partIndex;
+  const part=parts[partIndex];
+  if (!part) return;
+  ensureDetailPatches(part);
+  const tri=Number(hit.faceIndex);
+  if (!Number.isInteger(tri) || !part.triToPatch || tri<0 || tri>=part.triToPatch.length) {
+    selectPart(partIndex,true,hit.point);
+    return;
+  }
+  const patchIndex=part.triToPatch[tri];
+  if (patchIndex<0) {
+    selectPart(partIndex,true,hit.point);
+    return;
+  }
+  renderFacesList(part,partIndex);
+  selectPatch(partIndex,patchIndex,true);
+}
+
+function renderFacesList(part, partIndex) {
+  ensureDetailPatches(part);
+  const list=$('facesList');
+  const count=part.patches?.length||0;
+  $('facesTitle').textContent=part.name;
+  $('faceCount').textContent=count+' 面';
+  $('faceInfo').textContent='分割方式: '+(part.patchMode||'—')+'。一覧は面積の大きい順です。';
+  list.innerHTML='';
+  if (!count) {
+    list.innerHTML='<div class="empty">詳細面を取得できませんでした</div>';
+    return;
+  }
+
+  const rows=part.patches.map((patch,index)=>({
+    patch,index,stats:computePatchStats(part,patch)
+  })).sort((a,b)=>b.stats.area-a.stats.area);
+  const maxRows=Math.min(rows.length,140);
+
+  for (let r=0;r<maxRows;r++) {
+    const item=rows[r];
+    const row=document.createElement('div');
+    row.className='faceRow';
+    row.dataset.faceIndex=item.index;
+
+    const info=document.createElement('div');
+    const strong=document.createElement('strong');
+    strong.textContent='詳細面 '+(item.index+1)+' ・ '+item.stats.type;
+    const small=document.createElement('small');
+    small.textContent=
+      'X '+formatLengthValue(item.stats.size.x)+' / Y '+formatLengthValue(item.stats.size.y)+
+      ' / Z '+formatLengthValue(item.stats.size.z)+' '+unitName()+
+      ' ・ 面積 '+formatLengthValue(item.stats.area)+(unitMode==='m'?' m²':' mm²');
+    info.append(strong,small);
+
+    const btn=document.createElement('button');
+    btn.type='button'; btn.className='facePickBtn'; btn.textContent='表示';
+    btn.addEventListener('click',(e)=>{e.stopPropagation();selectPatch(partIndex,item.index,false);});
+    row.addEventListener('click',()=>selectPatch(partIndex,item.index,false));
+    row.append(info,btn);
+    list.appendChild(row);
+  }
+
+  if (rows.length>maxRows) {
+    const more=document.createElement('div');
+    more.className='empty';
+    more.textContent='詳細面が多いため上位 '+maxRows+' 面を表示（3D上では全てタップできます）';
+    list.appendChild(more);
+  }
+}
+
+function setSelectionMode(mode) {
+  selectionMode=mode==='face'?'face':'part';
+  $('partModeBtn').classList.toggle('active',selectionMode==='part');
+  $('faceModeBtn').classList.toggle('active',selectionMode==='face');
+  $('tapHint').textContent=selectionMode==='face'
+    ? '詳細面モード：面・穴・R部をタップ'
+    : '部品モード：タップで外形寸法';
+  $('modeHelp').textContent=selectionMode==='face'
+    ? '滑らかにつながる面を詳細パーツとして選択し、X・Y・Z・面積を表示します。'
+    : '部品全体を選択して X・Y・Z 外形寸法を表示します。';
+  clearFaceHighlight();
+  clearPartDimensions();
+
+  if (selectedIndex>=0 && parts[selectedIndex]) {
+    const part=parts[selectedIndex];
+    ensureDetailPatches(part);
+    renderFacesList(part,selectedIndex);
+    updateSelectedInfo(part);
+    if (selectionMode==='part' && selectedDimsOn && part.mesh.visible) {
+      showBoxDimensions(new THREE.Box3().setFromObject(part.mesh),'part');
+    } else if (selectionMode==='face') {
+      $('tapPoint').textContent='詳細面モード：見たい面・穴内周・R部を直接タップしてください';
+    }
+  }
+}
+
+function setDetailLevel(angle, buttonId) {
+  detailAngleDeg=angle;
+  ['fineLevelBtn','normalLevelBtn','coarseLevelBtn'].forEach(id=>$(id).classList.toggle('active',id===buttonId));
+  for (const p of parts) {
+    p.patches=null; p.triToPatch=null; p.patchAngle=null; p.patchMode=null;
+  }
+  clearFaceHighlight();
+  clearPartDimensions();
+  if (selectedIndex>=0 && parts[selectedIndex]) {
+    const part=parts[selectedIndex];
+    ensureDetailPatches(part);
+    renderFacesList(part,selectedIndex);
+    if (selectionMode==='part' && selectedDimsOn) showBoxDimensions(new THREE.Box3().setFromObject(part.mesh),'part');
+  }
+  renderPartsList();
+}
+
+
 function pickAt(clientX, clientY) {
   const rect = renderer.domElement.getBoundingClientRect();
   pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
@@ -802,7 +1201,12 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   }
 
   const idx = hits[0].object.userData.partIndex;
-  if (Number.isInteger(idx)) selectPart(idx, true, hits[0].point);
+  if (!Number.isInteger(idx)) return;
+  if (selectionMode === 'face') {
+    selectPatchFromHit(hits[0]);
+  } else {
+    selectPart(idx, true, hits[0].point);
+  }
 });
 
 input.addEventListener('click', () => {
@@ -849,7 +1253,7 @@ input.addEventListener('change', async () => {
     buildModel(result);
 
     setLoadProgress(100, true);
-    setStatus('表示完了・部品をタップ', 'ok');
+    setStatus('表示完了・部品 / 詳細面をタップ', 'ok');
     $('fileInfo').textContent =
       file.name + ' ・ ' + formatBytes(file.size) + ' ・ ' + parts.length + '部品';
     setTimeout(() => setLoadProgress(0, false), 650);
@@ -944,6 +1348,11 @@ $('hideBtn').addEventListener('click', hideSelected);
 $('dimSelectedBtn').addEventListener('click', toggleSelectedDimensions);
 $('wireBtn').addEventListener('click', toggleWireframe);
 $('gridBtn').addEventListener('click', toggleGrid);
+$('partModeBtn').addEventListener('click',()=>setSelectionMode('part'));
+$('faceModeBtn').addEventListener('click',()=>setSelectionMode('face'));
+$('fineLevelBtn').addEventListener('click',()=>setDetailLevel(12,'fineLevelBtn'));
+$('normalLevelBtn').addEventListener('click',()=>setDetailLevel(25,'normalLevelBtn'));
+$('coarseLevelBtn').addEventListener('click',()=>setDetailLevel(45,'coarseLevelBtn'));
 
 function cadNumber(id, min = -Infinity) {
   const v = Number($(id).value);
@@ -981,7 +1390,8 @@ function addCadPart(kind) {
     const localSize=localBox.getSize(new THREE.Vector3());
     const triangles=geometry.index?Math.floor(geometry.index.count/3):Math.floor(geometry.getAttribute('position').count/3);
     parts.push({
-      mesh,name,path:name,localBox,localSize,triangles,source:'cad',kind,baseOffsetZ
+      mesh,name,path:name,localBox,localSize,triangles,source:'cad',kind,baseOffsetZ,
+      brepFaces:[], patches:null, triToPatch:null, patchMode:null, patchAngle:null
     });
     renderPartsList();
     recomputeModelStats(true);
@@ -1020,6 +1430,7 @@ function deleteSelectedCad() {
   selectedIndex=-1;
   clearSelectionHighlight();
   clearPartDimensions();
+  clearFaceHighlight();
   lastTapPoint=null;
   $('selectedName').textContent='未選択';
   $('selectedPath').textContent='';
@@ -1044,6 +1455,7 @@ function clearCadParts() {
   selectedIndex=-1;
   clearSelectionHighlight();
   clearPartDimensions();
+  clearFaceHighlight();
   lastTapPoint=null;
   $('selectedName').textContent='未選択';
   $('selectedPath').textContent='';
@@ -1078,4 +1490,5 @@ $('saveStlBtn').addEventListener('click',saveCadStl);
 setModelButtons(false);
 setSelectedButtons(false);
 updateDimensionButtons();
+setSelectionMode('part');
 resize();
