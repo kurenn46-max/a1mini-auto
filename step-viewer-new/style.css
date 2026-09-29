@@ -140,3 +140,37 @@ main{max-width:980px;margin:0 auto;padding:14px 14px 40px}
   .cadBlock{padding:11px}
   .dimensionLabel{font-size:10px;padding:3px 5px}
 }
+
+.selectModePanel{
+  margin-bottom:12px;padding:12px;border:1px solid var(--line);border-radius:16px;background:var(--panel)
+}
+.modeLabel{font-size:11px;color:var(--muted);font-weight:800;margin-bottom:8px}
+.modeButtons{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.modeButtons button,.detailLevel button{
+  min-height:44px;border:1px solid var(--line);border-radius:11px;background:#14253a;color:var(--text);font-weight:800
+}
+.modeButtons button.active,.detailLevel button.active{
+  border-color:#39baf2;background:#123a53;box-shadow:inset 0 0 0 1px #39baf2
+}
+.modeHelp{margin-top:9px;color:#9fb4c8;font-size:11px;line-height:1.45}
+.detailLevel{
+  display:grid;grid-template-columns:1.25fr repeat(3,1fr);gap:7px;align-items:center;margin-top:10px
+}
+.detailLevel span{font-size:10px;color:#7f97ad;font-weight:800}
+.detailLevel button{min-height:38px;padding:6px 3px;font-size:11px}
+.compactFaces{max-height:430px}
+.faceRow{
+  display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:9px 10px;
+  border:1px solid #213851;border-radius:11px;background:#091522
+}
+.faceRow.selected{outline:2px solid #f0b84c;border-color:#f0b84c;background:#241d0e}
+.faceRow strong{display:block;font-size:12px}
+.faceRow small{display:block;margin-top:3px;color:var(--muted);font-size:10px;line-height:1.35}
+.facePickBtn{
+  min-height:38px;border:1px solid #34506d;border-radius:9px;background:#13283e;color:var(--text);font-weight:800;font-size:11px;padding:6px 9px
+}
+.faceHighlightLabel{border-color:#f0b84c!important}
+@media(max-width:420px){
+  .detailLevel{grid-template-columns:1fr 1fr 1fr}
+  .detailLevel span{grid-column:1/-1}
+}
