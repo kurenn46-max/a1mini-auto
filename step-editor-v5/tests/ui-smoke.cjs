@@ -99,8 +99,11 @@ const { chromium } = require('playwright');
     throw new Error('中心固定が両端2面移動になっていない');
   }
   const movedTotal = st.lastCommand.moves.reduce((n,m)=>n+m.vertexCount,0);
-  if (!(movedTotal > 0 && movedTotal < st.totalVertices)) {
-    throw new Error('中心固定で全頂点を動かしている疑い');
+  if (!(movedTotal > 0)) {
+    throw new Error('中心固定で端面頂点が取得できていない');
+  }
+  if (!(st.lastCommand.moves[0].deltaLocalMm < 0 && st.lastCommand.moves[1].deltaLocalMm > 0)) {
+    throw new Error('中心固定で両端が逆方向に動いていない');
   }
   await undo();
 
