@@ -1720,24 +1720,30 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
     const hits=pickAt(e.clientX,e.clientY);
     if(hits.length && beginFaceDragCandidate(e,hits[0])){
       e.preventDefault();
+      e.stopImmediatePropagation();
     }
   }
-});
+}, true);
 
 renderer.domElement.addEventListener('pointermove', (e) => {
   if(faceDrag && faceDrag.pointerId===e.pointerId){
     updateFaceDrag(e);
     e.preventDefault();
+    e.stopImmediatePropagation();
   }
-});
+}, true);
 
 renderer.domElement.addEventListener('pointercancel', (e) => {
-  if(faceDrag && faceDrag.pointerId===e.pointerId) endFaceDrag(e,true);
+  if(faceDrag && faceDrag.pointerId===e.pointerId){
+    e.stopImmediatePropagation();
+    endFaceDrag(e,true);
+  }
   pointerDown=null;
-});
+}, true);
 
 renderer.domElement.addEventListener('pointerup', (e) => {
   const hadDrag=!!(faceDrag && faceDrag.pointerId===e.pointerId);
+  if(hadDrag) e.stopImmediatePropagation();
   const wasActive=hadDrag && faceDrag.active;
   if(hadDrag){
     const committed=endFaceDrag(e,false);
@@ -1776,7 +1782,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   } else {
     selectPart(idx, true, hits[0].point);
   }
-});
+}, true);
 
 input.addEventListener('click', () => {
   input.value = '';
