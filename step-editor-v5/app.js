@@ -336,6 +336,7 @@ function recomputeModelStats(fit = false) {
   $('clearCadBtn').disabled = !hasCad;
   updateVisibleCount();
   updateAxisSignsOnly();
+  if(selectedAxis) showSelectedAxisDimension();
   if (fit) fitView('iso');
 }
 
@@ -639,6 +640,56 @@ function showBoxDimensions(box, owner = 'part') {
 
   dimensionOwner = owner;
   updateDimensionButtons();
+}
+
+function showAxisDimensionOnly(box, axis, owner='axis') {
+  if (!box || box.isEmpty() || !['x','y','z'].includes(axis)) return;
+  clearGroup(dimensionGroup);
+
+  const b=box.clone();
+  const size=b.getSize(new THREE.Vector3());
+  const maxDim=Math.max(size.x,size.y,size.z,0.1);
+  const off=Math.max(maxDim*0.085,0.5);
+
+  if(axis==='x'){
+    const a=new THREE.Vector3(b.min.x,b.min.y-off,b.min.z-off);
+    const c=new THREE.Vector3(b.max.x,b.min.y-off,b.min.z-off);
+    addDimensionLine(
+      a,c,
+      new THREE.Vector3(b.min.x,b.min.y,b.min.z),
+      new THREE.Vector3(b.max.x,b.min.y,b.min.z),
+      'X '+formatLength(size.x),'axisX',0xff6868
+    );
+  }else if(axis==='y'){
+    const a=new THREE.Vector3(b.min.x-off,b.min.y,b.min.z-off);
+    const c=new THREE.Vector3(b.min.x-off,b.max.y,b.min.z-off);
+    addDimensionLine(
+      a,c,
+      new THREE.Vector3(b.min.x,b.min.y,b.min.z),
+      new THREE.Vector3(b.min.x,b.max.y,b.min.z),
+      'Y '+formatLength(size.y),'axisY',0x69df7b
+    );
+  }else{
+    const a=new THREE.Vector3(b.min.x-off,b.min.y-off,b.min.z);
+    const c=new THREE.Vector3(b.min.x-off,b.min.y-off,b.max.z);
+    addDimensionLine(
+      a,c,
+      new THREE.Vector3(b.min.x,b.min.y,b.min.z),
+      new THREE.Vector3(b.min.x,b.min.y,b.max.z),
+      'Z '+formatLength(size.z),'axisZ',0x5da8ff
+    );
+  }
+
+  dimensionOwner=owner;
+  updateDimensionButtons();
+}
+
+function showSelectedAxisDimension(){
+  if(!selectedAxis) return false;
+  const resolved=getAxisPart();
+  if(!resolved?.part?.mesh?.visible) return false;
+  showAxisDimensionOnly(new THREE.Box3().setFromObject(resolved.part.mesh),selectedAxis,'axis');
+  return true;
 }
 
 function updateDimensionButtons() {
@@ -1066,8 +1117,8 @@ function selectPatch(partIndex, patchIndex, scroll=true) {
   const stats=computePatchStats(part,patch);
   clearPartDimensions();
   highlightPatch(part,patch);
-  showBoxDimensions(stats.box,'face');
   selectedPatch={partIndex,patchIndex};
+  if(!showSelectedAxisDimension()) showBoxDimensions(stats.box,'face');
   resetEditConfirmation();
   updateFaceReadout(part,patchIndex,stats);
   updateEditTarget(part,patchIndex,stats);
@@ -1170,7 +1221,9 @@ function setSelectionMode(mode) {
     ensureDetailPatches(part);
     renderFacesList(part,selectedIndex);
     updateSelectedInfo(part);
-    if (selectionMode==='part' && selectedDimsOn && part.mesh.visible) {
+    if (selectedAxis && part.mesh.visible) {
+      showSelectedAxisDimension();
+    } else if (selectionMode==='part' && selectedDimsOn && part.mesh.visible) {
       showBoxDimensions(new THREE.Box3().setFromObject(part.mesh),'part');
     } else if (selectionMode==='face') {
       $('tapPoint').textContent='詳細面モード：面をタップ → 黄色になったら編集面を確定';
@@ -1575,7 +1628,7 @@ function refreshEditSelection(){
   if(!part||!patch) return;
   const stats=computePatchStats(part,patch);
   highlightPatch(part,patch);
-  showBoxDimensions(stats.box,'face');
+  if(!showSelectedAxisDimension()) showBoxDimensions(stats.box,'face');
   updateFaceReadout(part,selectedPatch.patchIndex,stats);
   updateEditTarget(part,selectedPatch.patchIndex,stats);
 }
@@ -1862,8 +1915,9 @@ function updateAxisPanel(){
 
 function selectAxis(axis){
   selectedAxis=axis;
+  showSelectedAxisDimension();
   updateAxisPanel();
-  setStatus(axis.toUpperCase()+'軸を選択・そのまま寸法編集できます','ok');
+  setStatus(axis.toUpperCase()+'軸を選択・3D寸法は部品全体の'+axis.toUpperCase()+'だけ表示','ok');
 }
 
 function commitAxisDimension(axis,target){
@@ -2047,7 +2101,7 @@ async function exportNightPackage(){
   const payload={
     format:'OKA-CAD-EDIT',
     version:1,
-    app:'岡重機 STEP Editor V5.5.8 CUT STRETCH',
+    app:'岡重機 STEP Editor V5.5.9 AXIS DIM FIX',
     createdAt:new Date().toISOString(),
     sourceFile:originalStepName,
     unit:'mm',
