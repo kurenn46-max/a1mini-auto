@@ -95,6 +95,8 @@ let faceDrag = null;
 let touchDragEnabled = false;
 let editTargetConfirmed = false;
 let confirmedPatchKey = '';
+let selectedAxis = null;
+let axisAnchor = 'min';
 
 function setStatus(text, type = 'idle') {
   const el = $('status');
@@ -242,6 +244,7 @@ function clearPartDimensions() {
   clearGroup(dimensionGroup);
   dimensionOwner = null;
   updateDimensionButtons();
+  updateAxisPanel();
 }
 
 function disposeModel() {
@@ -281,7 +284,8 @@ function setModelButtons(enabled) {
   [
     'fitBtn','isoBtn','frontBtn','rightBtn','backBtn','leftBtn','topBtn','bottomBtn',
     'modelDimBtn','measureBtn','clearMeasureBtn','unitBtn','saveGlbBtn',
-    'showAllBtn','wireBtn','partModeBtn','faceModeBtn','fineLevelBtn','normalLevelBtn','coarseLevelBtn','touchDragToggleBtn'
+    'showAllBtn','wireBtn','partModeBtn','faceModeBtn','fineLevelBtn','normalLevelBtn','coarseLevelBtn','touchDragToggleBtn',
+    'axisXCard','axisYCard','axisZCard'
   ].forEach(id => $(id).disabled = !enabled);
 }
 
@@ -1411,6 +1415,24 @@ function applyEditCommand(cmd){
         attr.getZ(i)+n.z*cmd.deltaMm
       );
     }
+  }else if(cmd.type==='axisDimension'){
+    geometry.computeBoundingBox();
+    const box=geometry.boundingBox;
+    const axis=cmd.axis;
+    const min=box.min[axis], max=box.max[axis];
+    const current=Math.max(max-min,1e-9);
+    const target=Math.max(Number(cmd.toDimensionMm)||current,0.0001);
+    const scale=target/current;
+    let fixed=min;
+    if(cmd.anchor==='max') fixed=max;
+    else if(cmd.anchor==='center') fixed=(min+max)/2;
+    for(let i=0;i<attr.count;i++){
+      let x=attr.getX(i), y=attr.getY(i), z=attr.getZ(i);
+      if(axis==='x') x=fixed+(x-fixed)*scale;
+      else if(axis==='y') y=fixed+(y-fixed)*scale;
+      else z=fixed+(z-fixed)*scale;
+      attr.setXYZ(i,x,y,z);
+    }
   }else if(cmd.type==='holeDiameter'){
     const c=new THREE.Vector3(cmd.center[0],cmd.center[1],cmd.center[2]);
     const scale=cmd.scale;
@@ -1442,12 +1464,16 @@ function replayEdits(){
   }
   refreshEditSelection();
   updateEditHistoryUI();
+  updateAxisPanel();
 }
 
 function editDescription(cmd){
   if(cmd.type==='pushPull'){
     const sign=cmd.deltaMm>=0?'+':'';
     return '面を '+sign+Number(cmd.deltaMm.toFixed(3))+' mm 移動';
+  }
+  if(cmd.type==='axisDimension'){
+    return cmd.axis.toUpperCase()+'寸法 '+Number(cmd.fromDimensionMm.toFixed(3))+' → '+Number(cmd.toDimensionMm.toFixed(3))+' mm';
   }
   if(cmd.type==='holeDiameter'){
     return '穴径 Ø'+Number(cmd.fromDiameterMm.toFixed(3))+' → Ø'+Number(cmd.toDiameterMm.toFixed(3))+' mm';
@@ -1458,6 +1484,8 @@ function editDescription(cmd){
 function updateEditHistoryUI(){
   $('undoBtn').disabled=editCursor<=0;
   $('redoBtn').disabled=editCursor>=editHistory.length;
+  $('axisUndoBtn').disabled=editCursor<=0;
+  $('axisRedoBtn').disabled=editCursor>=editHistory.length;
   $('resetEditBtn').disabled=editHistory.length===0;
   $('exportNightBtn').disabled=!originalStepBytes;
   $('saveEditedStlBtn').disabled=parts.length===0;
@@ -1486,6 +1514,120 @@ function commitEdit(cmd){
   editCursor=editHistory.length;
   replayEdits();
   setStatus('編集を適用しました','ok');
+}
+
+
+function getAxisPart(){
+  if(selectedIndex>=0 && parts[selectedIndex]) return {part:parts[selectedIndex],index:selectedIndex};
+  if(parts.length===1){
+    selectPart(0,false);
+    return {part:parts[0],index:0};
+  }
+  return null;
+}
+
+function partWorldSize(part){
+  return new THREE.Box3().setFromObject(part.mesh).getSize(new THREE.Vector3());
+}
+
+function axisCurrentDimension(axis){
+  const resolved=getAxisPart();
+  if(!resolved) return null;
+  return partWorldSize(resolved.part)[axis];
+}
+
+function setAxisControlsEnabled(enabled){
+  ['anchorMinBtn','anchorCenterBtn','anchorMaxBtn','applyAxisTargetBtn','matchAxis1Btn','matchAxis2Btn']
+    .forEach(id=>$(id).disabled=!enabled);
+  $('axisTargetInput').disabled=!enabled;
+  document.querySelectorAll('[data-axis-delta]').forEach(btn=>btn.disabled=!enabled);
+}
+
+function updateAxisPanel(){
+  ['x','y','z'].forEach(a=>$('axis'+a.toUpperCase()+'Card').classList.toggle('active',selectedAxis===a));
+  ['anchorMinBtn','anchorCenterBtn','anchorMaxBtn'].forEach(id=>$(id).classList.remove('active'));
+  if(axisAnchor==='min') $('anchorMinBtn').classList.add('active');
+  else if(axisAnchor==='center') $('anchorCenterBtn').classList.add('active');
+  else $('anchorMaxBtn').classList.add('active');
+
+  if(!selectedAxis){
+    $('axisEditTitle').textContent='X / Y / Z をタップ';
+    $('axisEditBadge').textContent='軸 未選択';
+    $('axisEditHelp').textContent='上の X・Y・Z をタップすると、その軸だけ編集できます。';
+    setAxisControlsEnabled(false);
+    return;
+  }
+  const resolved=getAxisPart();
+  if(!resolved){
+    $('axisEditHelp').textContent='先に編集する部品をタップしてください。';
+    setAxisControlsEnabled(false);
+    return;
+  }
+  const size=partWorldSize(resolved.part);
+  const dim=size[selectedAxis];
+  $('axisEditTitle').textContent=selectedAxis.toUpperCase()+'方向を編集';
+  $('axisEditBadge').textContent=selectedAxis.toUpperCase()+' 選択中';
+  $('axisEditHelp').textContent=
+    resolved.part.name+' の '+selectedAxis.toUpperCase()+'寸法 '+formatRawMm(dim)+' mm を変更します。';
+  $('axisTargetInput').value=Number(dim.toFixed(3));
+  setAxisControlsEnabled(true);
+
+  const others=['x','y','z'].filter(a=>a!==selectedAxis);
+  $('matchAxis1Btn').textContent=others[0].toUpperCase()+'を'+selectedAxis.toUpperCase()+'に合わせる';
+  $('matchAxis1Btn').dataset.targetAxis=others[0];
+  $('matchAxis2Btn').textContent=others[1].toUpperCase()+'を'+selectedAxis.toUpperCase()+'に合わせる';
+  $('matchAxis2Btn').dataset.targetAxis=others[1];
+}
+
+function selectAxis(axis){
+  selectedAxis=axis;
+  updateAxisPanel();
+  setStatus(axis.toUpperCase()+'軸を選択しました','ok');
+}
+
+function commitAxisDimension(axis,target){
+  const resolved=getAxisPart();
+  if(!resolved){setStatus('先に編集する部品を選んでください','error');return;}
+  const current=partWorldSize(resolved.part)[axis];
+  const to=Number(target);
+  if(!Number.isFinite(to)||to<=0){setStatus('目標寸法を確認してください','error');return;}
+  if(Math.abs(to-current)<0.0001){setStatus('現在と同じ寸法です','error');return;}
+  const cmd={
+    type:'axisDimension',
+    partIndex:resolved.index,
+    axis,
+    anchor:axisAnchor,
+    fromDimensionMm:current,
+    toDimensionMm:to,
+    feature:{
+      partName:resolved.part.name,
+      partPath:resolved.part.path||resolved.part.name,
+      axis,
+      anchor:axisAnchor
+    },
+    inputMethod:'axis-card'
+  };
+  commitEdit(cmd);
+  updateAxisPanel();
+}
+
+function applyAxisDelta(delta){
+  if(!selectedAxis){setStatus('X / Y / Z を選んでください','error');return;}
+  const current=axisCurrentDimension(selectedAxis);
+  if(current==null) return;
+  commitAxisDimension(selectedAxis,current+Number(delta));
+}
+
+function applyAxisTarget(){
+  if(!selectedAxis){setStatus('X / Y / Z を選んでください','error');return;}
+  commitAxisDimension(selectedAxis,Number($('axisTargetInput').value));
+}
+
+function matchAxisToSelected(targetAxis){
+  if(!selectedAxis){setStatus('基準にする軸を選んでください','error');return;}
+  const source=axisCurrentDimension(selectedAxis);
+  if(source==null) return;
+  commitAxisDimension(targetAxis,source);
 }
 
 function applyPushPullValue(value){
@@ -2044,6 +2186,22 @@ document.querySelectorAll('[data-push]').forEach(btn=>{
   btn.addEventListener('click',()=>applyPushPullValue(Number(btn.dataset.push)));
 });
 
+
+$('axisXCard').addEventListener('click',()=>selectAxis('x'));
+$('axisYCard').addEventListener('click',()=>selectAxis('y'));
+$('axisZCard').addEventListener('click',()=>selectAxis('z'));
+$('anchorMinBtn').addEventListener('click',()=>{axisAnchor='min';updateAxisPanel();});
+$('anchorCenterBtn').addEventListener('click',()=>{axisAnchor='center';updateAxisPanel();});
+$('anchorMaxBtn').addEventListener('click',()=>{axisAnchor='max';updateAxisPanel();});
+$('applyAxisTargetBtn').addEventListener('click',applyAxisTarget);
+$('matchAxis1Btn').addEventListener('click',()=>matchAxisToSelected($('matchAxis1Btn').dataset.targetAxis));
+$('matchAxis2Btn').addEventListener('click',()=>matchAxisToSelected($('matchAxis2Btn').dataset.targetAxis));
+$('axisUndoBtn').addEventListener('click',undoEdit);
+$('axisRedoBtn').addEventListener('click',redoEdit);
+document.querySelectorAll('[data-axis-delta]').forEach(btn=>{
+  btn.addEventListener('click',()=>applyAxisDelta(Number(btn.dataset.axisDelta)));
+});
+
 function cadNumber(id, min = -Infinity) {
   const v = Number($(id).value);
   if (!Number.isFinite(v) || v < min) throw new Error('寸法を確認してください');
@@ -2184,4 +2342,5 @@ updateDimensionButtons();
 setSelectionMode('part');
 updateEditHistoryUI();
 resetEditConfirmation();
+updateAxisPanel();
 resize();
