@@ -1266,6 +1266,121 @@ function moveFaceVertexIndices(part, patch) {
   return expandCoincidentVertexIndices(part,uniquePatchVertexIndices(part,patch));
 }
 
+
+function axisCoord(attr,i,axis){
+  return axis==='x'?attr.getX(i):(axis==='y'?attr.getY(i):attr.getZ(i));
+}
+
+function stretchBandScore(part,axis,start,end){
+  const geometry=part.mesh.geometry;
+  const attr=geometry.getAttribute('position');
+  const triCount=triangleCountFor(geometry);
+  let bandTriangles=0, centerCrossings=0, bandVertices=0;
+  const center=(start+end)/2;
+
+  for(let i=0;i<attr.count;i++){
+    const v=axisCoord(attr,i,axis);
+    if(v>=start && v<=end) bandVertices++;
+  }
+
+  for(let t=0;t<triCount;t++){
+    let lo=Infinity,hi=-Infinity;
+    for(let c=0;c<3;c++){
+      const vi=triangleVertexIndex(geometry,t,c);
+      const v=axisCoord(attr,vi,axis);
+      lo=Math.min(lo,v); hi=Math.max(hi,v);
+    }
+    if(hi>=start && lo<=end) bandTriangles++;
+    if(lo<center && hi>center) centerCrossings++;
+  }
+
+  return bandTriangles + centerCrossings*0.35 + bandVertices*0.08;
+}
+
+function findSafeStretchBand(part,axis,tMin,tMax,minWidth=0){
+  const geometry=part.mesh.geometry;
+  geometry.computeBoundingBox();
+  const box=geometry.boundingBox;
+  if(!box||box.isEmpty()) return null;
+
+  const lo=box.min[axis], hi=box.max[axis], extent=hi-lo;
+  if(!(extent>1e-9)) return null;
+
+  const range=Math.max((tMax-tMin)*extent,1e-9);
+  const width=Math.min(
+    Math.max(extent*0.10,minWidth,0.4),
+    Math.max(extent*0.06,range*0.72)
+  );
+
+  let best=null;
+  const steps=18;
+  for(let i=0;i<=steps;i++){
+    const t=tMin+(tMax-tMin)*(i/steps);
+    const center=lo+extent*t;
+    const start=center-width/2;
+    const end=center+width/2;
+    if(start<=lo+extent*0.06 || end>=hi-extent*0.06) continue;
+
+    const score=stretchBandScore(part,axis,start,end);
+    if(!best || score<best.score){
+      best={start,end,center,width,score,t};
+    }
+  }
+  return best;
+}
+
+function planSmartStretch(part,axis,anchor,deltaWorld){
+  const scale=worldAxisScale(part,axis);
+  const deltaLocal=deltaWorld/scale;
+  const geometry=part.mesh.geometry;
+  geometry.computeBoundingBox();
+  const box=geometry.boundingBox;
+  const extent=box.max[axis]-box.min[axis];
+  if(!(extent>1e-9)) return null;
+
+  const minBandWidth=Math.abs(deltaLocal)*1.18;
+  const bands=[];
+
+  if(anchor==='min'){
+    const b=findSafeStretchBand(part,axis,0.20,0.68,minBandWidth);
+    if(!b) return null;
+    bands.push({side:'max',start:b.start,end:b.end,deltaLocal});
+  }else if(anchor==='max'){
+    const b=findSafeStretchBand(part,axis,0.32,0.80,minBandWidth);
+    if(!b) return null;
+    bands.push({side:'min',start:b.start,end:b.end,deltaLocal:-deltaLocal});
+  }else{
+    const half=deltaLocal/2;
+    const minW=Math.abs(half)*1.18;
+    const left=findSafeStretchBand(part,axis,0.16,0.42,minW);
+    const right=findSafeStretchBand(part,axis,0.58,0.84,minW);
+    if(!left||!right||left.end>=right.start) return null;
+    bands.push({side:'min',start:left.start,end:left.end,deltaLocal:-half});
+    bands.push({side:'max',start:right.start,end:right.end,deltaLocal:half});
+  }
+
+  // Prevent an unsafe shrink that would fold the transition band.
+  for(const b of bands){
+    const width=Math.max(b.end-b.start,1e-9);
+    if(b.deltaLocal<0 && b.side==='max' && Math.abs(b.deltaLocal)>=width*0.92) return null;
+    if(b.deltaLocal>0 && b.side==='min' && Math.abs(b.deltaLocal)>=width*0.92) return null;
+  }
+
+  return {bands,extent};
+}
+
+function smartBandDisplacement(v,band){
+  const {start,end,deltaLocal,side}=band;
+  if(side==='max'){
+    if(v<=start) return 0;
+    if(v>=end) return deltaLocal;
+    return deltaLocal*((v-start)/Math.max(end-start,1e-9));
+  }
+  if(v>=end) return 0;
+  if(v<=start) return deltaLocal;
+  return deltaLocal*((end-v)/Math.max(end-start,1e-9));
+}
+
 function extremePlaneVertexIndices(part, axis, side) {
   const geometry=part?.mesh?.geometry;
   const attr=geometry?.getAttribute('position');
@@ -1473,7 +1588,19 @@ function applyEditCommand(cmd){
       );
     }
   }else if(cmd.type==='axisDimension'){
-    if(cmd.mode==='move-end-plane' && Array.isArray(cmd.moves) && cmd.moves.length){
+    if(cmd.mode==='smart-stretch' && Array.isArray(cmd.bands) && cmd.bands.length){
+      const original=new Float64Array(attr.count);
+      for(let i=0;i<attr.count;i++) original[i]=axisCoord(attr,i,cmd.axis);
+      for(let i=0;i<attr.count;i++){
+        const v=original[i];
+        let d=0;
+        for(const band of cmd.bands) d+=smartBandDisplacement(v,band);
+        const nv=v+d;
+        if(cmd.axis==='x') attr.setX(i,nv);
+        else if(cmd.axis==='y') attr.setY(i,nv);
+        else attr.setZ(i,nv);
+      }
+    }else if(cmd.mode==='move-end-plane' && Array.isArray(cmd.moves) && cmd.moves.length){
       for(const move of cmd.moves){
         const delta=Number(move.deltaLocalMm)||0;
         const ids=Array.from(move.vertexIndices||[]);
@@ -1550,7 +1677,7 @@ function editDescription(cmd){
     return '面を '+sign+Number(cmd.deltaMm.toFixed(3))+' mm 移動';
   }
   if(cmd.type==='axisDimension'){
-    const prefix=cmd.mode==='move-end-plane'?'端面移動 ':(cmd.mode==='move-face'?'面移動 ':'');
+    const prefix=cmd.mode==='smart-stretch'?'形状維持ストレッチ ':(cmd.mode==='move-end-plane'?'端面移動 ':(cmd.mode==='move-face'?'面移動 ':''));
     return prefix+cmd.axis.toUpperCase()+'寸法 '+Number(cmd.fromDimensionMm.toFixed(3))+' → '+Number(cmd.toDimensionMm.toFixed(3))+' mm';
   }
   if(cmd.type==='holeDiameter'){
@@ -1693,12 +1820,12 @@ function updateAxisPanel(){
   $('anchorMaxBtn').disabled=false;
 
   let moveText='';
-  if(axisAnchor==='min') moveText='＋'+axisLabel+'端だけ動かします';
-  else if(axisAnchor==='max') moveText='−'+axisLabel+'端だけ動かします';
-  else moveText='両端を半分ずつ動かします';
+  if(axisAnchor==='min') moveText='−'+axisLabel+'側を固定し、＋側の形を保ったまま途中を伸ばします';
+  else if(axisAnchor==='max') moveText='＋'+axisLabel+'側を固定し、−側の形を保ったまま途中を伸ばします';
+  else moveText='中心を保ち、左右の途中を半分ずつ伸ばします';
 
   $('axisEditHelp').textContent=
-    resolved.part.name+' の '+axisLabel+'寸法 '+formatRawMm(dim)+' mm。'+moveText+'。詳細面の選択は不要です。';
+    resolved.part.name+' の '+axisLabel+'寸法 '+formatRawMm(dim)+' mm。'+moveText+'。穴・R・段差は端側で形状維持します。';
 
   const others=['x','y','z'].filter(a=>a!==selectedAxis);
   $('matchAxis1Btn').textContent=others[0].toUpperCase()+'を'+axisLabel+'に合わせる';
@@ -1724,45 +1851,24 @@ function commitAxisDimension(axis,target){
   if(Math.abs(to-current)<0.0001){setStatus('現在と同じ寸法です','error');return;}
 
   const deltaWorld=to-current;
-  const scale=worldAxisScale(part,axis);
-  const moves=[];
-
-  if(axisAnchor==='min'){
-    const ids=extremePlaneVertexIndices(part,axis,'max');
-    if(!ids.length){setStatus('＋'+axis.toUpperCase()+'端を取得できません','error');return;}
-    moves.push({side:'max',vertexIndices:ids,deltaLocalMm:deltaWorld/scale});
-  }else if(axisAnchor==='max'){
-    const ids=extremePlaneVertexIndices(part,axis,'min');
-    if(!ids.length){setStatus('−'+axis.toUpperCase()+'端を取得できません','error');return;}
-    moves.push({side:'min',vertexIndices:ids,deltaLocalMm:-deltaWorld/scale});
-  }else{
-    const minIds=extremePlaneVertexIndices(part,axis,'min');
-    const maxIds=extremePlaneVertexIndices(part,axis,'max');
-    if(!minIds.length||!maxIds.length){setStatus('両端を取得できません','error');return;}
-    moves.push({side:'min',vertexIndices:minIds,deltaLocalMm:-(deltaWorld/2)/scale});
-    moves.push({side:'max',vertexIndices:maxIds,deltaLocalMm:(deltaWorld/2)/scale});
-  }
-
-  const movedCount=moves.reduce((n,m)=>n+m.vertexIndices.length,0);
-  const totalVertices=part.mesh.geometry.getAttribute('position')?.count||0;
-  if(!movedCount){
-    setStatus('端面の検出結果が不正です','error'); return;
-  }
-  if(moves.length===2){
-    const a=new Set(moves[0].vertexIndices);
-    const overlap=moves[1].vertexIndices.filter(i=>a.has(i)).length;
-    if(overlap){
-      setStatus('両端の頂点判定が重なっています','error'); return;
-    }
+  const plan=planSmartStretch(part,axis,axisAnchor,deltaWorld);
+  if(!plan){
+    setStatus('この変更量では形状を安全に保てません。変更量を小さくしてください','error');
+    return;
   }
 
   const cmd={
     type:'axisDimension',
-    mode:'move-end-plane',
+    mode:'smart-stretch',
     partIndex:resolved.index,
     axis,
     anchor:axisAnchor,
-    moves,
+    bands:plan.bands.map(b=>({
+      side:b.side,
+      start:b.start,
+      end:b.end,
+      deltaLocal:b.deltaLocal
+    })),
     deltaWorldMm:deltaWorld,
     fromDimensionMm:current,
     toDimensionMm:to,
@@ -1771,11 +1877,15 @@ function commitAxisDimension(axis,target){
       partPath:part.path||part.name,
       axis,
       anchor:axisAnchor,
-      editMode:'move-end-plane',
-      movedVertexCount:movedCount,
-      totalVertexCount:totalVertices
+      editMode:'smart-stretch',
+      bands:plan.bands.map(b=>({
+        side:b.side,
+        startMm:Number(b.start.toFixed(6)),
+        endMm:Number(b.end.toFixed(6)),
+        deltaMm:Number(b.deltaLocal.toFixed(6))
+      }))
     },
-    inputMethod:'axis-card-end-plane'
+    inputMethod:'axis-card-smart-stretch'
   };
 
   commitEdit(cmd);
@@ -1898,7 +2008,7 @@ async function exportNightPackage(){
   const payload={
     format:'OKA-CAD-EDIT',
     version:1,
-    app:'岡重機 STEP Editor V5.5.6 END PLANE',
+    app:'岡重機 STEP Editor V5.5.7 SMART STRETCH',
     createdAt:new Date().toISOString(),
     sourceFile:originalStepName,
     unit:'mm',
@@ -2539,6 +2649,9 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
             side:m.side,
             deltaLocalMm:m.deltaLocalMm,
             vertexCount:Array.from(m.vertexIndices||[]).length
+          })):[],
+          bands:Array.isArray(cmd.bands)?cmd.bands.map(b=>({
+            side:b.side,start:b.start,end:b.end,deltaLocal:b.deltaLocal
           })):[]
         }:null
       };
@@ -2551,6 +2664,51 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
         if(patchAxisSide(part,part.patches[i],axis)===side) return i;
       }
       return null;
+    },
+    positions(){
+      const part=(selectedIndex>=0&&parts[selectedIndex])?parts[selectedIndex]:null;
+      const attr=part?.mesh?.geometry?.getAttribute('position');
+      if(!attr) return [];
+      const out=[];
+      for(let i=0;i<attr.count;i++) out.push([attr.getX(i),attr.getY(i),attr.getZ(i)]);
+      return out;
+    },
+    addSteppedPart(){
+      const shape=new THREE.Shape();
+      shape.moveTo(-30,-10);
+      shape.lineTo(30,-10);
+      shape.lineTo(30,10);
+      shape.lineTo(12,10);
+      shape.lineTo(12,20);
+      shape.lineTo(-6,20);
+      shape.lineTo(-6,10);
+      shape.lineTo(-30,10);
+      shape.closePath();
+      const geometry=new THREE.ExtrudeGeometry(shape,{depth:8,steps:1,bevelEnabled:false,curveSegments:1});
+      geometry.translate(0,0,-4);
+      geometry.computeVertexNormals();
+      geometry.computeBoundingBox();
+      geometry.computeBoundingSphere();
+      const material=new THREE.MeshStandardMaterial({
+        color:0x69b7e8,roughness:.65,metalness:.04,side:THREE.DoubleSide
+      });
+      const mesh=new THREE.Mesh(geometry,material);
+      const name='Stepped Test';
+      mesh.name=name;
+      mesh.userData.baseColor=material.color.getHex();
+      modelGroup.add(mesh);
+      const localBox=geometry.boundingBox.clone();
+      const localSize=localBox.getSize(new THREE.Vector3());
+      const triangles=triangleCountFor(geometry);
+      parts.push({
+        mesh,name,path:name,localBox,localSize,triangles,source:'cad',kind:'test',baseOffsetZ:0,
+        brepFaces:[],patches:null,triToPatch:null,patchMode:null,patchAngle:null,
+        basePosition:new Float32Array(geometry.getAttribute('position').array)
+      });
+      renderPartsList();
+      recomputeModelStats(true);
+      selectPart(parts.length-1,false);
+      return parts.length-1;
     }
   };
 }
