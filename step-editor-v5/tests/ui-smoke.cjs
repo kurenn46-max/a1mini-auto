@@ -15,6 +15,68 @@ const near=(a,b,e=1e-3)=>Math.abs(a-b)<=e;
     return {page,errors};
   }
 
+  // 0) Real STL file input regression: PREVIEW_EDIT.stl must load through STLLoader.
+  {
+    const {page,errors}=await openPage();
+
+    const asciiStl=`solid preview
+facet normal 0 0 -1
+ outer loop
+  vertex 0 0 0
+  vertex 0 10 0
+  vertex 10 0 0
+ endloop
+endfacet
+facet normal 0 -1 0
+ outer loop
+  vertex 0 0 0
+  vertex 10 0 0
+  vertex 0 0 10
+ endloop
+endfacet
+facet normal -1 0 0
+ outer loop
+  vertex 0 0 0
+  vertex 0 0 10
+  vertex 0 10 0
+ endloop
+endfacet
+facet normal 1 1 1
+ outer loop
+  vertex 10 0 0
+  vertex 0 10 0
+  vertex 0 0 10
+ endloop
+endfacet
+endsolid preview`;
+
+    await page.locator('#stepInput').setInputFiles({
+      name:'IGLOO_V8_FINAL_safe_catch_adjustable_PREVIEW_EDIT.stl',
+      mimeType:'model/stl',
+      buffer:Buffer.from(asciiStl,'utf8')
+    });
+
+    await page.waitForFunction(()=>document.querySelector('#partCount')?.textContent==='1',{timeout:30000});
+    await page.waitForTimeout(150);
+
+    const info=(await page.locator('#fileInfo').innerText()).trim();
+    const status=(await page.locator('#status').innerText()).trim();
+    if(!info.includes('PREVIEW_EDIT.stl')||!info.includes('STL')){
+      throw new Error('STL読込後のファイル情報が不正: '+info);
+    }
+    if(!status.includes('STL')||!status.includes('表示完了')){
+      throw new Error('STL読込完了になっていない: '+status);
+    }
+
+    const st=await page.evaluate(()=>window.__okaTest.state());
+    if(!st.partSize||!near(st.partSize.x,10)||!near(st.partSize.y,10)||!near(st.partSize.z,10)){
+      throw new Error('STLモデル寸法が10×10×10にならない: '+JSON.stringify(st.partSize));
+    }
+
+    if(errors.length) throw new Error(errors.join('\n'));
+    await page.close();
+  }
+
   // 1) Axis OFF + X safe stretch on simple box.
   {
     const {page,errors}=await openPage();
@@ -212,7 +274,7 @@ const near=(a,b,e=1e-3)=>Math.abs(a-b)<=e;
     await page.close();
   }
 
-  console.log('V5631_PASS: Android Files unrestricted picker / content STEP sniff / axis-off / X safe stretch');
+  console.log('V5632_PASS: real STL file load / Android Files / STEP sniff / axis-off / X safe stretch');
   await browser.close();
 })().catch(err=>{
   console.error(err);
