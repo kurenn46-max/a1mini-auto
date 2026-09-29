@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:allowBackup="true"
+        android:label="岡重機 STEP Viewer"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar"
+        android:usesCleartextTraffic="false">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="content" android:mimeType="model/step" />
+                <data android:scheme="content" android:mimeType="application/step" />
+                <data android:scheme="content" android:mimeType="application/x-step" />
+                <data android:scheme="content" android:mimeType="model/stl" />
+                <data android:scheme="content" android:mimeType="application/sla" />
+                <data android:scheme="content" android:mimeType="application/octet-stream" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" android:mimeType="*/*" android:pathPattern=".*\.step" />
+                <data android:scheme="content" android:mimeType="*/*" android:pathPattern=".*\.stp" />
+                <data android:scheme="content" android:mimeType="*/*" android:pathPattern=".*\.stl" />
+                <data android:scheme="file" android:mimeType="*/*" android:pathPattern=".*\.step" />
+                <data android:scheme="file" android:mimeType="*/*" android:pathPattern=".*\.stp" />
+                <data android:scheme="file" android:mimeType="*/*" android:pathPattern=".*\.stl" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
