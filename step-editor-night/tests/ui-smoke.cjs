@@ -3,280 +3,89 @@ const near=(a,b,e=1e-3)=>Math.abs(a-b)<=e;
 
 (async()=>{
   const browser=await chromium.launch({headless:true});
+  const page=await browser.newPage({viewport:{width:412,height:915}});
+  const errors=[];
+  page.on('pageerror',e=>errors.push('pageerror: '+e.message));
+  page.on('console',m=>{if(m.type()==='error') errors.push('console: '+m.text());});
 
-  async function openPage(){
-    const page=await browser.newPage({viewport:{width:412,height:915}});
-    const errors=[];
-    page.on('pageerror',e=>errors.push('pageerror: '+e.message));
-    page.on('console',m=>{if(m.type()==='error') errors.push('console: '+m.text());});
-    await page.goto('http://127.0.0.1:8000/step-editor-v5/?ui-smoke=1',{
-      waitUntil:'networkidle',timeout:90000
-    });
-    return {page,errors};
-  }
+  await page.goto('http://127.0.0.1:8000/step-editor-night/?ui-smoke=1',{
+    waitUntil:'networkidle',timeout:90000
+  });
 
-  // 0) Real STL file input regression: PREVIEW_EDIT.stl must load through STLLoader.
-  {
-    const {page,errors}=await openPage();
-
-    const asciiStl=`solid preview
-facet normal 0 0 -1
- outer loop
-  vertex 0 0 0
-  vertex 0 10 0
-  vertex 10 0 0
- endloop
-endfacet
-facet normal 0 -1 0
- outer loop
-  vertex 0 0 0
-  vertex 10 0 0
-  vertex 0 0 10
- endloop
-endfacet
-facet normal -1 0 0
- outer loop
-  vertex 0 0 0
-  vertex 0 0 10
-  vertex 0 10 0
- endloop
-endfacet
-facet normal 1 1 1
- outer loop
-  vertex 10 0 0
-  vertex 0 10 0
-  vertex 0 0 10
- endloop
-endfacet
-endsolid preview`;
-
-    await page.locator('#stepInput').setInputFiles({
-      name:'IGLOO_V8_FINAL_safe_catch_adjustable_PREVIEW_EDIT.stl',
-      mimeType:'model/stl',
-      buffer:Buffer.from(asciiStl,'utf8')
-    });
-
-    await page.waitForFunction(()=>document.querySelector('#partCount')?.textContent==='1',{timeout:30000});
-    await page.waitForTimeout(150);
-
-    const info=(await page.locator('#fileInfo').innerText()).trim();
-    const status=(await page.locator('#status').innerText()).trim();
-    if(!info.includes('PREVIEW_EDIT.stl')||!info.includes('STL')){
-      throw new Error('STL読込後のファイル情報が不正: '+info);
-    }
-    if(!status.includes('STL')||!status.includes('表示完了')){
-      throw new Error('STL読込完了になっていない: '+status);
-    }
-
-    await page.locator('.partRow[data-index="0"] .selectBtn').click();
-    await page.waitForTimeout(100);
-    const st=await page.evaluate(()=>window.__okaTest.state());
-    if(!st.partSize||!near(st.partSize.x,10)||!near(st.partSize.y,10)||!near(st.partSize.z,10)){
-      throw new Error('STL選択後の寸法が10×10×10にならない: '+JSON.stringify(st.partSize));
-    }
-
-    if(errors.length) throw new Error(errors.join('\n'));
-    await page.close();
-  }
-
-  // 1) Axis OFF + X safe stretch on simple box.
-  {
-    const {page,errors}=await openPage();
-
-    // Android download/import regression.
-  const inputAccept=await page.locator('#stepInput').getAttribute('accept');
-  if(inputAccept!==null) throw new Error('Android Filesの入力にaccept制限が残っている: '+inputAccept);
-
-  const sniff=await page.evaluate(()=>({
-    extUpper:window.__okaTest.isStepName('sample.STEP'),
-    extStp:window.__okaTest.isStepName('sample.stp'),
-    extless:window.__okaTest.isStepName('download'),
-    contentStep:window.__okaTest.sniffStepText('ISO-10303-21;\nHEADER;\nENDSEC;\nDATA;'),
-    contentNotStep:window.__okaTest.sniffStepText('hello world')
-  }));
-  if(!sniff.extUpper||!sniff.extStp) throw new Error('STEP/STP拡張子判定が壊れている');
-  if(sniff.extless) throw new Error('拡張子なしファイルを名前だけでSTEP扱いしている');
-  if(!sniff.contentStep) throw new Error('拡張子なしSTEPを内容判定できない');
-  if(sniff.contentNotStep) throw new Error('非STEPを内容判定で通している');
+  if(!(await page.locator('#nightPrompt').count())) throw new Error('ナイト入力欄がない');
+  if(!(await page.locator('#nightRunBtn').count())) throw new Error('ナイト実行ボタンがない');
 
   await page.click('#addBoxBtn');
-    await page.waitForFunction(()=>document.querySelector('#partCount')?.textContent==='1');
-    await page.click('#frontBtn');
-    await page.waitForTimeout(120);
-
-    const initial=await page.evaluate(()=>window.__okaTest.state());
-    if(!near(initial.partSize.x,40)||!near(initial.partSize.y,30)||!near(initial.partSize.z,10)){
-      throw new Error('初期箱寸法が40×30×10ではない');
-    }
-
-    // Select X.
-    await page.click('#axisXCard');
-    await page.waitForTimeout(100);
-    if(!(await page.locator('#axisXCard').evaluate(el=>el.classList.contains('active')))){
-      throw new Error('X軸が選択状態にならない');
-    }
-    if((await page.locator('.axisSignLabel').count())!==2){
-      throw new Error('X選択時に±表示が2個出ない');
-    }
-
-    // Tap X again -> true no-axis state.
-    await page.click('#axisXCard');
-    await page.waitForTimeout(100);
-    if(await page.locator('#axisXCard').evaluate(el=>el.classList.contains('active'))){
-      throw new Error('同じXを再タップしても軸解除されない');
-    }
-    if((await page.locator('.axisSignLabel').count())!==0){
-      throw new Error('軸解除後も±表示が残る');
-    }
-    if(!(await page.locator('#axisEditBadge').innerText()).includes('未選択')){
-      throw new Error('軸解除後のバッジが未選択ではない');
-    }
-    if(!(await page.locator('#applyAxisTargetBtn').isDisabled())){
-      throw new Error('軸解除後も寸法確定ボタンが有効');
-    }
-
-    // Re-select X and verify labels.
-    await page.click('#axisXCard');
-    const xCard=(await page.locator('#axisXCard span').innerText()).trim();
-    if(xCard!=='X・左右') throw new Error('Xカードが左右表示ではない: '+xCard);
-    const minusX=(await page.locator('.axisSignLabel.minus').innerText()).trim();
-    const plusX=(await page.locator('.axisSignLabel.plus').innerText()).trim();
-    if(minusX!=='−X 左'||plusX!=='＋X 右') throw new Error('Xの±表示が不正');
-
-    async function setTarget(mm){
-      await page.locator('#axisTargetInput').fill(String(mm));
-      await page.click('#applyAxisTargetBtn');
-      await page.waitForTimeout(150);
-      return await page.evaluate(()=>window.__okaTest.state());
-    }
-    async function undo(){
-      await page.click('#axisUndoBtn');
-      await page.waitForTimeout(120);
-    }
-
-    // Left fixed -> right side safe cut stretch.
-    await page.click('#anchorMinBtn');
-    let st=await setTarget(60);
-    if(!near(st.partSize.x,60)||!near(st.partSize.y,30)||!near(st.partSize.z,10)){
-      throw new Error('左端固定X60の外形寸法が不正');
-    }
-    if(!near(st.bounds.min.x,initial.bounds.min.x)||!near(st.bounds.max.x,initial.bounds.max.x+20)){
-      throw new Error('左端固定の実移動が不正');
-    }
-    if(st.lastCommand?.mode!=='cut-stretch'||st.lastCommand?.cuts?.length!==1||
-       st.lastCommand.cuts[0].side!=='max'){
-      throw new Error('X左端固定がcut-stretch max側になっていない');
-    }
-    await undo();
-
-    // Right fixed -> left side safe cut stretch.
-    await page.click('#anchorMaxBtn');
-    st=await setTarget(60);
-    if(!near(st.bounds.max.x,initial.bounds.max.x)||!near(st.bounds.min.x,initial.bounds.min.x-20)){
-      throw new Error('右端固定の実移動が不正');
-    }
-    if(st.lastCommand?.mode!=='cut-stretch'||st.lastCommand?.cuts?.[0]?.side!=='min'){
-      throw new Error('X右端固定がcut-stretch min側になっていない');
-    }
-    await undo();
-
-    // Center fixed -> both sides move 10.
-    await page.click('#anchorCenterBtn');
-    st=await setTarget(60);
-    if(!near(st.bounds.min.x,initial.bounds.min.x-10)||!near(st.bounds.max.x,initial.bounds.max.x+10)){
-      throw new Error('中心固定で左右10mmずつ動いていない');
-    }
-    if(st.lastCommand?.mode!=='cut-stretch'||st.lastCommand?.cuts?.length!==2){
-      throw new Error('X中心固定が2断面cut-stretchではない');
-    }
-    await undo();
-
-    // Z still switches cleanly and X signs disappear.
-    await page.click('#axisZCard');
-    if((await page.locator('.axisSignLabel').allInnerTexts()).some(x=>x.includes('X'))){
-      throw new Error('Zへ切替後もXの±表示が残る');
-    }
-    if(!(await page.locator('#anchorMinBtn').innerText()).includes('下端固定')) throw new Error('−Zが下端固定ではない');
-    if(!(await page.locator('#anchorMaxBtn').innerText()).includes('上端固定')) throw new Error('＋Zが上端固定ではない');
-
-    if(errors.length) throw new Error(errors.join('\n'));
-    await page.close();
+  await page.waitForFunction(()=>document.querySelector('#partCount')?.textContent==='1');
+  let st=await page.evaluate(()=>window.__okaTest.state());
+  if(!near(st.partSize.x,40)||!near(st.partSize.y,30)||!near(st.partSize.z,10)){
+    throw new Error('初期箱が40×30×10ではない');
   }
 
-  // 2) Feature-rich end geometry: X stretch must not create a new step at the ends.
-  {
-    const {page,errors}=await openPage();
-    await page.evaluate(()=>window.__okaTest.addDenseFeaturePart());
-    await page.waitForFunction(()=>document.querySelector('#partCount')?.textContent==='1');
-
-    const before=await page.evaluate(()=>window.__okaTest.state());
-    const p0=await page.evaluate(()=>window.__okaTest.positions());
-
-    await page.click('#axisXCard');
-    await page.click('#anchorCenterBtn');
-    await page.locator('#axisTargetInput').fill(String(before.partSize.x+20));
-    await page.click('#applyAxisTargetBtn');
-    await page.waitForTimeout(160);
-
-    const after=await page.evaluate(()=>window.__okaTest.state());
-    const p1=await page.evaluate(()=>window.__okaTest.positions());
-    const cmd=after.lastCommand;
-
-    if(cmd?.mode!=='cut-stretch'||cmd?.cuts?.length!==2){
-      throw new Error('特徴付き形状のX編集がcut-stretchではない');
-    }
-    if(!near(after.partSize.x,before.partSize.x+20)||
-       !near(after.partSize.y,before.partSize.y)||
-       !near(after.partSize.z,before.partSize.z)){
-      throw new Error('特徴付き形状でX以外の寸法が変化');
-    }
-
-    const cuts=[...cmd.cuts].sort((a,b)=>a.q-b.q);
-    const left=cuts[0], right=cuts[1];
-    const leftIds=[],rightIds=[];
-    for(let i=0;i<p0.length;i++){
-      const [x0,y0,z0]=p0[i], [x1,y1,z1]=p1[i];
-      if(!near(y0,y1,1e-4)||!near(z0,z1,1e-4)){
-        throw new Error('X編集でY/Z頂点が動いた');
-      }
-      if(x0<left.q-1e-7){
-        leftIds.push(i);
-        if(!near(x1-x0,-10,1e-3)) throw new Error('左端形状が剛体移動していない');
-      }else if(x0>right.q+1e-7){
-        rightIds.push(i);
-        if(!near(x1-x0,10,1e-3)) throw new Error('右端形状が剛体移動していない');
-      }else{
-        if(!near(x1,x0,1e-4)) throw new Error('中央固定領域が動いた');
-      }
-    }
-    if(!leftIds.length||!rightIds.length) throw new Error('端形状領域を取得できない');
-
-    // End-shape pairwise distances must remain unchanged.
-    for(const ids of [leftIds.slice(0,24),rightIds.slice(0,24)]){
-      for(let a=0;a<ids.length;a++) for(let b=a+1;b<ids.length;b++){
-        const i=ids[a],j=ids[b];
-        const d0=Math.hypot(
-          p0[i][0]-p0[j][0],p0[i][1]-p0[j][1],p0[i][2]-p0[j][2]);
-        const d1=Math.hypot(
-          p1[i][0]-p1[j][0],p1[i][1]-p1[j][1],p1[i][2]-p1[j][2]);
-        if(!near(d0,d1,1e-3)) throw new Error('端側形状に新しい段差/変形が発生');
-      }
-    }
-
-    await page.click('#axisUndoBtn');
-    await page.waitForTimeout(120);
-    const undo=await page.evaluate(()=>window.__okaTest.state());
-    if(!near(undo.partSize.x,before.partSize.x)||
-       !near(undo.partSize.y,before.partSize.y)||
-       !near(undo.partSize.z,before.partSize.z)){
-      throw new Error('Undoで元寸法へ戻らない');
-    }
-
-    if(errors.length) throw new Error(errors.join('\n'));
-    await page.close();
+  async function night(text){
+    await page.locator('#nightPrompt').fill(text);
+    await page.click('#nightRunBtn');
+    await page.waitForTimeout(180);
+    return {
+      state:await page.evaluate(()=>window.__okaTest.state()),
+      reply:(await page.locator('#nightReply').innerText()).trim(),
+      status:(await page.locator('#status').innerText()).trim()
+    };
   }
 
-  console.log('V5632_PASS: real STL file load / Android Files / STEP sniff / axis-off / X safe stretch');
+  // Absolute size + physical anchor.
+  let r=await night('ナイト、Xを60mm、左固定');
+  if(!near(r.state.partSize.x,60)||!near(r.state.partSize.y,30)||!near(r.state.partSize.z,10)){
+    throw new Error('X60 左固定が反映されない: '+JSON.stringify(r.state.partSize));
+  }
+  if(r.state.lastCommand?.axis!=='x'||r.state.lastCommand?.anchor!=='min'){
+    throw new Error('X60 左固定のコマンド解釈が不正');
+  }
+  if(!r.reply.includes('X')||!r.reply.includes('60')) throw new Error('ナイト返答が不明確: '+r.reply);
+
+  // Undo via prompt.
+  r=await night('元に戻して');
+  if(!near(r.state.partSize.x,40)||r.state.editCursor!==0){
+    throw new Error('プロンプトUndoでX40に戻らない');
+  }
+
+  // Full-width text must normalize.
+  r=await night('Ｚを２０ｍｍ、下固定');
+  if(!near(r.state.partSize.z,20)||r.state.lastCommand?.axis!=='z'||r.state.lastCommand?.anchor!=='min'){
+    throw new Error('全角Z20 下固定を解釈できない');
+  }
+
+  // Match one axis to another.
+  r=await night('YをXに合わせて');
+  if(!near(r.state.partSize.y,r.state.partSize.x)){
+    throw new Error('YをXに合わせる命令が反映されない');
+  }
+
+  // Relative edit.
+  const beforeX=r.state.partSize.x;
+  r=await night('Xを10mm伸ばして、右固定');
+  if(!near(r.state.partSize.x,beforeX+10)||r.state.lastCommand?.anchor!=='max'){
+    throw new Error('X +10 右固定が反映されない');
+  }
+
+  // Axis off.
+  r=await night('軸解除');
+  if(r.state.selectedAxis!==null) throw new Error('プロンプトで軸解除できない');
+  if((await page.locator('.axisSignLabel').count())!==0) throw new Error('軸解除後も±表示が残る');
+
+  // Contradictory physical direction must be rejected without creating an edit.
+  const cursorBefore=r.state.editCursor;
+  r=await night('Zを30mm、左固定');
+  if(r.state.editCursor!==cursorBefore) throw new Error('矛盾コマンドを実行してしまった');
+  if(!r.reply.includes('方向が合ってへん')) throw new Error('矛盾理由を返していない: '+r.reply);
+
+  // Gibberish must not edit.
+  const cursor2=r.state.editCursor;
+  r=await night('なんとなくええ感じにして');
+  if(r.state.editCursor!==cursor2) throw new Error('曖昧コマンドで編集してしまった');
+
+  if(errors.length) throw new Error(errors.join('\n'));
+  console.log('NIGHT_CMD_PASS: absolute / relative / anchor / match / undo / axis-off / fullwidth / conflict reject');
   await browser.close();
 })().catch(err=>{
   console.error(err);
