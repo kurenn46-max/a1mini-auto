@@ -128,6 +128,23 @@ picker.addEventListener("change",()=>{
     openFile(selectedFile);
   });
   startLoadBtn.addEventListener("click",()=>{if(selectedFile)openFile(selectedFile)});
+window.openIncomingUrl=async function(name,url){
+  try{
+    const r=await fetch(url,{cache:"no-store"});
+    if(!r.ok) throw new Error("ファイル取得 "+r.status);
+    const blob=await r.blob();
+    const file=new File([blob],name||"incoming.step",{type:blob.type||"application/octet-stream"});
+    selectedFile=file;
+    pickedName.textContent="選択: "+file.name;
+    await openFile(file);
+  }catch(e){
+    console.error(e);
+    bootError.textContent="Filesからの読み込み失敗: "+(e.message||e);
+    bootError.style.display="block";
+    landing.style.display="flex";
+    viewerPage.style.display="none";
+  }
+};
 function buildPartList(){partsEl.innerHTML="";parts.forEach((p,i)=>{const b=document.createElement("button");b.className="part";const d=document.createElement("span");d.className="dot";const t=document.createElement("div");t.className="ptext";const n=document.createElement("div");n.className="pname";n.textContent=(i+1)+". "+p.name;const s=document.createElement("div");s.className="pdim";s.textContent=dimsText(p.size);t.append(n,s);b.append(d,t);b.onclick=()=>selectPart(p,true);p.listEl=b;partsEl.appendChild(b)})}
 function setPartAppearance(mode){parts.forEach(p=>p.meshes.forEach(m=>{m.visible=mode!=="isolate"||p===selectedPart;m.material.opacity=(mode==="ghost"&&selectedPart&&p!==selectedPart)?.12:1;m.material.depthWrite=!(mode==="ghost"&&selectedPart&&p!==selectedPart)}))}
 function selectPart(p,fromList){selectedPart=p;parts.forEach(x=>{x.listEl?.classList.toggle("active",x===p);x.meshes.forEach(m=>{m.material.emissive.setHex(x===p?0x17345b:0);m.material.emissiveIntensity=x===p?.7:0})});if(p){infoName.textContent=p.name;infoDims.textContent=dimsText(p.size);if(!measureMode)measureText.textContent="このパーツの外形寸法";if(fromList){drawer.classList.remove("open");focusPart(p)}}}
