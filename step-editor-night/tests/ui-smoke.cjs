@@ -115,8 +115,34 @@ const near=(a,b,e=1e-3)=>Math.abs(a-b)<=e;
   r=await night('元に戻して');
   if(r.state.activePartCount!==2) throw new Error('名前指定削除のUndoが効かない');
 
+  // Detailed face must not replace 3D dimensions with zero-thickness face extents.
+  await page.locator('.partRow[data-index="0"] .selectBtn').click();
+  const faceIndex=await page.evaluate(()=>window.__okaTest.extremePatch('z','max'));
+  if(faceIndex===null) throw new Error('詳細面テスト用の面が見つからない');
+  await page.evaluate(i=>window.__okaTest.selectPatch(0,i),faceIndex);
+  await page.waitForTimeout(100);
+  let dimState=await page.evaluate(()=>window.__okaTest.dimensionState());
+  if(dimState.owner!=='part'){
+    throw new Error('詳細面選択で3D寸法が部品全体ではない: '+JSON.stringify(dimState));
+  }
+  if(dimState.labels.some(x=>/\b0(?:\.0+)?\s*mm\b/.test(x))){
+    throw new Error('詳細面選択で0mm寸法が3Dに出ている: '+JSON.stringify(dimState.labels));
+  }
+
+  // Deleting selected component must switch 3D dimensions to remaining model overall size.
+  await page.locator('.partRow[data-index="1"] .selectBtn').click();
+  r=await night('このパーツを消して');
+  dimState=await page.evaluate(()=>window.__okaTest.dimensionState());
+  if(dimState.owner!=='model'){
+    throw new Error('パーツ削除後にモデル全体寸法へ切り替わらない: '+JSON.stringify(dimState));
+  }
+  if(dimState.labels.some(x=>/\b0(?:\.0+)?\s*mm\b/.test(x))){
+    throw new Error('パーツ削除後のモデル寸法に0mmが混ざる: '+JSON.stringify(dimState.labels));
+  }
+  r=await night('元に戻して');
+
   if(errors.length) throw new Error(errors.join('\n'));
-  console.log('NIGHT_CMD_PASS: resize / undo / axis-off / selected part delete / named delete / export exclusion / restore');
+  console.log('NIGHT_CMD_PASS: resize / delete / undo / face-dim clarity / model-dim after delete');
   await browser.close();
 })().catch(err=>{
   console.error(err);
