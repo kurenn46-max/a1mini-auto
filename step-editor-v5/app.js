@@ -268,9 +268,13 @@ function disposeModel() {
   lastTapPoint = null;
   $('partsList').innerHTML = '<div class="empty">STEPを開くか、下のCAD作成から部品を追加してください</div>';
   $('partCount').textContent = '—';
+  $('totalSizeX').textContent = '—';
+  $('totalSizeY').textContent = '—';
+  $('totalSizeZ').textContent = '—';
   $('sizeX').textContent = '—';
   $('sizeY').textContent = '—';
   $('sizeZ').textContent = '—';
+  $('sizeScopeNote').textContent = '部品を選択すると、その部品だけの寸法を表示します。';
   $('selectedName').textContent = '未選択';
   $('selectedPath').textContent = '';
   $('selectedDims').textContent = 'モデルをタップ';
@@ -317,7 +321,9 @@ function recomputeModelStats(fit = false) {
   if (!parts.length) {
     modelBox.makeEmpty();
     modelSize.set(0,0,0);
+    $('totalSizeX').textContent='—'; $('totalSizeY').textContent='—'; $('totalSizeZ').textContent='—';
     $('sizeX').textContent='—'; $('sizeY').textContent='—'; $('sizeZ').textContent='—';
+    $('sizeScopeNote').textContent='部品を選択すると、その部品だけの寸法を表示します。';
     $('partCount').textContent='—';
     setModelButtons(false);
     $('saveStlBtn').disabled = true;
@@ -340,11 +346,43 @@ function recomputeModelStats(fit = false) {
   if (fit) fitView('iso');
 }
 
+function axisDisplayPart(){
+  if(selectedIndex>=0 && parts[selectedIndex]) return parts[selectedIndex];
+  if(parts.length===1) return parts[0];
+  return null;
+}
+
+function refreshSelectedSizeCards(){
+  const part=axisDisplayPart();
+  if(!part){
+    $('sizeX').textContent='—';
+    $('sizeY').textContent='—';
+    $('sizeZ').textContent='—';
+    $('sizeScopeNote').textContent='部品を選択すると、その部品だけの寸法を表示します。';
+    return;
+  }
+
+  const size=partWorldSize(part);
+  $('sizeX').textContent=formatLengthValue(size.x);
+  $('sizeY').textContent=formatLengthValue(size.y);
+  $('sizeZ').textContent=formatLengthValue(size.z);
+
+  if(parts.length===1){
+    $('sizeScopeNote').textContent='このSTEPは1部品として読み込み中 → 選択部品サイズ＝全体サイズです。';
+  }else if(selectedIndex>=0){
+    $('sizeScopeNote').textContent='編集対象：'+part.name+' の外形寸法です。全体サイズとは別です。';
+  }else{
+    $('sizeScopeNote').textContent='部品を選択してください。全体サイズは上段で確認できます。';
+  }
+}
+
 function refreshStats() {
-  $('sizeX').textContent = formatLengthValue(modelSize.x);
-  $('sizeY').textContent = formatLengthValue(modelSize.y);
-  $('sizeZ').textContent = formatLengthValue(modelSize.z);
-  ['unitX','unitY','unitZ'].forEach(id => $(id).textContent = unitName());
+  $('totalSizeX').textContent = formatLengthValue(modelSize.x);
+  $('totalSizeY').textContent = formatLengthValue(modelSize.y);
+  $('totalSizeZ').textContent = formatLengthValue(modelSize.z);
+  ['totalUnitX','totalUnitY','totalUnitZ','unitX','unitY','unitZ']
+    .forEach(id => $(id).textContent = unitName());
+  refreshSelectedSizeCards();
   $('unitBtn').textContent = '単位 ' + unitName();
   if (selectedIndex >= 0 && parts[selectedIndex]) updateSelectedInfo(parts[selectedIndex]);
 }
@@ -509,6 +547,7 @@ function clearSelectionHighlight() {
 }
 
 function updateSelectedInfo(part) {
+  refreshSelectedSizeCards();
   const box = new THREE.Box3().setFromObject(part.mesh);
   const size = box.getSize(new THREE.Vector3());
   $('selectedName').textContent = part.name;
@@ -571,6 +610,9 @@ function selectPart(index, scrollIntoView = false, tapPoint = null) {
       $('tapPoint').textContent = '詳細面モード：見たい面・穴内周・R部を直接タップしてください';
     }
   }
+  refreshSelectedSizeCards();
+  updateAxisPanel();
+  if(selectedAxis) showSelectedAxisDimension();
   updateDimensionButtons();
 }
 
@@ -1822,10 +1864,7 @@ function commitEdit(cmd){
 
 function getAxisPart(){
   if(selectedIndex>=0 && parts[selectedIndex]) return {part:parts[selectedIndex],index:selectedIndex};
-  if(parts.length===1){
-    selectPart(0,false);
-    return {part:parts[0],index:0};
-  }
+  if(parts.length===1) return {part:parts[0],index:0};
   return null;
 }
 
@@ -1935,7 +1974,7 @@ function updateAxisPanel(){
     ? ' Xは段差防止：穴・R・段差を避けた内部断面から端形状ごと移動します。'
     : '';
   $('axisEditHelp').textContent=
-    resolved.part.name+' の '+axisLabel+'（'+dir.name+'）寸法 '+formatRawMm(dim)+' mm。'+moveText+
+    '選択部品「'+resolved.part.name+'」の '+axisLabel+'（'+dir.name+'）寸法 '+formatRawMm(dim)+' mm。'+moveText+
     '。±表示と固定方向は必ずこの軸と同じ向きです。'+methodNote+
     ' 同じ軸をもう一度タップで軸解除。';
 
@@ -2262,7 +2301,7 @@ async function exportNightPackage(){
   const payload={
     format:'OKA-CAD-EDIT',
     version:1,
-    app:'岡重機 STEP Editor V5.6.3 X SAFE + AXIS OFF',
+    app:'岡重機 STEP Editor V5.6.4 SIZE SCOPE',
     createdAt:new Date().toISOString(),
     sourceFile:originalStepName,
     unit:'mm',
@@ -2822,6 +2861,10 @@ function deleteSelectedCad() {
   $('selectedName').textContent='未選択';
   $('selectedPath').textContent='';
   $('selectedDims').textContent='モデルをタップ';
+  $('sizeX').textContent='—'; $('sizeY').textContent='—'; $('sizeZ').textContent='—';
+  $('sizeScopeNote').textContent=parts.length===1
+    ? 'このSTEPは1部品として読み込み中 → 選択部品サイズ＝全体サイズです。'
+    : '部品を選択すると、その部品だけの寸法を表示します。';
   $('tapPoint').textContent='タップした部品の外形 X・Y・Z を3D上に自動表示します';
   setSelectedButtons(false);
   renderPartsList();
@@ -2847,6 +2890,10 @@ function clearCadParts() {
   $('selectedName').textContent='未選択';
   $('selectedPath').textContent='';
   $('selectedDims').textContent='モデルをタップ';
+  $('sizeX').textContent='—'; $('sizeY').textContent='—'; $('sizeZ').textContent='—';
+  $('sizeScopeNote').textContent=parts.length===1
+    ? 'このSTEPは1部品として読み込み中 → 選択部品サイズ＝全体サイズです。'
+    : '部品を選択すると、その部品だけの寸法を表示します。';
   $('tapPoint').textContent='タップした部品の外形 X・Y・Z を3D上に自動表示します';
   setSelectedButtons(false);
   renderPartsList();
@@ -2892,6 +2939,7 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
       return {
         selectionMode,selectedAxis,selectedPatch: selectedPatch?{...selectedPatch}:null,
         selectedIndex,editCursor,
+        modelSize:{x:modelSize.x,y:modelSize.y,z:modelSize.z},
         partSize:part?{x:partWorldSize(part).x,y:partWorldSize(part).y,z:partWorldSize(part).z}:null,
         bounds,totalVertices,
         lastCommand:cmd?{
