@@ -2712,6 +2712,54 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
       for(let i=0;i<attr.count;i++) out.push([attr.getX(i),attr.getY(i),attr.getZ(i)]);
       return out;
     },
+    addDenseFeaturePart(){
+      const geometries=[];
+
+      const base=new THREE.BoxGeometry(60,20,8,12,2,2);
+      geometries.push(base.index?base.toNonIndexed():base);
+
+      const leftBoss=new THREE.BoxGeometry(8,10,6,2,2,2);
+      leftBoss.translate(-22,0,7);
+      geometries.push(leftBoss.index?leftBoss.toNonIndexed():leftBoss);
+
+      const rightBoss=new THREE.BoxGeometry(8,10,6,2,2,2);
+      rightBoss.translate(22,0,7);
+      geometries.push(rightBoss.index?rightBoss.toNonIndexed():rightBoss);
+
+      const values=[];
+      for(const g of geometries){
+        const a=g.getAttribute('position').array;
+        for(let i=0;i<a.length;i++) values.push(a[i]);
+      }
+
+      const geometry=new THREE.BufferGeometry();
+      geometry.setAttribute('position',new THREE.Float32BufferAttribute(values,3));
+      geometry.computeVertexNormals();
+      geometry.computeBoundingBox();
+      geometry.computeBoundingSphere();
+
+      const material=new THREE.MeshStandardMaterial({
+        color:0x69b7e8,roughness:.65,metalness:.04,side:THREE.DoubleSide
+      });
+      const mesh=new THREE.Mesh(geometry,material);
+      const name='Dense End Feature Test';
+      mesh.name=name;
+      mesh.userData.baseColor=material.color.getHex();
+      modelGroup.add(mesh);
+
+      const localBox=geometry.boundingBox.clone();
+      const localSize=localBox.getSize(new THREE.Vector3());
+      const triangles=triangleCountFor(geometry);
+      parts.push({
+        mesh,name,path:name,localBox,localSize,triangles,source:'cad',kind:'test',baseOffsetZ:0,
+        brepFaces:[],patches:null,triToPatch:null,patchMode:null,patchAngle:null,
+        basePosition:new Float32Array(geometry.getAttribute('position').array)
+      });
+      renderPartsList();
+      recomputeModelStats(true);
+      selectPart(parts.length-1,false);
+      return parts.length-1;
+    },
     addSteppedPart(){
       const shape=new THREE.Shape();
       shape.moveTo(-30,-10);
