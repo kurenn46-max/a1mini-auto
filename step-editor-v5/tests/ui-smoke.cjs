@@ -27,7 +27,34 @@ const near=(a,b,e=1e-3)=>Math.abs(a-b)<=e;
       throw new Error('初期箱寸法が40×30×10ではない');
     }
 
+    // Reproduce the user's screenshot state: detailed face selected, then Z axis selected.
+    await page.click('#faceModeBtn');
+    await page.waitForSelector('.faceRow');
+    await page.locator('.faceRow').first().click();
+    await page.waitForTimeout(80);
+
+    if(!(await page.locator('#faceModeBtn').evaluate(el=>el.classList.contains('active')))){
+      throw new Error('詳細面モードへ切り替わらない');
+    }
+    if(!(await page.locator('.faceRow.selected').count())){
+      throw new Error('詳細面が選択状態になっていない');
+    }
+
     await page.click('#axisZCard');
+    await page.waitForTimeout(80);
+
+    if(!(await page.locator('#faceModeBtn').evaluate(el=>el.classList.contains('active')))){
+      throw new Error('Z軸選択で詳細面モードが解除された');
+    }
+    if(!(await page.locator('.faceRow.selected').count())){
+      throw new Error('Z軸選択で詳細面の選択が消えた');
+    }
+
+    if(await page.locator('.dimensionLabel.axisX').count()) throw new Error('Z軸選択中にX寸法が残っている');
+    if(await page.locator('.dimensionLabel.axisY').count()) throw new Error('Z軸選択中にY寸法が残っている');
+    const zLabel0=(await page.locator('.dimensionLabel.axisZ').innerText()).trim();
+    if(!zLabel0.includes('Z 10')) throw new Error('Z軸選択時の3D寸法が部品全体Z10ではない: '+zLabel0);
+
     if(await page.locator('#applyAxisTargetBtn').isDisabled()) throw new Error('軸編集ボタンが無効');
 
     async function setTarget(mm){
@@ -53,7 +80,14 @@ const near=(a,b,e=1e-3)=>Math.abs(a-b)<=e;
        st.lastCommand.cuts[0].side!=='max'){
       throw new Error('−Z固定がcut-stretch max側ではない');
     }
+    const zLabel20=(await page.locator('.dimensionLabel.axisZ').innerText()).trim();
+    if(!zLabel20.includes('Z 20')) throw new Error('編集後の3D Z寸法が20に更新されない: '+zLabel20);
+    if(await page.locator('.dimensionLabel.axisX').count()||await page.locator('.dimensionLabel.axisY').count()){
+      throw new Error('編集後にZ以外の寸法ラベルが混在した');
+    }
     await undo();
+    const zLabelUndo=(await page.locator('.dimensionLabel.axisZ').innerText()).trim();
+    if(!zLabelUndo.includes('Z 10')) throw new Error('Undo後の3D Z寸法が10に戻らない: '+zLabelUndo);
 
     await page.click('#anchorMaxBtn');
     st=await setTarget(20);
@@ -209,7 +243,7 @@ const near=(a,b,e=1e-3)=>Math.abs(a-b)<=e;
     await page.close();
   }
 
-  console.log('CUT_STRETCH_PASS: 3固定方式 / 端特徴を剛体保持 / 他軸不変 / 危険形状を無変更で拒否 / Undo完全復元');
+  console.log('CUT_STRETCH_PASS: 詳細面選択保持 + 軸全体寸法のみ表示 / 3固定方式 / 端特徴剛体保持 / 他軸不変 / 危険形状拒否 / Undo完全復元');
   await browser.close();
 })().catch(err=>{
   console.error(err);
