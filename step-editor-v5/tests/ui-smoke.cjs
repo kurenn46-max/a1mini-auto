@@ -16,85 +16,109 @@ const { chromium } = require('playwright');
   });
 
   await page.waitForSelector('#addBoxBtn');
-
-  // Real app geometry: 40 x 30 x 10 mm.
   await page.click('#addBoxBtn');
   await page.waitForFunction(() => document.querySelector('#partCount')?.textContent === '1');
 
-  let st = await page.evaluate(() => window.__okaTest.state());
-  if (Math.abs(st.partSize.z - 10) > 0.001) throw new Error('初期Z寸法が10mmではない');
-  const initialMinZ = st.bounds.min.z;
-  const initialMaxZ = st.bounds.max.z;
+  const initial = await page.evaluate(() => window.__okaTest.state());
+  if (Math.abs(initial.partSize.x-40)>0.001 || Math.abs(initial.partSize.y-30)>0.001 || Math.abs(initial.partSize.z-10)>0.001) {
+    throw new Error('初期箱寸法が40x30x10ではない');
+  }
 
-  // Use actual detailed-face data to choose the +Z end face.
-  await page.click('#faceModeBtn');
-  const patchIndex = await page.evaluate(() => window.__okaTest.extremePatch('z','max'));
-  if (patchIndex == null) throw new Error('+Z端面を検出できない');
-
-  await page.locator('.faceRow[data-face-index="' + patchIndex + '"]').click();
-  await page.waitForTimeout(100);
-
-  // Selecting Z must not switch out of detailed-face mode.
+  // Axis select alone must enable controls. No detailed face required.
   await page.click('#axisZCard');
-  await page.waitForTimeout(100);
-
-  const faceActive = await page.locator('#faceModeBtn').evaluate(el => el.classList.contains('active'));
-  const partActive = await page.locator('#partModeBtn').evaluate(el => el.classList.contains('active'));
-  if (!faceActive || partActive) throw new Error('Z軸選択で詳細面モードが変わった');
-
-  // +Z face is moving, therefore -Z side must be fixed automatically.
-  if (!(await page.locator('#anchorMinBtn').evaluate(el => el.classList.contains('active')))) {
-    throw new Error('+Z端面選択時に−Z側固定が自動選択されない');
+  if (await page.locator('#applyAxisTargetBtn').isDisabled()) {
+    throw new Error('Z軸選択だけで寸法確定ボタンが有効にならない');
   }
-  if (!(await page.locator('#anchorCenterBtn').isDisabled())) {
-    throw new Error('Move Face中に中心固定が無効化されていない');
+  if (await page.locator('#anchorMinBtn').isDisabled() ||
+      await page.locator('#anchorCenterBtn').isDisabled() ||
+      await page.locator('#anchorMaxBtn').isDisabled()) {
+    throw new Error('固定方法ボタンが無効のまま');
   }
 
+  async function state(){ return await page.evaluate(() => window.__okaTest.state()); }
+  async function setTarget(mm){
+    await page.locator('#axisTargetInput').fill(String(mm));
+    await page.click('#applyAxisTargetBtn');
+    await page.waitForTimeout(120);
+  }
+  async function undo(){
+    await page.click('#axisUndoBtn');
+    await page.waitForTimeout(100);
+  }
+
+  // Case 1: -Z fixed, +Z moves.
+  await page.click('#anchorMinBtn');
+  await setTarget(20);
+  let st = await state();
+  if (Math.abs(st.partSize.z-20)>0.001) throw new Error('−Z固定でZ20にならない');
+  if (Math.abs(st.partSize.x-40)>0.001 || Math.abs(st.partSize.y-30)>0.001) {
+    throw new Error('Z編集でX/Y寸法が変わった');
+  }
+  if (Math.abs(st.bounds.min.z-initial.bounds.min.z)>0.001) {
+    throw new Error('−Z固定なのに−Z端が動いた');
+  }
+  if (Math.abs(st.bounds.max.z-(initial.bounds.max.z+10))>0.001) {
+    throw new Error('＋Z端が10mm動いていない');
+  }
+  if (st.lastCommand?.mode !== 'move-end-plane' || st.lastCommand?.moves?.length !== 1 ||
+      st.lastCommand.moves[0].side !== 'max') {
+    throw new Error('−Z固定が＋Z端面移動コマンドになっていない');
+  }
+  const moved1 = st.lastCommand.moves[0].vertexCount;
+  if (!(moved1 > 0 && moved1 < st.totalVertices)) {
+    throw new Error('−Z固定で全頂点を動かしている疑い');
+  }
+  await undo();
+
+  // Case 2: +Z fixed, -Z moves.
+  await page.click('#anchorMaxBtn');
+  await setTarget(20);
+  st = await state();
+  if (Math.abs(st.partSize.z-20)>0.001) throw new Error('＋Z固定でZ20にならない');
+  if (Math.abs(st.bounds.max.z-initial.bounds.max.z)>0.001) {
+    throw new Error('＋Z固定なのに＋Z端が動いた');
+  }
+  if (Math.abs(st.bounds.min.z-(initial.bounds.min.z-10))>0.001) {
+    throw new Error('−Z端が10mm動いていない');
+  }
+  if (st.lastCommand?.moves?.length !== 1 || st.lastCommand.moves[0].side !== 'min') {
+    throw new Error('＋Z固定が−Z端面移動コマンドになっていない');
+  }
+  await undo();
+
+  // Case 3: center fixed, both ends move half.
+  await page.click('#anchorCenterBtn');
+  await setTarget(20);
+  st = await state();
+  if (Math.abs(st.partSize.z-20)>0.001) throw new Error('中心固定でZ20にならない');
+  if (Math.abs(st.bounds.min.z-(initial.bounds.min.z-5))>0.001 ||
+      Math.abs(st.bounds.max.z-(initial.bounds.max.z+5))>0.001) {
+    throw new Error('中心固定で両端が5mmずつ動いていない');
+  }
+  if (st.lastCommand?.moves?.length !== 2) {
+    throw new Error('中心固定が両端2面移動になっていない');
+  }
+  const movedTotal = st.lastCommand.moves.reduce((n,m)=>n+m.vertexCount,0);
+  if (!(movedTotal > 0 && movedTotal < st.totalVertices)) {
+    throw new Error('中心固定で全頂点を動かしている疑い');
+  }
+  await undo();
+
+  // Undo restores original exactly.
+  st = await state();
+  if (Math.abs(st.partSize.x-40)>0.001 || Math.abs(st.partSize.y-30)>0.001 || Math.abs(st.partSize.z-10)>0.001 ||
+      Math.abs(st.bounds.min.z-initial.bounds.min.z)>0.001 ||
+      Math.abs(st.bounds.max.z-initial.bounds.max.z)>0.001) {
+    throw new Error('Undoで元形状へ戻っていない');
+  }
+
+  // Sign overlay must still work.
   const plus = (await page.locator('.axisSignLabel.plus').innerText()).trim();
   const minus = (await page.locator('.axisSignLabel.minus').innerText()).trim();
   if (plus !== '＋Z' || minus !== '−Z') throw new Error('±Z表示が不正');
 
-  // Change overall Z from 10 to 20. Only the selected +Z face may move.
-  await page.locator('#axisTargetInput').fill('20');
-  await page.click('#applyAxisTargetBtn');
-  await page.waitForTimeout(150);
-
-  st = await page.evaluate(() => window.__okaTest.state());
-  if (Math.abs(st.partSize.z - 20) > 0.001) {
-    throw new Error('Move Face後のZ寸法が20mmではない: ' + st.partSize.z);
-  }
-  if (Math.abs(st.bounds.min.z - initialMinZ) > 0.001) {
-    throw new Error('固定した−Z端が動いた: ' + initialMinZ + ' -> ' + st.bounds.min.z);
-  }
-  if (Math.abs(st.bounds.max.z - (initialMaxZ + 10)) > 0.001) {
-    throw new Error('選択した＋Z端が10mm移動していない');
-  }
-
-  const cmd = st.lastCommand;
-  if (!cmd || cmd.type !== 'axisDimension' || cmd.mode !== 'move-face') {
-    throw new Error('軸編集がMove Faceコマンドになっていない');
-  }
-  if (!(cmd.vertexCount > 0 && cmd.vertexCount < st.totalVertices)) {
-    throw new Error('選択面だけでなく全頂点を編集している疑い: ' +
-      cmd.vertexCount + '/' + st.totalVertices);
-  }
-  if (Math.abs(cmd.deltaWorldMm - 10) > 0.001) {
-    throw new Error('面移動量が10mmではない');
-  }
-
-  // Undo must restore exact original dimension and fixed boundary.
-  await page.click('#axisUndoBtn');
-  await page.waitForTimeout(120);
-  st = await page.evaluate(() => window.__okaTest.state());
-  if (Math.abs(st.partSize.z - 10) > 0.001 ||
-      Math.abs(st.bounds.min.z - initialMinZ) > 0.001 ||
-      Math.abs(st.bounds.max.z - initialMaxZ) > 0.001) {
-    throw new Error('戻るで元形状に復元できない');
-  }
-
   if (errors.length) throw new Error(errors.join('\n'));
-
-  console.log('GEOMETRY_TEST_PASS: Move Face / 固定端不動 / 選択面頂点のみ / Z10→20 / Undo復元 OK');
+  console.log('GEOMETRY_TEST_PASS: face不要 / 3固定方式 / end-plane only / XY不変 / Undo復元 / ±Z OK');
   await browser.close();
 })().catch(err => {
   console.error(err);
