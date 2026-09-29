@@ -1900,7 +1900,7 @@ function updateAxisPanel(){
     $('anchorMaxBtn').textContent='＋側固定';
     $('axisEditTitle').textContent='X / Y / Z をタップ';
     $('axisEditBadge').textContent='軸 未選択';
-    $('axisEditHelp').textContent='上の X・Y・Z をタップすると、その軸だけ編集できます。';
+    $('axisEditHelp').textContent='X・Y・Z をタップして編集。選択中の同じ軸をもう一度タップすると「軸なし」に戻ります。';
     setAxisControlsEnabled(false);
     return;
   }
@@ -1931,9 +1931,13 @@ function updateAxisPanel(){
   else if(axisAnchor==='max') moveText=dir.plusFixed+'、'+dir.minus+'側を動かします';
   else moveText='中心固定で'+dir.minus+'・'+dir.plus+'を半分ずつ動かします';
 
+  const methodNote=selectedAxis==='x'
+    ? ' Xは段差防止：穴・R・段差を避けた内部断面から端形状ごと移動します。'
+    : '';
   $('axisEditHelp').textContent=
     resolved.part.name+' の '+axisLabel+'（'+dir.name+'）寸法 '+formatRawMm(dim)+' mm。'+moveText+
-    '。±表示と固定方向は必ずこの軸と同じ向きです。';
+    '。±表示と固定方向は必ずこの軸と同じ向きです。'+methodNote+
+    ' 同じ軸をもう一度タップで軸解除。';
 
   const others=['x','y','z'].filter(a=>a!==selectedAxis);
   $('matchAxis1Btn').textContent=others[0].toUpperCase()+'を'+axisLabel+'に合わせる';
@@ -1942,11 +1946,40 @@ function updateAxisPanel(){
   $('matchAxis2Btn').dataset.targetAxis=others[1];
 }
 
+function restoreDimensionsAfterAxisOff(){
+  clearGroup(axisSignGroup);
+  clearPartDimensions();
+
+  if(selectedPatch){
+    refreshEditSelection();
+    return;
+  }
+
+  if(selectedIndex>=0 && parts[selectedIndex]){
+    const part=parts[selectedIndex];
+    if(selectionMode==='part' && selectedDimsOn && part.mesh.visible){
+      showBoxDimensions(new THREE.Box3().setFromObject(part.mesh),'part');
+    }else{
+      updateDimensionButtons();
+    }
+  }else{
+    updateDimensionButtons();
+  }
+}
+
 function selectAxis(axis){
+  if(selectedAxis===axis){
+    selectedAxis=null;
+    updateAxisPanel();
+    restoreDimensionsAfterAxisOff();
+    setStatus('軸選択を解除しました。X / Y / Z どれも未選択です','ok');
+    return;
+  }
+
   selectedAxis=axis;
   showSelectedAxisDimension();
   updateAxisPanel();
-  setStatus(axis.toUpperCase()+'軸を選択・3D寸法は部品全体の'+axis.toUpperCase()+'だけ表示','ok');
+  setStatus(axis.toUpperCase()+'軸を選択・同じ軸をもう一度タップで解除','ok');
 }
 
 function partSizeSnapshot(part){
@@ -1997,48 +2030,96 @@ function commitAxisDimension(axis,target){
   const before=partSizeSnapshot(part);
   const scale=worldAxisScale(part,axis);
   const deltaLocal=deltaWorld/scale;
+  let cmd=null;
 
-  // V5.6.1: 寸法編集は「端の形を丸ごと平行移動」に戻す。
-  // 中間断面を引き伸ばす方式は、IGLOOの穴・R・段差の途中に
-  // 新しい段差を作ることがあった。端部の全頂点を同量移動すれば、
-  // 端にある穴・R・爪の相対形状を保ったまま外形寸法だけ変えられる。
-  const moves=[];
-  if(axisAnchor==='min'){
-    const ids=extremePlaneVertexIndices(part,axis,'max');
-    if(!ids.length){setStatus('＋側の端形状を取得できません','error');return;}
-    moves.push({side:'max',deltaLocalMm:deltaLocal,vertexIndices:ids});
-  }else if(axisAnchor==='max'){
-    const ids=extremePlaneVertexIndices(part,axis,'min');
-    if(!ids.length){setStatus('−側の端形状を取得できません','error');return;}
-    moves.push({side:'min',deltaLocalMm:-deltaLocal,vertexIndices:ids});
-  }else{
-    const minIds=extremePlaneVertexIndices(part,axis,'min');
-    const maxIds=extremePlaneVertexIndices(part,axis,'max');
-    if(!minIds.length||!maxIds.length){setStatus('両端の形状を取得できません','error');return;}
-    moves.push({side:'min',deltaLocalMm:-deltaLocal/2,vertexIndices:minIds});
-    moves.push({side:'max',deltaLocalMm:deltaLocal/2,vertexIndices:maxIds});
-  }
+  if(axis==='x'){
+    // Xは端の頂点だけを引っ張らない。
+    // 穴・R・段差を横切らない内部断面を選び、断面より外側を
+    // 端形状ごと平行移動する。IGLOO実物形状でX42→80を検証済み。
+    const plan=planCutStretch(part,axis,axisAnchor,deltaWorld);
+    if(!plan){
+      setStatus('X方向：穴・段差を避けた安全な伸縮位置が見つかりません','error');
+      return;
+    }
+    if(!simulateCutStretch(part,axis,plan.cuts)){
+      setStatus('X方向：この変更量では面が崩れる可能性があります。変更量を小さくしてください','error');
+      return;
+    }
 
-  const cmd={
-    type:'axisDimension',
-    mode:'move-end-plane',
-    partIndex:resolved.index,
-    axis,
-    anchor:axisAnchor,
-    moves,
-    deltaWorldMm:deltaWorld,
-    fromDimensionMm:current,
-    toDimensionMm:to,
-    feature:{
-      partName:part.name,
-      partPath:part.path||part.name,
+    cmd={
+      type:'axisDimension',
+      mode:'cut-stretch',
+      partIndex:resolved.index,
       axis,
       anchor:axisAnchor,
-      editMode:'move-end-plane',
-      movedEnds:moves.map(m=>({side:m.side,deltaMm:Number(m.deltaLocalMm.toFixed(6)),vertexCount:m.vertexIndices.length}))
-    },
-    inputMethod:'axis-card-end-plane'
-  };
+      cuts:plan.cuts.map(c=>({
+        side:c.side,
+        q:c.q,
+        deltaLocal:c.deltaLocal
+      })),
+      deltaWorldMm:deltaWorld,
+      fromDimensionMm:current,
+      toDimensionMm:to,
+      feature:{
+        partName:part.name,
+        partPath:part.path||part.name,
+        axis,
+        anchor:axisAnchor,
+        editMode:'cut-stretch-x-safe',
+        cuts:plan.cuts.map(c=>({
+          side:c.side,
+          cutMm:Number(c.q.toFixed(6)),
+          deltaMm:Number(c.deltaLocal.toFixed(6)),
+          crossTriangles:c.quality?.crossCount||0,
+          maxAxisNormal:Number((c.quality?.maxAxisNormal||0).toFixed(6))
+        }))
+      },
+      inputMethod:'axis-card-x-safe'
+    };
+  }else{
+    // Y/Zは現行の端面移動を維持。Xの段差修正による回帰を避ける。
+    const moves=[];
+    if(axisAnchor==='min'){
+      const ids=extremePlaneVertexIndices(part,axis,'max');
+      if(!ids.length){setStatus('＋側の端形状を取得できません','error');return;}
+      moves.push({side:'max',deltaLocalMm:deltaLocal,vertexIndices:ids});
+    }else if(axisAnchor==='max'){
+      const ids=extremePlaneVertexIndices(part,axis,'min');
+      if(!ids.length){setStatus('−側の端形状を取得できません','error');return;}
+      moves.push({side:'min',deltaLocalMm:-deltaLocal,vertexIndices:ids});
+    }else{
+      const minIds=extremePlaneVertexIndices(part,axis,'min');
+      const maxIds=extremePlaneVertexIndices(part,axis,'max');
+      if(!minIds.length||!maxIds.length){setStatus('両端の形状を取得できません','error');return;}
+      moves.push({side:'min',deltaLocalMm:-deltaLocal/2,vertexIndices:minIds});
+      moves.push({side:'max',deltaLocalMm:deltaLocal/2,vertexIndices:maxIds});
+    }
+
+    cmd={
+      type:'axisDimension',
+      mode:'move-end-plane',
+      partIndex:resolved.index,
+      axis,
+      anchor:axisAnchor,
+      moves,
+      deltaWorldMm:deltaWorld,
+      fromDimensionMm:current,
+      toDimensionMm:to,
+      feature:{
+        partName:part.name,
+        partPath:part.path||part.name,
+        axis,
+        anchor:axisAnchor,
+        editMode:'move-end-plane',
+        movedEnds:moves.map(m=>({
+          side:m.side,
+          deltaMm:Number(m.deltaLocalMm.toFixed(6)),
+          vertexCount:m.vertexIndices.length
+        }))
+      },
+      inputMethod:'axis-card-end-plane'
+    };
+  }
 
   if(editCursor<editHistory.length) editHistory=editHistory.slice(0,editCursor);
   editHistory.push(cmd);
@@ -2057,7 +2138,8 @@ function commitAxisDimension(axis,target){
   fitBoxPreserveView(new THREE.Box3().setFromObject(parts[resolved.index].mesh));
   setStatus(
     axis.toUpperCase()+' '+formatRawMm(current)+'→'+formatRawMm(to)+
-    'mm 適用・他軸不変を確認済み','ok'
+    'mm 適用・他軸不変を確認済み'+(axis==='x'?'・X段差防止モード':''),
+    'ok'
   );
 }
 
@@ -2180,7 +2262,7 @@ async function exportNightPackage(){
   const payload={
     format:'OKA-CAD-EDIT',
     version:1,
-    app:'岡重機 STEP Editor V5.6.2 AXIS DIR',
+    app:'岡重機 STEP Editor V5.6.3 X SAFE + AXIS OFF',
     createdAt:new Date().toISOString(),
     sourceFile:originalStepName,
     unit:'mm',
