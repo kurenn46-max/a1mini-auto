@@ -1,0 +1,28 @@
+name: STEP Editor Night UI Smoke
+
+on:
+  push:
+    paths:
+      - 'step-editor-night/**'
+      - '.github/workflows/step-editor-night-ui-smoke.yml'
+  workflow_dispatch:
+
+jobs:
+  ui-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install browser test runtime
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Start local app server
+        run: |
+          python3 -m http.server 8000 > /tmp/step-editor-night-http.log 2>&1 &
+          sleep 2
+      - name: Run Night prompt browser test
+        run: node step-editor-night/tests/ui-smoke.cjs
