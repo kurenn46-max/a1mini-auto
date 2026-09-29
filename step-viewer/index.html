@@ -64,7 +64,7 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
 </header>
 
 <div id="viewerWrap">
-  <div id="empty"><div class="box"><div class="big">📐</div><b>STEPを開く</b><div class="hint" style="margin-top:7px">部品ごとの表示・外形寸法・2点測定<br>ファイルは端末内だけで処理します</div></div></div>
+  <div id="empty"><div class="box"><div class="big">📐</div><b>STEPを開く</b><div class="hint" style="margin-top:7px">部品ごとの表示・外形寸法・2点測定<br>ファイルは端末内だけで処理します</div><button id="bigOpenBtn" style="pointer-events:auto;margin-top:16px;border:0;border-radius:14px;background:#f59e0b;color:#111827;font-weight:800;font-size:16px;padding:13px 18px;width:100%">📥 ダウンロードしたSTEPを開く</button></div></div>
   <div id="loading"><div><div class="spinner"></div><div style="margin-top:12px">3Dデータを読み込み中…</div></div></div>
   <div id="toast"></div>
   <div id="info">
@@ -85,7 +85,7 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
 </div>
 
 <div class="toolbar">
-  <button class="tool" id="openBtn"><span>📂</span><span>開く</span></button>
+  <button class="tool" id="openBtn"><span>📂</span><span>ファイル</span></button>
   <button class="tool" id="partsBtn" disabled><span>📦</span><span>パーツ</span></button>
   <button class="tool" id="measureBtn" disabled><span>📏</span><span>測る</span></button>
   <button class="tool" id="explodeBtn" disabled><span>💥</span><span>分解</span></button>
@@ -399,6 +399,7 @@ renderer.domElement.addEventListener("pointerup",e=>{
 });
 
 document.getElementById("openBtn").onclick=()=>fileInput.click();
+const bigOpen=document.getElementById("bigOpenBtn"); if(bigOpen) bigOpen.onclick=()=>fileInput.click();
 fileInput.onchange=()=>openFile(fileInput.files[0]);
 document.getElementById("partsBtn").onclick=()=>drawer.classList.add("open");
 document.getElementById("closeDrawer").onclick=()=>drawer.classList.remove("open");
