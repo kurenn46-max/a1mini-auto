@@ -1338,7 +1338,9 @@ function planSmartStretch(part,axis,anchor,deltaWorld){
   const extent=box.max[axis]-box.min[axis];
   if(!(extent>1e-9)) return null;
 
-  const minBandWidth=Math.abs(deltaLocal)*1.18;
+  // Widen the transition band only when shrinking. Growing can use a narrow,
+  // feature-free band and keep both end regions rigid.
+  const minBandWidth=deltaLocal<0 ? Math.abs(deltaLocal)*1.18 : 0;
   const bands=[];
 
   if(anchor==='min'){
@@ -1351,7 +1353,7 @@ function planSmartStretch(part,axis,anchor,deltaWorld){
     bands.push({side:'min',start:b.start,end:b.end,deltaLocal:-deltaLocal});
   }else{
     const half=deltaLocal/2;
-    const minW=Math.abs(half)*1.18;
+    const minW=deltaLocal<0 ? Math.abs(half)*1.18 : 0;
     const left=findSafeStretchBand(part,axis,0.16,0.42,minW);
     const right=findSafeStretchBand(part,axis,0.58,0.84,minW);
     if(!left||!right||left.end>=right.start) return null;
