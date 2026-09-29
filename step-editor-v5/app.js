@@ -745,6 +745,26 @@ function fitBox(box, mode = 'iso') {
   controls.update();
 }
 
+function fitBoxPreserveView(box) {
+  if (!box || box.isEmpty()) return;
+  const center=box.getCenter(new THREE.Vector3());
+  const size=box.getSize(new THREE.Vector3());
+  const maxDim=Math.max(size.x,size.y,size.z,1);
+  const fov=THREE.MathUtils.degToRad(camera.fov);
+  const dist=(maxDim/(2*Math.tan(fov/2)))*1.65;
+
+  let dir=camera.position.clone().sub(controls.target);
+  if(dir.lengthSq()<1e-12) dir.set(1,-1,.78);
+  dir.normalize();
+
+  camera.near=Math.max(maxDim/10000,0.001);
+  camera.far=Math.max(maxDim*1000,1000);
+  camera.updateProjectionMatrix();
+  camera.position.copy(center).addScaledVector(dir,dist);
+  controls.target.copy(center);
+  controls.update();
+}
+
 function fitView(mode = 'iso') {
   const box = getVisibleBox();
   if (!box) return;
@@ -1904,7 +1924,7 @@ function updateAxisPanel(){
 
   $('axisEditHelp').textContent=
     resolved.part.name+' の '+axisLabel+'寸法 '+formatRawMm(dim)+' mm。'+moveText+
-    'し、穴・R・段差を避けた途中断面だけを伸ばします。';
+    'し、穴・R・段差を避けた途中断面だけを伸ばします。適用後に寸法を再計測し、異常なら自動で戻します。';
 
   const others=['x','y','z'].filter(a=>a!==selectedAxis);
   $('matchAxis1Btn').textContent=others[0].toUpperCase()+'を'+axisLabel+'に合わせる';
@@ -1918,6 +1938,36 @@ function selectAxis(axis){
   showSelectedAxisDimension();
   updateAxisPanel();
   setStatus(axis.toUpperCase()+'軸を選択・3D寸法は部品全体の'+axis.toUpperCase()+'だけ表示','ok');
+}
+
+function partSizeSnapshot(part){
+  const v=partWorldSize(part);
+  return {x:v.x,y:v.y,z:v.z};
+}
+
+function axisEditPostcheck(before,after,axis,target,tolerance=0.015){
+  const result={ok:true,reasons:[]};
+  if(Math.abs(after[axis]-target)>tolerance){
+    result.ok=false;
+    result.reasons.push(axis.toUpperCase()+'寸法 '+after[axis].toFixed(3)+'mm');
+  }
+  for(const a of ['x','y','z']){
+    if(a===axis) continue;
+    if(Math.abs(after[a]-before[a])>tolerance){
+      result.ok=false;
+      result.reasons.push(a.toUpperCase()+'が '+before[a].toFixed(3)+'→'+after[a].toFixed(3)+'mm');
+    }
+  }
+  return result;
+}
+
+function rollbackLastAxisEdit(message){
+  if(editCursor>0){
+    editHistory.splice(editCursor-1,1);
+    editCursor=Math.max(0,editCursor-1);
+    replayEdits();
+  }
+  setStatus(message,'error');
 }
 
 function commitAxisDimension(axis,target){
@@ -1947,6 +1997,7 @@ function commitAxisDimension(axis,target){
     return;
   }
 
+  const before=partSizeSnapshot(part);
   const cmd={
     type:'axisDimension',
     mode:'cut-stretch',
@@ -1978,8 +2029,25 @@ function commitAxisDimension(axis,target){
     inputMethod:'axis-card-cut-stretch'
   };
 
-  commitEdit(cmd);
+  if(editCursor<editHistory.length) editHistory=editHistory.slice(0,editCursor);
+  editHistory.push(cmd);
+  editCursor=editHistory.length;
+  replayEdits();
+
+  const after=partSizeSnapshot(parts[resolved.index]);
+  const check=axisEditPostcheck(before,after,axis,to);
+  if(!check.ok){
+    rollbackLastAxisEdit('安全確認NG：'+check.reasons.join(' / ')+'。編集を元に戻しました');
+    return;
+  }
+
+  showSelectedAxisDimension();
   updateAxisPanel();
+  fitBoxPreserveView(new THREE.Box3().setFromObject(parts[resolved.index].mesh));
+  setStatus(
+    axis.toUpperCase()+' '+formatRawMm(current)+'→'+formatRawMm(to)+
+    'mm 適用・他軸不変を確認済み','ok'
+  );
 }
 
 function applyAxisDelta(delta){
@@ -2101,7 +2169,7 @@ async function exportNightPackage(){
   const payload={
     format:'OKA-CAD-EDIT',
     version:1,
-    app:'岡重機 STEP Editor V5.5.9 AXIS DIM FIX',
+    app:'岡重機 STEP Editor V5.6.0 IGLOO VERIFIED',
     createdAt:new Date().toISOString(),
     sourceFile:originalStepName,
     unit:'mm',
@@ -2765,6 +2833,33 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
       const out=[];
       for(let i=0;i<attr.count;i++) out.push([attr.getX(i),attr.getY(i),attr.getZ(i)]);
       return out;
+    },
+    addRawTrianglePositions(flat,name='Raw Test'){
+      if(!Array.isArray(flat)||flat.length<9||flat.length%9!==0) throw new Error('invalid raw triangle positions');
+      const geometry=new THREE.BufferGeometry();
+      geometry.setAttribute('position',new THREE.Float32BufferAttribute(flat,3));
+      geometry.computeVertexNormals();
+      geometry.computeBoundingBox();
+      geometry.computeBoundingSphere();
+      const material=new THREE.MeshStandardMaterial({
+        color:0x69b7e8,roughness:.65,metalness:.04,side:THREE.DoubleSide
+      });
+      const mesh=new THREE.Mesh(geometry,material);
+      mesh.name=name;
+      mesh.userData.baseColor=material.color.getHex();
+      modelGroup.add(mesh);
+      const localBox=geometry.boundingBox.clone();
+      const localSize=localBox.getSize(new THREE.Vector3());
+      const triangles=triangleCountFor(geometry);
+      parts.push({
+        mesh,name,path:name,localBox,localSize,triangles,source:'cad',kind:'fixture',baseOffsetZ:0,
+        brepFaces:[],patches:null,triToPatch:null,patchMode:null,patchAngle:null,
+        basePosition:new Float32Array(geometry.getAttribute('position').array)
+      });
+      renderPartsList();
+      recomputeModelStats(true);
+      selectPart(parts.length-1,false);
+      return parts.length-1;
     },
     addDenseFeaturePart(){
       const geometries=[];
