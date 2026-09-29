@@ -6,13 +6,13 @@
   <meta name="theme-color" content="#091522">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
-  <title>岡重機 STEP Editor V5.6.3.1 ANDROID READ FIX</title>
-  <link rel="stylesheet" href="./style.css?v=5.6.3.1">
+  <title>岡重機 STEP Editor V5.6.3.2 STEP + STL READ</title>
+  <link rel="stylesheet" href="./style.css?v=5.6.3.2">
 </head>
 <body>
 <header class="topbar">
   <div>
-    <h1>岡重機 STEP Editor <small>V5.6.3.1 ANDROID READ FIX</small></h1>
+    <h1>岡重機 STEP Editor <small>V5.6.3.2 STEP + STL READ</small></h1>
     <p>X/Y/Zをタップして簡単寸法編集・測定・ナイト用データ書出し</p>
   </div>
   <button id="fitBtn" class="toolBtn" disabled>全体表示</button>
@@ -23,8 +23,8 @@
     <label class="openFileBtn" for="stepInput">
       <span class="openIcon">📂</span>
       <span>
-        <strong>STEPファイルを選ぶ</strong>
-        <small>Androidの「Files」からSTEPデータを選択（拡張子なしも中身で判定）</small>
+        <strong>STEP / STLファイルを選ぶ</strong>
+        <small>Androidの「Files」から .step / .stp / .stl を選択</small>
       </span>
       <input id="stepInput" type="file">
     </label>
@@ -34,7 +34,7 @@
 
   <section class="viewerCard">
     <div id="viewer"></div>
-    <div id="status" class="status idle">STEPファイル待ち</div>
+    <div id="status" class="status idle">STEP / STLファイル待ち</div>
     <div id="loading" class="loading hidden">
       <div class="spinner"></div>
       <div id="loadingText">読み込み中…</div>
@@ -309,7 +309,7 @@
     <summary>操作方法</summary>
     <p>「部品」モードは部品全体、「詳細面」モードは平面・穴内周・R部などの滑らかにつながる面グループを選択します。選択した範囲の X・Y・Z・面積を表示します。1本指ドラッグ＝回転、2本指＝移動、ピンチ＝拡大縮小。</p>
     <p>「2点測定」はモデル上の2点間の直線距離を測ります。表示寸法と測定値はSTEPを表示用に三角形化した形状から計算します。</p>
-    <p class="privacy">STEPファイルは端末内で処理し、サーバーへアップロードしません。</p>
+    <p class="privacy">STEP / STLファイルは端末内で処理し、サーバーへアップロードしません。</p>
   </details>
 </main>
 
@@ -320,6 +320,6 @@
   "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
 }}
 </script>
-<script type="module" src="./app.js?v=5.6.3.1"></script>
+<script type="module" src="./app.js?v=5.6.3.2"></script>
 </body>
 </html>
