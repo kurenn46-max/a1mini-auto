@@ -1893,6 +1893,7 @@ function commitEdit(cmd){
   if(editCursor<editHistory.length) editHistory=editHistory.slice(0,editCursor);
   editHistory.push(cmd);
   editCursor=editHistory.length;
+  if(selectedIndex===index) selectedAxis=null;
   replayEdits();
   setStatus('編集を適用しました','ok');
 }
@@ -3037,7 +3038,7 @@ function runNightCommand(raw){
     return nightUndo();
   }
 
-  if(/削除|消して|消す|取り除|除去|なくして/.test(text) && /(パーツ|部品|BASE|POST|ARM|土台|ベース|ポスト|アーム|立ち上がり)/i.test(text)){
+  if(/削除|消して|消す|取り除|除去|なくして/.test(text)){
     const target=findNightPartTarget(text);
     if(!target){
       setNightReply('どのパーツを消すか分からへん。先にパーツを選ぶか、部品名を入れてな。','error');
