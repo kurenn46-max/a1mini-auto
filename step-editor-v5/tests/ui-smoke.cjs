@@ -68,9 +68,11 @@ endsolid preview`;
       throw new Error('STL読込完了になっていない: '+status);
     }
 
+    await page.locator('.partRow[data-index="0"] .selectBtn').click();
+    await page.waitForTimeout(100);
     const st=await page.evaluate(()=>window.__okaTest.state());
     if(!st.partSize||!near(st.partSize.x,10)||!near(st.partSize.y,10)||!near(st.partSize.z,10)){
-      throw new Error('STLモデル寸法が10×10×10にならない: '+JSON.stringify(st.partSize));
+      throw new Error('STL選択後の寸法が10×10×10にならない: '+JSON.stringify(st.partSize));
     }
 
     if(errors.length) throw new Error(errors.join('\n'));
