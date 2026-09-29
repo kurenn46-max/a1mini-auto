@@ -6,14 +6,14 @@
   <meta name="theme-color" content="#091522">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
-  <title>岡重機 STEP Viewer</title>
-  <link rel="stylesheet" href="./style.css?v=1">
+  <title>岡重機 STEP Viewer + CAD</title>
+  <link rel="stylesheet" href="./style.css?v=2">
 </head>
 <body>
 <header class="topbar">
   <div>
-    <h1>岡重機 STEP Viewer</h1>
-    <p>Android Filesから直接開く・寸法確認・部品ごとに表示</p>
+    <h1>岡重機 STEP Viewer + CAD</h1>
+    <p>STEP閲覧・寸法確認・その場で簡易CAD作成</p>
   </div>
   <button id="fitBtn" class="toolBtn" disabled>全体表示</button>
 </header>
@@ -78,13 +78,61 @@
     <div class="panelHead">
       <div>
         <div class="eyebrow">部品一覧</div>
-        <h2>STEP内のパーツ</h2>
+        <h2>STEP / CAD パーツ</h2>
       </div>
       <span id="visibleCount" class="pill">0 / 0</span>
     </div>
     <div id="partsList" class="partsList">
-      <div class="empty">STEPを開くとここに部品が並びます</div>
+      <div class="empty">STEPを開くか、下のCAD作成から部品を追加してください</div>
     </div>
+  </section>
+
+  <section class="panel cadPanel">
+    <div class="panelHead">
+      <div>
+        <div class="eyebrow">簡易CAD</div>
+        <h2>寸法を入れて3D部品を作成</h2>
+      </div>
+      <span class="pill">mm</span>
+    </div>
+
+    <div class="cadBlock">
+      <h3>■ 箱</h3>
+      <div class="cadFields three">
+        <label>X<input id="boxX" type="number" inputmode="decimal" min="0.01" step="0.1" value="40"></label>
+        <label>Y<input id="boxY" type="number" inputmode="decimal" min="0.01" step="0.1" value="30"></label>
+        <label>Z<input id="boxZ" type="number" inputmode="decimal" min="0.01" step="0.1" value="10"></label>
+      </div>
+      <button id="addBoxBtn" class="cadPrimary">箱を追加</button>
+    </div>
+
+    <div class="cadBlock">
+      <h3>● 円柱</h3>
+      <div class="cadFields two">
+        <label>直径<input id="cylD" type="number" inputmode="decimal" min="0.01" step="0.1" value="20"></label>
+        <label>高さ<input id="cylH" type="number" inputmode="decimal" min="0.01" step="0.1" value="20"></label>
+      </div>
+      <button id="addCylinderBtn" class="cadPrimary">円柱を追加</button>
+    </div>
+
+    <div class="cadBlock">
+      <h3>選択CADの位置</h3>
+      <div class="cadFields three">
+        <label>X<input id="posX" type="number" inputmode="decimal" step="0.1" value="0"></label>
+        <label>Y<input id="posY" type="number" inputmode="decimal" step="0.1" value="0"></label>
+        <label>Z<input id="posZ" type="number" inputmode="decimal" step="0.1" value="0"></label>
+      </div>
+      <div class="cadActions">
+        <button id="applyPosBtn" disabled>位置を反映</button>
+        <button id="deleteCadBtn" class="dangerBtn" disabled>選択CADを削除</button>
+      </div>
+    </div>
+
+    <div class="cadActions">
+      <button id="saveStlBtn" disabled>💾 CADをSTL保存</button>
+      <button id="clearCadBtn" disabled>CADだけ全削除</button>
+    </div>
+    <p class="cadNote">箱・円柱は端末内だけで作成します。STEPで読んだ部品は消さず、その上にCAD部品を追加できます。</p>
   </section>
 
   <details class="panel tips">
@@ -104,6 +152,6 @@
   }
 }
 </script>
-<script type="module" src="./app.js?v=1"></script>
+<script type="module" src="./app.js?v=2"></script>
 </body>
 </html>
