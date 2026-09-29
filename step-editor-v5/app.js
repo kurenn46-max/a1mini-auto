@@ -1045,6 +1045,9 @@ function updateFaceReadout(part, patchIndex, stats) {
 }
 
 function selectPatch(partIndex, patchIndex, scroll=true) {
+  selectedAxis=null;
+  clearGroup(axisSignGroup);
+  updateAxisPanel();
   const part=parts[partIndex];
   if (!part) return;
   ensureDetailPatches(part);
@@ -1381,6 +1384,14 @@ function updateEditTarget(part,patchIndex,stats){
 }
 
 function refreshEditSelection(){
+  if(selectedAxis){
+    const resolved=getAxisPart();
+    if(resolved?.part?.mesh?.visible){
+      clearGroup(faceHighlightGroup);
+      showBoxDimensions(new THREE.Box3().setFromObject(resolved.part.mesh),'part');
+    }
+    return;
+  }
   if(!selectedPatch) return;
   const part=parts[selectedPatch.partIndex];
   const patch=part?.patches?.[selectedPatch.patchIndex];
@@ -1627,8 +1638,15 @@ function updateAxisPanel(){
 
 function selectAxis(axis){
   selectedAxis=axis;
+  const resolved=getAxisPart();
+  if(resolved?.part?.mesh?.visible){
+    clearGroup(faceHighlightGroup);
+    showBoxDimensions(new THREE.Box3().setFromObject(resolved.part.mesh),'part');
+    $('tapPoint').textContent=
+      axis.toUpperCase()+'軸編集：部品全体の寸法を表示中（＋/−表示と同じ基準）';
+  }
   updateAxisPanel();
-  setStatus(axis.toUpperCase()+'軸を選択しました','ok');
+  setStatus(axis.toUpperCase()+'軸を選択・部品全体寸法を表示','ok');
 }
 
 function commitAxisDimension(axis,target){
