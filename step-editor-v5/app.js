@@ -3,7 +3,6 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
-import { zipSync, strToU8 } from 'https://cdn.jsdelivr.net/npm/fflate@0.8.2/+esm';
 
 const $ = (id) => document.getElementById(id);
 const viewer = $('viewer');
@@ -1475,7 +1474,7 @@ function serializableCommand(cmd){
   return out;
 }
 
-function exportNightPackage(){
+async function exportNightPackage(){
   if(!originalStepBytes||!originalStepName){
     setStatus('元STEPを開いてください','error'); return;
   }
@@ -1490,13 +1489,32 @@ function exportNightPackage(){
     note:'元STEPと編集指示。表示側のメッシュ編集はプレビューで、最終CAD/STLは編集指示を元に再構築する。',
     operations:active
   };
-  const files={};
-  files['source/'+originalStepName]=originalStepBytes;
-  files['edit.json']=strToU8(JSON.stringify(payload,null,2));
-  const zipped=zipSync(files,{level:6});
   const base=originalStepName.replace(/\.(step|stp)$/i,'')||'model';
-  saveBlob(new Blob([zipped],{type:'application/octet-stream'}),base+'_EDIT.okacad');
-  setStatus('ナイト用データを書き出しました','ok');
+
+  setLoading(true,'ナイト用データを作成中…');
+  try{
+    const mod=await import('https://cdn.jsdelivr.net/npm/fflate@0.8.2/+esm');
+    const files={};
+    files['source/'+originalStepName]=originalStepBytes;
+    files['edit.json']=mod.strToU8(JSON.stringify(payload,null,2));
+    const zipped=mod.zipSync(files,{level:6});
+    saveBlob(new Blob([zipped],{type:'application/octet-stream'}),base+'_EDIT.okacad');
+    setStatus('ナイト用データを書き出しました','ok');
+  }catch(err){
+    console.error(err);
+    const fallback={
+      ...payload,
+      sourceStepBase64:null,
+      warning:'圧縮ライブラリを読み込めなかったため編集指示JSONのみを書き出しました。元STEPと一緒に渡してください。'
+    };
+    saveBlob(
+      new Blob([JSON.stringify(fallback,null,2)],{type:'application/json'}),
+      base+'_EDIT.json'
+    );
+    setStatus('圧縮できなかったため編集指示JSONを保存しました','error');
+  }finally{
+    setLoading(false);
+  }
 }
 
 function saveEditedStl(){
