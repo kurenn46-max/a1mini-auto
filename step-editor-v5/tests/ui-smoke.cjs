@@ -19,7 +19,23 @@ const near=(a,b,e=1e-3)=>Math.abs(a-b)<=e;
   {
     const {page,errors}=await openPage();
 
-    await page.click('#addBoxBtn');
+    // Android download/import regression.
+  const inputAccept=await page.locator('#stepInput').getAttribute('accept');
+  if(inputAccept!==null) throw new Error('Android Filesの入力にaccept制限が残っている: '+inputAccept);
+
+  const sniff=await page.evaluate(()=>({
+    extUpper:window.__okaTest.isStepName('sample.STEP'),
+    extStp:window.__okaTest.isStepName('sample.stp'),
+    extless:window.__okaTest.isStepName('download'),
+    contentStep:window.__okaTest.sniffStepText('ISO-10303-21;\nHEADER;\nENDSEC;\nDATA;'),
+    contentNotStep:window.__okaTest.sniffStepText('hello world')
+  }));
+  if(!sniff.extUpper||!sniff.extStp) throw new Error('STEP/STP拡張子判定が壊れている');
+  if(sniff.extless) throw new Error('拡張子なしファイルを名前だけでSTEP扱いしている');
+  if(!sniff.contentStep) throw new Error('拡張子なしSTEPを内容判定できない');
+  if(sniff.contentNotStep) throw new Error('非STEPを内容判定で通している');
+
+  await page.click('#addBoxBtn');
     await page.waitForFunction(()=>document.querySelector('#partCount')?.textContent==='1');
     await page.click('#frontBtn');
     await page.waitForTimeout(120);
@@ -196,7 +212,7 @@ const near=(a,b,e=1e-3)=>Math.abs(a-b)<=e;
     await page.close();
   }
 
-  console.log('V563_PASS: axis-off / X safe cut-stretch / end features rigid / other axes unchanged / Undo');
+  console.log('V5631_PASS: Android Files unrestricted picker / content STEP sniff / axis-off / X safe stretch');
   await browser.close();
 })().catch(err=>{
   console.error(err);
