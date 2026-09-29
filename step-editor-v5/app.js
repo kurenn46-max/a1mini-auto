@@ -91,6 +91,7 @@ let originalStepBytes = null;
 let originalStepName = '';
 let editHistory = [];
 let editCursor = 0;
+let faceDrag = null;
 
 function setStatus(text, type = 'idle') {
   const el = $('status');
@@ -1137,6 +1138,7 @@ function renderFacesList(part, partIndex) {
 }
 
 function setSelectionMode(mode) {
+  if(faceDrag){ controls.enabled=true; faceDrag=null; $('dragHud').classList.add('hidden'); }
   selectionMode=mode==='face'?'face':'part';
   $('partModeBtn').classList.toggle('active',selectionMode==='part');
   $('faceModeBtn').classList.toggle('active',selectionMode==='face');
@@ -1144,7 +1146,7 @@ function setSelectionMode(mode) {
     ? '詳細面モード：面・穴・R部をタップ'
     : '部品モード：タップで外形寸法';
   $('modeHelp').textContent=selectionMode==='face'
-    ? '滑らかにつながる面を詳細パーツとして選択し、X・Y・Z・面積を表示します。'
+    ? '面をタップして選択。黄色になった面をもう一度指でつかんでドラッグすると直接伸び縮みします。'
     : '部品全体を選択して X・Y・Z 外形寸法を表示します。';
   clearFaceHighlight();
   clearPartDimensions();
@@ -1157,7 +1159,7 @@ function setSelectionMode(mode) {
     if (selectionMode==='part' && selectedDimsOn && part.mesh.visible) {
       showBoxDimensions(new THREE.Box3().setFromObject(part.mesh),'part');
     } else if (selectionMode==='face') {
-      $('tapPoint').textContent='詳細面モード：見たい面・穴内周・R部を直接タップしてください';
+      $('tapPoint').textContent='詳細面モード：面をタップ → 黄色の面を指でつかんでドラッグ';
     }
   }
 }
@@ -1528,6 +1530,181 @@ function saveEditedStl(){
 }
 
 
+
+function screenPointForWorld(world, rect) {
+  const p=world.clone().project(camera);
+  return {
+    x:(p.x*0.5+0.5)*rect.width,
+    y:(-p.y*0.5+0.5)*rect.height
+  };
+}
+
+function currentSelectedPatchHit(hit){
+  if(!selectedPatch || !hit) return false;
+  const idx=hit.object?.userData?.partIndex;
+  if(idx!==selectedPatch.partIndex) return false;
+  const part=parts[idx];
+  if(!part) return false;
+  ensureDetailPatches(part);
+  const tri=Number(hit.faceIndex);
+  if(!Number.isInteger(tri) || !part.triToPatch || tri<0 || tri>=part.triToPatch.length) return false;
+  return part.triToPatch[tri]===selectedPatch.patchIndex;
+}
+
+function beginFaceDragCandidate(e, hit){
+  if(selectionMode!=='face' || measureMode || !selectedPatch || !currentSelectedPatchHit(hit)) return false;
+  const part=parts[selectedPatch.partIndex];
+  const patch=part?.patches?.[selectedPatch.patchIndex];
+  if(!part||!patch) return false;
+
+  const ids=uniquePatchVertexIndices(part,patch);
+  const attr=part.mesh.geometry.getAttribute('position');
+  const startPositions=new Float32Array(ids.length*3);
+  ids.forEach((vi,k)=>{
+    startPositions[k*3]=attr.getX(vi);
+    startPositions[k*3+1]=attr.getY(vi);
+    startPositions[k*3+2]=attr.getZ(vi);
+  });
+
+  const normalLocal=averagePatchNormalLocal(part,patch);
+  const normalMatrix=new THREE.Matrix3().getNormalMatrix(part.mesh.matrixWorld);
+  const normalWorld=normalLocal.clone().applyMatrix3(normalMatrix).normalize();
+  const stats=computePatchStats(part,patch);
+  const centerWorld=stats.box.getCenter(new THREE.Vector3());
+  const rect=renderer.domElement.getBoundingClientRect();
+  const probe=Math.max(modelScale()*0.15,1);
+  const a=screenPointForWorld(centerWorld,rect);
+  const b=screenPointForWorld(centerWorld.clone().addScaledVector(normalWorld,probe),rect);
+  let sx=b.x-a.x, sy=b.y-a.y;
+  const sl=Math.hypot(sx,sy);
+  let projected=true;
+  if(sl<12){
+    projected=false;
+    sx=0; sy=-1;
+  }else{
+    sx/=sl; sy/=sl;
+  }
+  const pxPerMm=projected ? sl/probe : Math.max(rect.height/Math.max(modelScale()*1.5,1),0.1);
+
+  faceDrag={
+    pointerId:e.pointerId,
+    startX:e.clientX,startY:e.clientY,
+    partIndex:selectedPatch.partIndex,
+    patchIndex:selectedPatch.patchIndex,
+    vertexIndices:ids,
+    startPositions,
+    normalLocal,
+    feature:featureSignature(part,selectedPatch.patchIndex,stats),
+    screenDirX:sx,screenDirY:sy,
+    pxPerMm:Math.max(pxPerMm,0.08),
+    active:false,
+    deltaMm:0
+  };
+  controls.enabled=false;
+  try{renderer.domElement.setPointerCapture(e.pointerId);}catch(_){}
+  return true;
+}
+
+function updateFaceDrag(e){
+  if(!faceDrag || faceDrag.pointerId!==e.pointerId) return false;
+  const dx=e.clientX-faceDrag.startX;
+  const dy=e.clientY-faceDrag.startY;
+  const travel=Math.hypot(dx,dy);
+  if(!faceDrag.active && travel<5) return true;
+  faceDrag.active=true;
+
+  let along=dx*faceDrag.screenDirX + dy*faceDrag.screenDirY;
+  // If normal points almost at the camera, vertical drag is used as a stable fallback.
+  if(Math.abs(faceDrag.screenDirX)<0.001 && Math.abs(faceDrag.screenDirY+1)<0.001) along=-dy;
+  let delta=along/faceDrag.pxPerMm;
+  const limit=Math.max(modelScale()*0.5,10);
+  delta=THREE.MathUtils.clamp(delta,-limit,limit);
+  faceDrag.deltaMm=delta;
+
+  const part=parts[faceDrag.partIndex];
+  const attr=part?.mesh?.geometry?.getAttribute('position');
+  if(!part||!attr) return true;
+  const n=faceDrag.normalLocal;
+
+  faceDrag.vertexIndices.forEach((vi,k)=>{
+    const x=faceDrag.startPositions[k*3];
+    const y=faceDrag.startPositions[k*3+1];
+    const z=faceDrag.startPositions[k*3+2];
+    attr.setXYZ(vi,x+n.x*delta,y+n.y*delta,z+n.z*delta);
+  });
+  attr.needsUpdate=true;
+  part.mesh.geometry.computeVertexNormals();
+  part.mesh.geometry.computeBoundingBox();
+  part.mesh.geometry.computeBoundingSphere();
+
+  clearGroup(faceHighlightGroup);
+  clearPartDimensions();
+  const patch=part.patches?.[faceDrag.patchIndex];
+  if(patch){
+    highlightPatch(part,patch);
+    const stats=computePatchStats(part,patch);
+    showBoxDimensions(stats.box,'face');
+    updateFaceReadout(part,faceDrag.patchIndex,stats);
+    updateEditTarget(part,faceDrag.patchIndex,stats);
+  }
+  $('dragHud').textContent='伸ばし '+(delta>=0?'+':'')+formatRawMm(delta)+' mm';
+  $('dragHud').classList.remove('hidden');
+  setStatus('指で面を編集中','ok');
+  return true;
+}
+
+function endFaceDrag(e,cancel=false){
+  if(!faceDrag || faceDrag.pointerId!==e.pointerId) return false;
+  const d=faceDrag;
+  const part=parts[d.partIndex];
+  const attr=part?.mesh?.geometry?.getAttribute('position');
+
+  $('dragHud').classList.add('hidden');
+  controls.enabled=true;
+  try{renderer.domElement.releasePointerCapture(e.pointerId);}catch(_){}
+
+  if(!d.active || cancel || Math.abs(d.deltaMm)<0.001){
+    if(attr){
+      d.vertexIndices.forEach((vi,k)=>{
+        attr.setXYZ(vi,d.startPositions[k*3],d.startPositions[k*3+1],d.startPositions[k*3+2]);
+      });
+      attr.needsUpdate=true;
+      part.mesh.geometry.computeVertexNormals();
+      part.mesh.geometry.computeBoundingBox();
+      part.mesh.geometry.computeBoundingSphere();
+    }
+    faceDrag=null;
+    refreshEditSelection();
+    return false;
+  }
+
+  // Restore the pre-drag geometry. commitEdit will replay all history and apply this command once.
+  if(attr){
+    d.vertexIndices.forEach((vi,k)=>{
+      attr.setXYZ(vi,d.startPositions[k*3],d.startPositions[k*3+1],d.startPositions[k*3+2]);
+    });
+    attr.needsUpdate=true;
+    part.mesh.geometry.computeVertexNormals();
+    part.mesh.geometry.computeBoundingBox();
+    part.mesh.geometry.computeBoundingSphere();
+  }
+
+  const cmd={
+    type:'pushPull',
+    partIndex:d.partIndex,
+    vertexIndices:Array.from(d.vertexIndices),
+    normal:[d.normalLocal.x,d.normalLocal.y,d.normalLocal.z],
+    deltaMm:d.deltaMm,
+    feature:d.feature,
+    inputMethod:'touch-drag'
+  };
+  faceDrag=null;
+  commitEdit(cmd);
+  setStatus('指ドラッグ編集を確定しました','ok');
+  return true;
+}
+
+
 function pickAt(clientX, clientY) {
   const rect = renderer.domElement.getBoundingClientRect();
   pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
@@ -1539,9 +1716,38 @@ function pickAt(clientX, clientY) {
 
 renderer.domElement.addEventListener('pointerdown', (e) => {
   pointerDown = { x: e.clientX, y: e.clientY, id: e.pointerId };
+  if(selectionMode==='face' && selectedPatch && !measureMode){
+    const hits=pickAt(e.clientX,e.clientY);
+    if(hits.length && beginFaceDragCandidate(e,hits[0])){
+      e.preventDefault();
+    }
+  }
+});
+
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if(faceDrag && faceDrag.pointerId===e.pointerId){
+    updateFaceDrag(e);
+    e.preventDefault();
+  }
+});
+
+renderer.domElement.addEventListener('pointercancel', (e) => {
+  if(faceDrag && faceDrag.pointerId===e.pointerId) endFaceDrag(e,true);
+  pointerDown=null;
 });
 
 renderer.domElement.addEventListener('pointerup', (e) => {
+  const hadDrag=!!(faceDrag && faceDrag.pointerId===e.pointerId);
+  const wasActive=hadDrag && faceDrag.active;
+  if(hadDrag){
+    const committed=endFaceDrag(e,false);
+    if(committed || wasActive){
+      pointerDown=null;
+      e.preventDefault();
+      return;
+    }
+  }
+
   if (!pointerDown || pointerDown.id !== e.pointerId) return;
   const dx = e.clientX - pointerDown.x;
   const dy = e.clientY - pointerDown.y;
