@@ -84,8 +84,39 @@ const near=(a,b,e=1e-3)=>Math.abs(a-b)<=e;
   r=await night('なんとなくええ感じにして');
   if(r.state.editCursor!==cursor2) throw new Error('曖昧コマンドで編集してしまった');
 
+  // Delete selected part by prompt, then undo restore.
+  await page.click('#addCylinderBtn');
+  await page.waitForFunction(()=>document.querySelector('#partCount')?.textContent==='2');
+  let delState=await page.evaluate(()=>window.__okaTest.state());
+  if(delState.activePartCount!==2) throw new Error('削除テスト開始時に2部品ではない');
+
+  r=await night('このパーツを消して');
+  if(r.state.activePartCount!==1) throw new Error('このパーツ削除で部品数が1にならない');
+  if(!r.state.deletedPartNames.some(n=>n.includes('Cylinder'))) throw new Error('選択Cylinderが削除状態になっていない');
+  if(r.state.selectedIndex!==-1) throw new Error('削除後も削除パーツが選択中');
+  if((await page.evaluate(()=>window.__okaTest.exportableCount()))!==1){
+    throw new Error('削除パーツがSTL/GLB出力対象から外れていない');
+  }
+  if(!r.reply.includes('削除した')) throw new Error('削除成功の返答がない: '+r.reply);
+
+  r=await night('元に戻して');
+  if(r.state.activePartCount!==2) throw new Error('Undoで削除パーツが復元されない');
+  if(r.state.deletedPartNames.length!==0) throw new Error('Undo後もdeleted状態が残る');
+  if((await page.evaluate(()=>window.__okaTest.exportableCount()))!==2){
+    throw new Error('Undo後に出力対象が2部品へ戻らない');
+  }
+
+  // Named part delete.
+  r=await night('Box 1を削除');
+  if(r.state.activePartCount!==1) throw new Error('名前指定削除で部品数が1にならない');
+  if(!r.state.deletedPartNames.includes('Box 1')) throw new Error('Box 1名前指定削除が効いていない');
+  if(r.state.activePartNames.includes('Box 1')) throw new Error('削除したBox 1がactiveに残る');
+
+  r=await night('元に戻して');
+  if(r.state.activePartCount!==2) throw new Error('名前指定削除のUndoが効かない');
+
   if(errors.length) throw new Error(errors.join('\n'));
-  console.log('NIGHT_CMD_PASS: absolute / relative / anchor / match / undo / axis-off / fullwidth / conflict reject');
+  console.log('NIGHT_CMD_PASS: resize / undo / axis-off / selected part delete / named delete / export exclusion / restore');
   await browser.close();
 })().catch(err=>{
   console.error(err);
