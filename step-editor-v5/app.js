@@ -2686,7 +2686,10 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
       shape.lineTo(-6,10);
       shape.lineTo(-30,10);
       shape.closePath();
-      const geometry=new THREE.ExtrudeGeometry(shape,{depth:8,steps:1,bevelEnabled:false,curveSegments:1});
+      const hole=new THREE.Path();
+      hole.absellipse(22,0,3,3,0,Math.PI*2,false,0);
+      shape.holes.push(hole);
+      const geometry=new THREE.ExtrudeGeometry(shape,{depth:8,steps:1,bevelEnabled:false,curveSegments:12});
       geometry.translate(0,0,-4);
       geometry.computeVertexNormals();
       geometry.computeBoundingBox();
