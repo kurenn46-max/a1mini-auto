@@ -1153,7 +1153,8 @@ function updateFaceReadout(part, patchIndex, stats) {
     'Z '+formatLength(stats.size.z);
   $('tapPoint').innerHTML =
     stats.type+' ・ 面積 '+formatArea(stats.area)+
-    ' ・ '+stats.triangles+' triangles';
+    ' ・ '+stats.triangles+' triangles'+
+    '<br><small>3D寸法線は部品全体。面寸法は下の詳細欄に表示。</small>';
   $('faceInfo').innerHTML =
     '<strong>詳細面 '+(patchIndex+1)+'</strong>　'+stats.type+
     '　面積 '+formatArea(stats.area)+
@@ -1183,7 +1184,9 @@ function selectPatch(partIndex, patchIndex, scroll=true) {
   clearPartDimensions();
   highlightPatch(part,patch);
   selectedPatch={partIndex,patchIndex};
-  if(!showSelectedAxisDimension()) showBoxDimensions(stats.box,'face');
+  if(!showSelectedAxisDimension()){
+    showBoxDimensions(new THREE.Box3().setFromObject(part.mesh),'part');
+  }
   resetEditConfirmation();
   updateFaceReadout(part,patchIndex,stats);
   updateEditTarget(part,patchIndex,stats);
@@ -2345,7 +2348,7 @@ async function exportNightPackage(){
   const payload={
     format:'OKA-CAD-EDIT',
     version:1,
-    app:'岡重機 STEP Editor BASE3 + NIGHT CMD 1.1',
+    app:'岡重機 STEP Editor BASE3 + NIGHT CMD 1.2 DIM FIX',
     createdAt:new Date().toISOString(),
     sourceFile:originalStepName,
     unit:'mm',
@@ -3018,6 +3021,8 @@ function commitNightPartDelete(index){
   editCursor=editHistory.length;
   if(selectedIndex===index) selectedAxis=null;
   replayEdits();
+  const remainBox=getVisibleBox();
+  if(remainBox) showBoxDimensions(remainBox,'model');
   setStatus('部品を削除しました：'+part.name,'ok');
   setNightReply('「'+part.name+'」を削除したで。元に戻して、で復元できる。','ok');
   return {ok:true,action:'delete-part',partIndex:index,partName:part.name};
@@ -3346,6 +3351,13 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
       disposeObject(g);
       return n;
     },
+    dimensionState(){
+      return {
+        owner:dimensionOwner,
+        labels:Array.from(document.querySelectorAll('.dimensionLabel')).map(el=>el.textContent.trim())
+      };
+    },
+    selectPatch(partIndex,patchIndex){ selectPatch(partIndex,patchIndex,false); },
     state(){
       const part=(selectedIndex>=0&&parts[selectedIndex])?parts[selectedIndex]:null;
       let bounds=null,totalVertices=0;
