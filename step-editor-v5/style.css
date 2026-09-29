@@ -230,3 +230,31 @@ main{max-width:980px;margin:0 auto;padding:14px 14px 40px}
 @media(max-width:520px){
   .confirmEditRow{grid-template-columns:1fr}
 }
+
+.axisStat{appearance:none;color:var(--text);font:inherit;cursor:pointer}
+.axisStat:not(:disabled):active{transform:scale(.98)}
+.axisStat.active{border-color:#42c2f5;background:#123a53;box-shadow:inset 0 0 0 2px #42c2f5}
+.axisStat.active span{color:#77d6ff}
+.axisEditPanel{border-color:#315a78}
+.axisEditHelp{margin-top:10px;padding:10px;border-radius:11px;background:#081522;color:#a8c0d4;font-size:12px;line-height:1.5}
+.anchorChoice{margin-top:12px}
+.anchorChoice>span,.matchHead{display:block;color:var(--muted);font-size:11px;font-weight:800;margin-bottom:7px}
+.anchorButtons{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.anchorButtons button,.axisQuick button,.matchButtons button,.axisHistoryBar button,.axisApplyBtn{
+  min-height:46px;border:1px solid var(--line);border-radius:11px;background:#14253a;color:var(--text);font-weight:800
+}
+.anchorButtons button.active{border-color:#42c2f5;background:#123a53}
+.axisQuick{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-top:12px}
+.axisQuick button{padding:5px 2px;font-size:12px}
+.axisTargetRow{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:end;margin-top:12px}
+.axisTargetRow label{font-size:11px;color:var(--muted);font-weight:800}
+.axisTargetRow input{display:block;width:100%;margin-top:5px;padding:12px 10px;border:1px solid #3c5a77;border-radius:11px;background:#06101b;color:var(--text);font-size:19px;font-weight:900}
+.axisApplyBtn{background:#126f9d;border-color:#3bbaf0}
+.matchHead{margin-top:13px}
+.matchButtons{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.matchButtons button{background:#102a3e}
+.axisHistoryBar{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+@media(max-width:520px){
+  .axisQuick{grid-template-columns:repeat(3,1fr)}
+  .axisTargetRow{grid-template-columns:1fr}
+}
