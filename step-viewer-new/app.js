@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 
 const $ = (id) => document.getElementById(id);
 const viewer = $('viewer');
@@ -62,6 +63,7 @@ let wireframe = false;
 let measureMode = false;
 let measurePoints = [];
 let pointerDown = null;
+let cadCounter = 0;
 
 function setStatus(text, type = 'idle') {
   const el = $('status');
@@ -160,7 +162,7 @@ function disposeModel() {
   selectedIndex = -1;
   modelBox.makeEmpty();
   modelSize.set(0, 0, 0);
-  $('partsList').innerHTML = '<div class="empty">STEPを開くとここに部品が並びます</div>';
+  $('partsList').innerHTML = '<div class="empty">STEPを開くか、下のCAD作成から部品を追加してください</div>';
   $('partCount').textContent = '—';
   $('sizeX').textContent = '—';
   $('sizeY').textContent = '—';
@@ -179,6 +181,32 @@ function setModelButtons(enabled) {
 
 function setSelectedButtons(enabled) {
   ['isolateBtn','hideBtn'].forEach(id => $(id).disabled = !enabled);
+}
+
+function recomputeModelStats(fit = false) {
+  if (!parts.length) {
+    modelBox.makeEmpty();
+    modelSize.set(0,0,0);
+    $('sizeX').textContent='—'; $('sizeY').textContent='—'; $('sizeZ').textContent='—';
+    $('partCount').textContent='—';
+    setModelButtons(false);
+    $('saveStlBtn').disabled = true;
+    $('clearCadBtn').disabled = true;
+    updateVisibleCount();
+    return;
+  }
+  modelBox.setFromObject(modelGroup);
+  modelSize = modelBox.getSize(new THREE.Vector3());
+  $('sizeX').textContent = formatMm(modelSize.x);
+  $('sizeY').textContent = formatMm(modelSize.y);
+  $('sizeZ').textContent = formatMm(modelSize.z);
+  $('partCount').textContent = String(parts.length);
+  setModelButtons(true);
+  const hasCad = parts.some(p => p.source === 'cad');
+  $('saveStlBtn').disabled = !hasCad;
+  $('clearCadBtn').disabled = !hasCad;
+  updateVisibleCount();
+  if (fit) fitView('iso');
 }
 
 async function getOcct() {
@@ -253,22 +281,13 @@ function buildModel(result) {
       ? Math.floor(geometry.index.count / 3)
       : Math.floor(geometry.getAttribute('position').count / 3);
 
-    parts.push({ mesh, name, localBox, localSize, triangles });
+    parts.push({ mesh, name, localBox, localSize, triangles, source:'step' });
   });
 
   if (!parts.length) throw new Error('STEP内に表示できる形状が見つかりませんでした。');
 
-  modelBox.setFromObject(modelGroup);
-  modelSize = modelBox.getSize(new THREE.Vector3());
-
-  $('sizeX').textContent = formatMm(modelSize.x);
-  $('sizeY').textContent = formatMm(modelSize.y);
-  $('sizeZ').textContent = formatMm(modelSize.z);
-  $('partCount').textContent = String(parts.length);
-
   renderPartsList();
-  updateVisibleCount();
-  setModelButtons(true);
+  recomputeModelStats(false);
   setSelectedButtons(false);
   fitView('iso');
 }
@@ -278,6 +297,7 @@ function renderPartsList() {
   list.innerHTML = '';
 
   parts.forEach((part, index) => {
+    part.mesh.userData.partIndex = index;
     const row = document.createElement('div');
     row.className = 'partRow';
     row.dataset.index = index;
@@ -298,7 +318,7 @@ function renderPartsList() {
     const nameWrap = document.createElement('div');
     nameWrap.className = 'partName';
     const strong = document.createElement('strong');
-    strong.textContent = part.name;
+    strong.textContent = (part.source === 'cad' ? 'CAD: ' : '') + part.name;
     const small = document.createElement('small');
     small.textContent =
       formatMm(part.localSize.x) + ' × ' +
@@ -355,6 +375,15 @@ function selectPart(index, scrollIntoView = false) {
     'Y ' + formatMm(part.localSize.y) + ' mm<br>' +
     'Z ' + formatMm(part.localSize.z) + ' mm';
   setSelectedButtons(true);
+  const isCad = part.source === 'cad';
+  $('applyPosBtn').disabled = !isCad;
+  $('deleteCadBtn').disabled = !isCad;
+  if (isCad) {
+    $('posX').value = Number(part.mesh.position.x.toFixed(3));
+    $('posY').value = Number(part.mesh.position.y.toFixed(3));
+    const baseZ = Number(part.baseOffsetZ || 0);
+    $('posZ').value = Number((part.mesh.position.z - baseZ).toFixed(3));
+  }
 }
 
 function fitView(mode = 'iso') {
@@ -594,6 +623,138 @@ $('isolateBtn').addEventListener('click', isolateSelected);
 $('hideBtn').addEventListener('click', hideSelected);
 $('wireBtn').addEventListener('click', toggleWireframe);
 $('gridBtn').addEventListener('click', toggleGrid);
+
+function cadNumber(id, min = -Infinity) {
+  const v = Number($(id).value);
+  if (!Number.isFinite(v) || v < min) throw new Error('寸法を確認してください');
+  return v;
+}
+
+function addCadPart(kind) {
+  try {
+    let geometry, name, baseOffsetZ = 0;
+    if (kind === 'box') {
+      const x=cadNumber('boxX',0.01), y=cadNumber('boxY',0.01), z=cadNumber('boxZ',0.01);
+      geometry = new THREE.BoxGeometry(x,y,z);
+      geometry.computeBoundingBox();
+      name = 'Box ' + (++cadCounter);
+      baseOffsetZ = z/2;
+    } else {
+      const d=cadNumber('cylD',0.01), h=cadNumber('cylH',0.01);
+      geometry = new THREE.CylinderGeometry(d/2,d/2,h,64,1,false);
+      geometry.rotateX(Math.PI/2);
+      geometry.computeBoundingBox();
+      name = 'Cylinder ' + (++cadCounter);
+      baseOffsetZ = h/2;
+    }
+    geometry.computeVertexNormals();
+    const material = new THREE.MeshStandardMaterial({
+      color:0x69b7e8, roughness:.65, metalness:.04, side:THREE.DoubleSide
+    });
+    const mesh = new THREE.Mesh(geometry,material);
+    mesh.name=name;
+    mesh.position.set(0,0,baseOffsetZ);
+    mesh.userData.baseColor=material.color.getHex();
+    modelGroup.add(mesh);
+    const localBox=geometry.boundingBox.clone();
+    const localSize=localBox.getSize(new THREE.Vector3());
+    const triangles=geometry.index?Math.floor(geometry.index.count/3):Math.floor(geometry.getAttribute('position').count/3);
+    parts.push({mesh,name,localBox,localSize,triangles,source:'cad',kind,baseOffsetZ});
+    renderPartsList();
+    recomputeModelStats(true);
+    selectPart(parts.length-1,true);
+    setStatus('CAD部品を追加しました','ok');
+  } catch(e) {
+    setStatus(e.message || 'CAD作成エラー','error');
+  }
+}
+
+function applyCadPosition() {
+  if (selectedIndex < 0) return;
+  const part=parts[selectedIndex];
+  if (part.source !== 'cad') return;
+  try {
+    const x=cadNumber('posX'), y=cadNumber('posY'), z=cadNumber('posZ');
+    part.mesh.position.set(x,y,z + Number(part.baseOffsetZ||0));
+    part.mesh.updateMatrixWorld(true);
+    recomputeModelStats(false);
+    setStatus('CAD位置を更新しました','ok');
+  } catch(e) { setStatus(e.message || '位置入力エラー','error'); }
+}
+
+function deleteSelectedCad() {
+  if (selectedIndex < 0) return;
+  const part=parts[selectedIndex];
+  if (part.source !== 'cad') return;
+  modelGroup.remove(part.mesh);
+  part.mesh.geometry.dispose();
+  part.mesh.material.dispose();
+  parts.splice(selectedIndex,1);
+  selectedIndex=-1;
+  clearSelectionHighlight();
+  $('selectedName').textContent='未選択';
+  $('selectedDims').textContent='—';
+  setSelectedButtons(false);
+  $('applyPosBtn').disabled=true;
+  $('deleteCadBtn').disabled=true;
+  renderPartsList();
+  recomputeModelStats(true);
+  setStatus('CAD部品を削除しました','ok');
+}
+
+function clearCadParts() {
+  const keep=[];
+  for (const part of parts) {
+    if (part.source === 'cad') {
+      modelGroup.remove(part.mesh);
+      part.mesh.geometry.dispose();
+      part.mesh.material.dispose();
+    } else keep.push(part);
+  }
+  parts=keep;
+  selectedIndex=-1;
+  clearSelectionHighlight();
+  $('selectedName').textContent='未選択';
+  $('selectedDims').textContent='—';
+  setSelectedButtons(false);
+  $('applyPosBtn').disabled=true;
+  $('deleteCadBtn').disabled=true;
+  renderPartsList();
+  recomputeModelStats(true);
+  setStatus('CAD部品を全削除しました','ok');
+}
+
+function saveCadStl() {
+  const cad=parts.filter(p=>p.source==='cad' && p.mesh.visible);
+  if (!cad.length) { setStatus('保存するCAD部品がありません','error'); return; }
+  const group=new THREE.Group();
+  cad.forEach(p=>{
+    const clone=p.mesh.clone();
+    clone.geometry=p.mesh.geometry.clone();
+    clone.material=p.mesh.material.clone();
+    group.add(clone);
+  });
+  group.updateMatrixWorld(true);
+  const exporter=new STLExporter();
+  const data=exporter.parse(group,{binary:true});
+  const blob=new Blob([data],{type:'model/stl'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download='oka-cad-' + new Date().toISOString().replace(/[:.]/g,'-') + '.stl';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
+  setStatus('STLを保存しました','ok');
+}
+
+$('addBoxBtn').addEventListener('click',()=>addCadPart('box'));
+$('addCylinderBtn').addEventListener('click',()=>addCadPart('cylinder'));
+$('applyPosBtn').addEventListener('click',applyCadPosition);
+$('deleteCadBtn').addEventListener('click',deleteSelectedCad);
+$('clearCadBtn').addEventListener('click',clearCadParts);
+$('saveStlBtn').addEventListener('click',saveCadStl);
 
 setModelButtons(false);
 setSelectedButtons(false);
