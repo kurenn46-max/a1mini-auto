@@ -9,13 +9,14 @@ html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-f
 body{overscroll-behavior-y:none}
 button,label{-webkit-tap-highlight-color:transparent}
 button{font:inherit;color:inherit}
+button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid #40bfff;outline-offset:2px}
 .topbar{
-  position:sticky;top:0;z-index:10;display:flex;gap:12px;align-items:center;justify-content:space-between;
+  position:sticky;top:0;z-index:20;display:flex;gap:12px;align-items:center;justify-content:space-between;
   padding:14px 16px;background:rgba(7,17,29,.96);border-bottom:1px solid var(--line);backdrop-filter:blur(10px)
 }
 .topbar h1{font-size:21px;line-height:1.2;margin:0 0 4px;font-weight:800}
 .topbar p{font-size:12px;color:var(--muted);margin:0}
-.toolBtn,.quickTools button,.partActions button{
+.toolBtn,.viewTools button,.quickTools button,.partActions button{
   border:1px solid var(--line);background:#14253a;border-radius:12px;padding:11px 13px;font-weight:700
 }
 button:disabled{opacity:.38}
@@ -33,31 +34,44 @@ main{max-width:980px;margin:0 auto;padding:14px 14px 40px}
 .openFileBtn strong{display:block;font-size:20px;margin-bottom:4px}
 .openFileBtn small{display:block;font-size:12px;opacity:.85;font-weight:600}
 .fileInfo{margin-top:11px;color:var(--muted);font-size:13px;overflow-wrap:anywhere}
+.loadProgress{height:6px;margin-top:10px;border-radius:999px;background:#102438;overflow:hidden}
+#loadProgressBar{height:100%;width:0;background:#32aeea;transition:width .2s ease}
 .viewerCard{height:min(58vh,620px);min-height:360px;position:relative;margin-bottom:12px;background:#02070d}
 #viewer{position:absolute;inset:0;touch-action:none}
 #viewer canvas{display:block;width:100%;height:100%}
+#viewer .label-layer{position:absolute;inset:0;pointer-events:none;overflow:hidden}
 .status{
-  position:absolute;left:12px;top:12px;z-index:2;padding:8px 11px;border-radius:999px;
+  position:absolute;left:12px;top:12px;z-index:6;padding:8px 11px;border-radius:999px;
   background:rgba(20,37,58,.92);border:1px solid var(--line);font-size:12px;font-weight:800
 }
 .status.ok{background:rgba(20,88,62,.92);border-color:#327f63}
 .status.error{background:rgba(105,27,42,.94);border-color:#a34758}
 .loading{
-  position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  position:absolute;inset:0;z-index:12;display:flex;flex-direction:column;align-items:center;justify-content:center;
   gap:14px;background:rgba(2,7,13,.82);font-weight:800
 }
 .hidden{display:none!important}
 .spinner{width:46px;height:46px;border-radius:50%;border:5px solid #26445f;border-top-color:#35b7f4;animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 .measureHud{
-  position:absolute;z-index:4;left:50%;bottom:12px;transform:translateX(-50%);
+  position:absolute;z-index:8;left:50%;bottom:12px;transform:translateX(-50%);
   padding:10px 14px;border-radius:999px;background:rgba(21,115,167,.95);border:1px solid #55c7ff;
   font-size:13px;font-weight:800;white-space:nowrap
 }
-.quickTools{
-  display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px
+.tapHint{
+  position:absolute;z-index:5;right:10px;top:10px;padding:7px 10px;border-radius:10px;
+  background:rgba(5,15,25,.72);border:1px solid #29445f;color:#a8bdd0;font-size:10px;font-weight:800
 }
-.quickTools button{min-height:46px;padding:8px 6px;font-size:13px}
+.dimensionLabel{
+  padding:4px 7px;border-radius:7px;background:rgba(4,12,20,.94);border:1px solid #66cfff;
+  color:#fff;font-size:12px;font-weight:900;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.5)
+}
+.dimensionLabel.axisX{border-color:#ff7878}
+.dimensionLabel.axisY{border-color:#7fe38b}
+.dimensionLabel.axisZ{border-color:#6fb7ff}
+.viewTools{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px}
+.quickTools{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.viewTools button,.quickTools button{min-height:46px;padding:8px 6px;font-size:13px}
 .statsGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
 .stat{
   min-width:0;padding:12px 8px;border:1px solid var(--line);border-radius:15px;background:var(--panel);
@@ -69,8 +83,10 @@ main{max-width:980px;margin:0 auto;padding:14px 14px 40px}
 .panel{padding:14px;margin-bottom:12px}
 .panelHead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .eyebrow{text-transform:uppercase;letter-spacing:.08em;font-size:11px;color:#86a3be;font-weight:800}
-.panel h2{font-size:18px;margin:3px 0 0}
-.selectedDims{color:var(--muted);font-size:12px;text-align:right;line-height:1.5}
+.panel h2{font-size:18px;margin:3px 0 0;overflow-wrap:anywhere}
+.selectedDims{color:#d7ebff;font-size:12px;text-align:right;line-height:1.65;font-weight:800;white-space:nowrap}
+.selectedPath{margin-top:4px;color:#7890a7;font-size:10px;overflow-wrap:anywhere}
+.tapPoint{margin-top:11px;padding:9px 10px;border-radius:10px;background:#091522;color:#9db1c4;font-size:11px;line-height:1.45}
 .partActions{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:13px}
 .partActions button{min-height:44px;padding:8px 5px;font-size:12px}
 .pill{padding:6px 9px;border-radius:999px;background:#162b43;color:#b9d1e6;font-size:11px;font-weight:800}
@@ -81,23 +97,32 @@ main{max-width:980px;margin:0 auto;padding:14px 14px 40px}
   border:1px solid #213851;border-radius:12px;background:#0a1624
 }
 .partRow.selected{outline:2px solid #23a7ef;border-color:#23a7ef;background:#0e2235}
-.eyeBtn{
-  width:38px;height:38px;border-radius:10px;border:1px solid #2d4864;background:#10243a;font-size:17px
-}
+.eyeBtn{width:38px;height:38px;border-radius:10px;border:1px solid #2d4864;background:#10243a;font-size:17px}
 .partName{min-width:0}
 .partName strong{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}
 .partName small{display:block;color:var(--muted);font-size:10px;margin-top:2px}
-.selectBtn{
-  border:1px solid #2d4864;background:#14283f;border-radius:10px;padding:9px 10px;font-size:11px;font-weight:800
-}
+.selectBtn{border:1px solid #2d4864;background:#14283f;border-radius:10px;padding:9px 10px;font-size:11px;font-weight:800}
 .tips summary{font-weight:800;cursor:pointer}
 .tips p{color:var(--muted);font-size:12px;line-height:1.65}
 .tips .privacy{color:#8fd6b3}
+.cadPanel h3{margin:0 0 10px;font-size:14px}
+.cadBlock{margin-top:14px;padding:13px;border:1px solid #233b55;border-radius:14px;background:#091522}
+.cadFields{display:grid;gap:8px}
+.cadFields.three{grid-template-columns:repeat(3,1fr)}
+.cadFields.two{grid-template-columns:repeat(2,1fr)}
+.cadFields label{font-size:11px;color:var(--muted);font-weight:800}
+.cadFields input{width:100%;margin-top:5px;padding:11px 9px;border-radius:10px;border:1px solid #34506d;background:#06101b;color:var(--text);font:inherit;font-weight:700}
+.cadPrimary{width:100%;margin-top:10px;padding:12px;border:1px solid #43b7ed;border-radius:11px;background:#147fb8;color:white;font-weight:800}
+.cadActions{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
+.cadActions button{min-height:44px;border:1px solid var(--line);border-radius:11px;background:#14253a;color:var(--text);font-weight:800}
+.cadActions .dangerBtn{border-color:#743345;background:#3b1722}
+.cadNote{margin:12px 0 0;color:var(--muted);font-size:11px;line-height:1.55}
 @media(min-width:760px){
   .topbar h1{font-size:24px}
   main{padding:18px}
+  .viewTools{grid-template-columns:repeat(7,1fr)}
   .quickTools{grid-template-columns:repeat(6,1fr)}
-  .partActions{grid-template-columns:repeat(5,1fr)}
+  .partActions{grid-template-columns:repeat(6,1fr)}
 }
 @media(max-width:420px){
   .topbar{padding:12px}
@@ -111,17 +136,7 @@ main{max-width:980px;margin:0 auto;padding:14px 14px 40px}
   .viewerCard{min-height:330px;height:52vh}
   .statsGrid{gap:6px}
   .stat strong{font-size:16px}
+  .cadFields input{padding:10px 7px}
+  .cadBlock{padding:11px}
+  .dimensionLabel{font-size:10px;padding:3px 5px}
 }
-.cadPanel h3{margin:0 0 10px;font-size:14px}
-.cadBlock{margin-top:14px;padding:13px;border:1px solid #233b55;border-radius:14px;background:#091522}
-.cadFields{display:grid;gap:8px}
-.cadFields.three{grid-template-columns:repeat(3,1fr)}
-.cadFields.two{grid-template-columns:repeat(2,1fr)}
-.cadFields label{font-size:11px;color:var(--muted);font-weight:800}
-.cadFields input{width:100%;margin-top:5px;padding:11px 9px;border-radius:10px;border:1px solid #34506d;background:#06101b;color:var(--text);font:inherit;font-weight:700}
-.cadPrimary{width:100%;margin-top:10px;padding:12px;border:1px solid #43b7ed;border-radius:11px;background:#147fb8;color:white;font-weight:800}
-.cadActions{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
-.cadActions button{min-height:44px;border:1px solid var(--line);border-radius:11px;background:#14253a;color:var(--text);font-weight:800}
-.cadActions .dangerBtn{border-color:#743345;background:#3b1722}
-.cadNote{margin:12px 0 0;color:var(--muted);font-size:11px;line-height:1.55}
-@media(max-width:420px){.cadFields input{padding:10px 7px}.cadBlock{padding:11px}}
