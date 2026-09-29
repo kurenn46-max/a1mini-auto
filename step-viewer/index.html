@@ -2,431 +2,126 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<meta name="theme-color" content="#111827">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
 <title>岡重機 STEP Viewer</title>
 <style>
-:root{font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif;color:#f9fafb;background:#0b1020}
-*{box-sizing:border-box}
-html,body{margin:0;height:100%;overflow:hidden}
-button{font:inherit}
-#app{height:100%;display:flex;flex-direction:column;background:linear-gradient(180deg,#111827,#07101f)}
-header{height:66px;padding:10px 12px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #263246;background:#111827ee;z-index:5}
-.title{min-width:0;flex:1}
-.title b{display:block;font-size:16px}
-#fileName{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#9ca3af;font-size:12px;margin-top:2px}
-#overallDims{font-size:12px;background:#1f2937;padding:7px 9px;border-radius:10px;white-space:nowrap}
-#viewerWrap{position:relative;flex:1;min-height:0}
+:root{font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif;background:#08111f;color:#f8fafc}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#08111f}button,input{font:inherit}
+header{position:sticky;top:0;z-index:20;background:#0f172af2;border-bottom:1px solid #263246;padding:14px 16px}
+header b{font-size:20px}header small{display:block;color:#94a3b8;margin-top:3px}
+#landing{min-height:calc(100vh - 74px);display:flex;align-items:center;justify-content:center;padding:22px}
+.card{width:min(560px,100%);background:#111827;border:1px solid #334155;border-radius:22px;padding:22px;box-shadow:0 20px 60px #0006}
+.icon{font-size:52px;text-align:center}h1{font-size:23px;text-align:center;margin:8px 0}.lead{color:#cbd5e1;text-align:center;line-height:1.6;margin:0 0 20px}
+.nativeBox{background:#f59e0b;border-radius:16px;padding:14px}.nativeBox label{display:block;color:#111827;font-weight:900;font-size:17px;margin-bottom:10px;text-align:center}
+#nativePicker{display:block;width:100%;background:white;color:#111827;border:2px solid #111827;border-radius:12px;padding:10px;min-height:58px}
+#nativePicker::file-selector-button{border:0;border-radius:9px;background:#111827;color:white;font-weight:800;padding:11px 12px;margin-right:10px}
+.note{font-size:12px;color:#94a3b8;line-height:1.55;margin-top:13px;text-align:center}
+#pickedName{margin-top:12px;text-align:center;color:#fbbf24;font-weight:700;min-height:22px;word-break:break-all}
+#bootError{display:none;margin-top:12px;background:#3f1d1d;border:1px solid #7f1d1d;color:#fecaca;padding:10px;border-radius:10px;font-size:13px;line-height:1.45}
+#viewerPage{display:none;height:calc(100vh - 74px);min-height:520px;position:relative}#viewerWrap{position:absolute;inset:0 0 82px 0;overflow:hidden}
 canvas{display:block;width:100%;height:100%;touch-action:none}
-#empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:auto;padding:28px;text-align:center;color:#cbd5e1}
-#empty .box{background:#111827cc;border:1px solid #334155;border-radius:18px;padding:20px;max-width:360px}
-#empty .big{font-size:38px;margin-bottom:8px}
-#loading{position:absolute;inset:0;background:#020617b8;display:none;align-items:center;justify-content:center;z-index:7}
-#loading.show{display:flex}
-.spinner{width:42px;height:42px;border:4px solid #334155;border-top-color:#f59e0b;border-radius:50%;animation:spin .8s linear infinite;margin:auto}
-@keyframes spin{to{transform:rotate(360deg)}}
-#toast{position:absolute;left:50%;top:14px;transform:translateX(-50%);background:#111827ed;border:1px solid #475569;border-radius:12px;padding:9px 12px;font-size:13px;display:none;z-index:8;max-width:90%;text-align:center}
-#info{position:absolute;left:10px;right:10px;bottom:10px;background:#111827e8;border:1px solid #334155;border-radius:14px;padding:10px 12px;z-index:3;backdrop-filter:blur(8px)}
-#infoName{font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#infoDims{font-size:18px;margin-top:3px}
-#measureText{font-size:13px;color:#fbbf24;margin-top:4px;min-height:18px}
-.toolbar{height:76px;display:grid;grid-template-columns:repeat(5,1fr);gap:7px;padding:8px 8px 10px;border-top:1px solid #263246;background:#0f172a;z-index:6}
-.tool{border:0;border-radius:13px;background:#1e293b;color:#f8fafc;font-weight:700;font-size:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
-.tool span:first-child{font-size:22px}
-.tool.active{background:#b45309}
-.tool:disabled{opacity:.45}
-#fileInput{display:none}
-#drawer{position:absolute;left:0;right:0;bottom:0;max-height:76%;visibility:hidden;pointer-events:none;background:#0f172af8;border-top:1px solid #475569;border-radius:18px 18px 0 0;z-index:10;transform:translateY(105%);transition:.22s ease;padding:8px 10px 14px;box-shadow:0 -12px 35px #0008}
-#drawer.open{transform:translateY(0);visibility:visible;pointer-events:auto}
-.handle{width:42px;height:4px;border-radius:10px;background:#64748b;margin:1px auto 8px}
-.drawerHead{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-.drawerHead b{flex:1}
-.smallbtn{border:0;border-radius:10px;background:#334155;color:white;padding:8px 10px;font-weight:700}
-.partActions{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:8px}
-.action{border:0;border-radius:10px;background:#1e293b;color:white;padding:9px 4px;font-size:12px;font-weight:700}
-#parts{overflow:auto;max-height:calc(76vh - 116px);padding-bottom:6px}
-.part{display:flex;align-items:center;gap:10px;width:100%;padding:10px;border:0;border-bottom:1px solid #253044;background:transparent;color:white;text-align:left}
-.part.active{background:#1e3a5f;border-radius:10px}
-.swatch{width:13px;height:13px;border-radius:50%;background:#60a5fa;flex:none}
-.ptext{min-width:0;flex:1}
-.pname{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700}
-.pdim{font-size:11px;color:#94a3b8;margin-top:2px}
-.hint{font-size:11px;color:#94a3b8}
-@media(min-width:760px){.toolbar{width:520px;margin:auto;border-radius:16px 16px 0 0}.title b{font-size:18px}#drawer{left:50%;right:auto;width:520px;transform:translate(-50%,105%)}#drawer.open{transform:translate(-50%,0);visibility:visible;pointer-events:auto}}
+#loading{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:#020617cc;z-index:12}#loading.show{display:flex}
+.spinner{width:44px;height:44px;border:4px solid #334155;border-top-color:#f59e0b;border-radius:50%;animation:spin .8s linear infinite;margin:auto}@keyframes spin{to{transform:rotate(360deg)}}
+#topInfo{position:absolute;left:10px;right:10px;top:10px;z-index:6;display:flex;gap:8px;pointer-events:none}.pill{background:#111827e8;border:1px solid #334155;border-radius:12px;padding:9px 11px;backdrop-filter:blur(8px)}
+#fileName{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#overallDims{white-space:nowrap}
+#partInfo{position:absolute;left:10px;right:10px;bottom:10px;z-index:6;background:#111827e8;border:1px solid #334155;border-radius:14px;padding:10px 12px;backdrop-filter:blur(8px)}
+#infoName{font-weight:800}#infoDims{font-size:18px;margin-top:3px}#measureText{font-size:13px;color:#fbbf24;margin-top:3px;min-height:18px}
+.toolbar{position:absolute;left:0;right:0;bottom:0;height:82px;display:grid;grid-template-columns:repeat(5,1fr);gap:7px;padding:8px;background:#0f172a;border-top:1px solid #263246;z-index:8}
+.tool{border:0;border-radius:13px;background:#1e293b;color:white;font-weight:800;font-size:12px}.tool span{display:block}.tool .ico{font-size:22px;margin-bottom:4px}.tool.active{background:#b45309}
+#drawer{position:absolute;left:0;right:0;bottom:82px;max-height:72%;z-index:15;background:#0f172afa;border-top:1px solid #475569;border-radius:18px 18px 0 0;padding:8px 10px 14px;transform:translateY(120%);transition:.2s ease;pointer-events:none;visibility:hidden}
+#drawer.open{transform:translateY(0);pointer-events:auto;visibility:visible}
+.handle{width:44px;height:4px;border-radius:10px;background:#64748b;margin:1px auto 9px}.drawerHead{display:flex;gap:8px;align-items:center;margin-bottom:8px}.drawerHead b{flex:1}
+.smallbtn,.action{border:0;border-radius:10px;background:#334155;color:white;font-weight:800;padding:9px}.partActions{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:8px}
+#parts{overflow:auto;max-height:calc(72vh - 120px)}.part{width:100%;display:flex;gap:10px;align-items:center;text-align:left;border:0;border-bottom:1px solid #263246;background:transparent;color:white;padding:11px 9px}
+.part.active{background:#15345c;border-radius:10px}.dot{width:12px;height:12px;border-radius:50%;background:#60a5fa;flex:none}.ptext{min-width:0;flex:1}.pname{font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pdim{font-size:11px;color:#94a3b8;margin-top:2px}
+#toast{position:absolute;top:62px;left:50%;transform:translateX(-50%);z-index:18;background:#111827ed;border:1px solid #475569;border-radius:12px;padding:9px 12px;display:none;max-width:90%;text-align:center}
+@media(min-width:760px){#drawer{left:50%;right:auto;width:560px;transform:translate(-50%,120%)}#drawer.open{transform:translate(-50%,0)}.toolbar{left:50%;right:auto;width:560px;transform:translateX(-50%);border-radius:16px 16px 0 0}}
 </style>
+<script>
+document.addEventListener("DOMContentLoaded",()=>{
+  const p=document.getElementById("nativePicker"),n=document.getElementById("pickedName");
+  p.addEventListener("change",()=>{n.textContent=p.files&&p.files[0]?"選択: "+p.files[0].name:""});
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.js"></script>
 </head>
 <body>
-<div id="app">
-<header>
-  <div class="title"><b>岡重機 STEP Viewer</b><span id="fileName">STEP / STP / STL を開いてください</span></div>
-  <div id="overallDims">X — × Y — × Z —</div>
-</header>
-
-<div id="viewerWrap">
-  <div id="empty"><div class="box"><div class="big">📐</div><b>STEPを開く</b><div class="hint" style="margin-top:7px">部品ごとの表示・外形寸法・2点測定<br>ファイルは端末内だけで処理します</div><div id="bigOpenWrap" style="position:relative;margin-top:16px;border-radius:14px;background:#f59e0b;color:#111827;font-weight:800;font-size:16px;padding:13px 18px;width:100%;overflow:hidden">📥 ダウンロードしたSTEPを開く<input id="bigFileInput" type="file" style="position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;z-index:99"></div></div></div>
-  <div id="loading"><div><div class="spinner"></div><div style="margin-top:12px">3Dデータを読み込み中…</div></div></div>
-  <div id="toast"></div>
-  <div id="info">
-    <div id="infoName">未選択</div>
-    <div id="infoDims">X —　Y —　Z —</div>
-    <div id="measureText">パーツをタップするとサイズを表示</div>
-  </div>
-  <div id="drawer">
-    <div class="handle"></div>
-    <div class="drawerHead"><b>📦 パーツ <span id="partCount"></span></b><button class="smallbtn" id="closeDrawer">閉じる</button></div>
-    <div class="partActions">
-      <button class="action" id="showAll">全部表示</button>
-      <button class="action" id="isolate">単体表示</button>
-      <button class="action" id="ghost">他を半透明</button>
+<header><b>岡重機 STEP Viewer</b><small>STEP / STP / STL・パーツ別寸法・2点測定</small></header>
+<section id="landing">
+  <div class="card">
+    <div class="icon">📐</div>
+    <h1>ダウンロードした3Dファイルを開く</h1>
+    <p class="lead">下の白い欄はAndroid標準のファイル選択です。<br>「ファイルを選択」を押してください。</p>
+    <div class="nativeBox">
+      <label for="nativePicker">📂 ファイルを選択</label>
+      <input id="nativePicker" type="file">
     </div>
-    <div id="parts"></div>
+    <div id="pickedName"></div>
+    <div class="note">STEP / STP / STL を選択できます。<br>ファイルはサーバーへ送信せず、この端末のブラウザ内で処理します。</div>
+    <div id="bootError"></div>
   </div>
-</div>
-
-<div class="toolbar">
-  <button class="tool" id="openBtn"><span>📂</span><span>ファイル</span></button>
-  <button class="tool" id="partsBtn" disabled><span>📦</span><span>パーツ</span></button>
-  <button class="tool" id="measureBtn" disabled><span>📏</span><span>測る</span></button>
-  <button class="tool" id="explodeBtn" disabled><span>💥</span><span>分解</span></button>
-  <button class="tool" id="fitBtn" disabled><span>◎</span><span>全体</span></button>
-</div>
-<input id="fileInput" type="file" accept=".step,.stp,.stl,model/step,application/step,application/sla">
-</div>
-
+</section>
+<section id="viewerPage">
+  <div id="viewerWrap">
+    <div id="topInfo"><div class="pill" id="fileName">—</div><div class="pill" id="overallDims">X — × Y — × Z —</div></div>
+    <div id="loading"><div><div class="spinner"></div><div style="margin-top:12px;text-align:center">3Dデータを読み込み中…</div></div></div>
+    <div id="toast"></div>
+    <div id="partInfo"><div id="infoName">未選択</div><div id="infoDims">X —　Y —　Z —</div><div id="measureText">パーツをタップするとサイズを表示</div></div>
+    <div id="drawer">
+      <div class="handle"></div>
+      <div class="drawerHead"><b>📦 パーツ <span id="partCount"></span></b><button class="smallbtn" id="closeDrawer">閉じる</button></div>
+      <div class="partActions"><button class="action" id="showAll">全部表示</button><button class="action" id="isolate">単体表示</button><button class="action" id="ghost">他を半透明</button></div>
+      <div id="parts"></div>
+    </div>
+  </div>
+  <div class="toolbar">
+    <button class="tool" id="backBtn"><span class="ico">📂</span><span>別ファイル</span></button>
+    <button class="tool" id="partsBtn"><span class="ico">📦</span><span>パーツ</span></button>
+    <button class="tool" id="measureBtn"><span class="ico">📏</span><span>測る</span></button>
+    <button class="tool" id="explodeBtn"><span class="ico">💥</span><span>分解</span></button>
+    <button class="tool" id="fitBtn"><span class="ico">◎</span><span>全体</span></button>
+  </div>
+</section>
 <script type="module">
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js";
 import {OrbitControls} from "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/controls/OrbitControls.js";
 import {STLLoader} from "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/loaders/STLLoader.js";
 
-const wrap=document.getElementById("viewerWrap");
-const fileInput=document.getElementById("fileInput");
-const loading=document.getElementById("loading");
-const empty=document.getElementById("empty");
-const toast=document.getElementById("toast");
-const partsEl=document.getElementById("parts");
-const drawer=document.getElementById("drawer");
-const infoName=document.getElementById("infoName");
-const infoDims=document.getElementById("infoDims");
-const measureText=document.getElementById("measureText");
-const overallDims=document.getElementById("overallDims");
-const fileName=document.getElementById("fileName");
-const partCount=document.getElementById("partCount");
+const landing=document.getElementById("landing"),viewerPage=document.getElementById("viewerPage"),wrap=document.getElementById("viewerWrap"),picker=document.getElementById("nativePicker"),pickedName=document.getElementById("pickedName"),bootError=document.getElementById("bootError"),loading=document.getElementById("loading"),toast=document.getElementById("toast"),partsEl=document.getElementById("parts"),drawer=document.getElementById("drawer"),infoName=document.getElementById("infoName"),infoDims=document.getElementById("infoDims"),measureText=document.getElementById("measureText"),overallDims=document.getElementById("overallDims"),fileName=document.getElementById("fileName"),partCount=document.getElementById("partCount");
 
-const buttons=["partsBtn","measureBtn","explodeBtn","fitBtn"].map(id=>document.getElementById(id));
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x0b1020);
+const camera=new THREE.PerspectiveCamera(45,1,.01,100000);camera.position.set(120,90,120);
+const renderer=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.outputColorSpace=THREE.SRGBColorSpace;wrap.prepend(renderer.domElement);
+const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=.08;controls.rotateSpeed=.65;controls.zoomSpeed=.9;controls.panSpeed=.8;
+scene.add(new THREE.HemisphereLight(0xffffff,0x304050,2.1));const dl=new THREE.DirectionalLight(0xffffff,2.5);dl.position.set(100,160,120);scene.add(dl);const dl2=new THREE.DirectionalLight(0x9ec5ff,1.1);dl2.position.set(-100,-60,-80);scene.add(dl2);const grid=new THREE.GridHelper(400,40,0x334155,0x1f2937);grid.position.y=-1;scene.add(grid);scene.add(new THREE.AxesHelper(25));
 
-const scene=new THREE.Scene();
-scene.background=new THREE.Color(0x0b1020);
-const camera=new THREE.PerspectiveCamera(45,1,0.01,100000);
-camera.position.set(120,90,120);
-const renderer=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});
-renderer.setPixelRatio(Math.min(devicePixelRatio,2));
-renderer.outputColorSpace=THREE.SRGBColorSpace;
-wrap.prepend(renderer.domElement);
+let modelRoot=new THREE.Group();scene.add(modelRoot);let parts=[],meshToPart=new Map(),selectedPart=null,measureMode=false,explodeOn=false,assemblyCenter=new THREE.Vector3(),assemblyDiagonal=1,originalAssemblySize=new THREE.Vector3(),measurementPoints=[],measurementObjects=new THREE.Group(),occtPromise=null;scene.add(measurementObjects);const raycaster=new THREE.Raycaster(),pointer=new THREE.Vector2();
 
-const controls=new OrbitControls(camera,renderer.domElement);
-controls.enableDamping=true;
-controls.dampingFactor=.08;
-controls.rotateSpeed=.65;
-controls.zoomSpeed=.9;
-controls.panSpeed=.8;
-
-scene.add(new THREE.HemisphereLight(0xffffff,0x304050,2.1));
-const dl=new THREE.DirectionalLight(0xffffff,2.6); dl.position.set(100,160,120); scene.add(dl);
-const dl2=new THREE.DirectionalLight(0x9ec5ff,1.2); dl2.position.set(-100,-60,-80); scene.add(dl2);
-
-const grid=new THREE.GridHelper(400,40,0x334155,0x1f2937);
-grid.position.y=-1; scene.add(grid);
-const axes=new THREE.AxesHelper(25); scene.add(axes);
-
-let modelRoot=new THREE.Group(); scene.add(modelRoot);
-let parts=[];
-let meshToPart=new Map();
-let selectedPart=null;
-let measureMode=false;
-let explodeOn=false;
-let assemblyCenter=new THREE.Vector3();
-let assemblyDiagonal=1;
-let originalAssemblySize=new THREE.Vector3();
-let measurementPoints=[];
-let measurementObjects=new THREE.Group(); scene.add(measurementObjects);
-const raycaster=new THREE.Raycaster();
-const pointer=new THREE.Vector2();
-let occtPromise=null;
-
-function fmt(v){return Number.isFinite(v)?v.toFixed(v<10?2:1):"—";}
-function dimsText(v){return "X "+fmt(v.x)+" × Y "+fmt(v.y)+" × Z "+fmt(v.z)+" mm";}
-function flash(msg){toast.textContent=msg;toast.style.display="block";clearTimeout(flash.t);flash.t=setTimeout(()=>toast.style.display="none",2200);}
-function resize(){
-  const r=wrap.getBoundingClientRect();
-  renderer.setSize(r.width,r.height,false);
-  camera.aspect=r.width/r.height; camera.updateProjectionMatrix();
-}
-window.addEventListener("resize",resize); resize();
-
-function disposeRoot(){
-  scene.remove(modelRoot);
-  modelRoot.traverse(o=>{
-    if(o.geometry)o.geometry.dispose();
-    if(o.material){
-      const ms=Array.isArray(o.material)?o.material:[o.material];
-      ms.forEach(m=>m.dispose());
-    }
-  });
-  modelRoot=new THREE.Group(); scene.add(modelRoot);
-  parts=[]; meshToPart=new Map(); selectedPart=null;
-  clearMeasure();
-}
-function makeMaterial(srcColor){
-  let c=new THREE.Color(0x9fb8d8);
-  if(srcColor && srcColor.length>=3){
-    const mx=Math.max(srcColor[0],srcColor[1],srcColor[2]);
-    c=new THREE.Color(
-      mx>1?srcColor[0]/255:srcColor[0],
-      mx>1?srcColor[1]/255:srcColor[1],
-      mx>1?srcColor[2]/255:srcColor[2]
-    );
-  }
-  return new THREE.MeshStandardMaterial({color:c,metalness:.05,roughness:.62,side:THREE.DoubleSide,transparent:true,opacity:1});
-}
-function meshFromOcct(m){
-  const g=new THREE.BufferGeometry();
-  g.setAttribute("position",new THREE.Float32BufferAttribute(m.attributes.position.array,3));
-  if(m.attributes.normal && m.attributes.normal.array) g.setAttribute("normal",new THREE.Float32BufferAttribute(m.attributes.normal.array,3));
-  else g.computeVertexNormals();
-  if(m.index && m.index.array) g.setIndex(Array.from(m.index.array));
-  g.computeBoundingBox();
-  const obj=new THREE.Mesh(g,makeMaterial(m.color));
-  obj.name=m.name||"";
-  obj.userData.baseColor=obj.material.color.clone();
-  return obj;
-}
-function uniqueName(name,i){
-  let n=(name||"").trim();
-  if(!n || /^compound$/i.test(n) || /^solid$/i.test(n)) n="パーツ "+(i+1);
-  return n;
-}
-function addPart(name,meshIndices,srcMeshes,used){
-  const ids=meshIndices.filter(i=>Number.isInteger(i)&&i>=0&&i<srcMeshes.length&&!used.has(i));
-  if(!ids.length)return;
-  const pg=new THREE.Group();
-  const part={name:uniqueName(name,parts.length),group:pg,meshes:[],size:new THREE.Vector3(),center:new THREE.Vector3(),explodeTarget:new THREE.Vector3()};
-  ids.forEach(i=>{
-    used.add(i);
-    const obj=meshFromOcct(srcMeshes[i]);
-    pg.add(obj); part.meshes.push(obj); meshToPart.set(obj,part);
-  });
-  modelRoot.add(pg);
-  parts.push(part);
-}
-function walkNode(node,srcMeshes,used,path){
-  if(!node)return;
-  const label=node.name||path||"";
-  if(Array.isArray(node.meshes)&&node.meshes.length)addPart(label,node.meshes,srcMeshes,used);
-  if(Array.isArray(node.children))node.children.forEach((c,i)=>walkNode(c,srcMeshes,used,label+" "+(i+1)));
-}
-function finalizeParts(){
-  modelRoot.updateMatrixWorld(true);
-  const whole=new THREE.Box3().setFromObject(modelRoot);
-  whole.getCenter(assemblyCenter);
-  whole.getSize(originalAssemblySize);
-  assemblyDiagonal=Math.max(originalAssemblySize.length(),1);
-  parts.forEach((p,i)=>{
-    const b=new THREE.Box3().setFromObject(p.group);
-    b.getSize(p.size); b.getCenter(p.center);
-    let dir=p.center.clone().sub(assemblyCenter);
-    if(dir.length()<.001)dir.set(Math.cos(i*2.399),.25*Math.sin(i),Math.sin(i*2.399));
-    dir.normalize();
-    p.explodeTarget.copy(dir.multiplyScalar(assemblyDiagonal*.23));
-  });
-  overallDims.textContent=dimsText(originalAssemblySize);
-  buildPartList();
-  fitCamera();
-  buttons.forEach(b=>b.disabled=false);
-  empty.style.display="none";
-  partCount.textContent="("+parts.length+")";
-  selectPart(parts[0]||null,false);
-}
-function loadStep(buf){
-  if(!occtPromise){
-    occtPromise=window.occtimportjs({
-      locateFile:function(path){
-        if(path.endsWith(".wasm"))return "https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.wasm";
-        return path;
-      }
-    });
-  }
-  return occtPromise.then(occt=>{
-    const result=occt.ReadStepFile(new Uint8Array(buf),{
-      linearUnit:"millimeter",
-      linearDeflectionType:"bounding_box_ratio",
-      linearDeflection:0.001,
-      angularDeflection:0.5
-    });
-    if(!result || !result.success)throw new Error("STEPの解析に失敗しました");
-    const used=new Set();
-    walkNode(result.root,result.meshes,used,"");
-    result.meshes.forEach((m,i)=>{if(!used.has(i))addPart(m.name,[i],result.meshes,used);});
-    if(!parts.length)throw new Error("表示できるパーツがありません");
-  });
-}
-function loadStl(buf){
-  const g=new STLLoader().parse(buf);
-  g.computeVertexNormals();g.computeBoundingBox();
-  const obj=new THREE.Mesh(g,makeMaterial(null));
-  const pg=new THREE.Group();pg.add(obj);modelRoot.add(pg);
-  const p={name:"STL パーツ",group:pg,meshes:[obj],size:new THREE.Vector3(),center:new THREE.Vector3(),explodeTarget:new THREE.Vector3()};
-  parts=[p];meshToPart.set(obj,p);
-  flash("STLには実寸単位情報がないため mm として表示します");
-}
-async function openFile(file){
-  if(!file)return;
-  const ext=file.name.split(".").pop().toLowerCase();
-  if(!["step","stp","stl"].includes(ext)){flash("STEP / STP / STL を選んでください");return;}
-  loading.classList.add("show");
-  fileName.textContent=file.name;
-  try{
-    disposeRoot();
-    const buf=await file.arrayBuffer();
-    if(ext==="stl")loadStl(buf); else await loadStep(buf);
-    finalizeParts();
-  }catch(e){
-    console.error(e);
-    empty.style.display="flex";
-    overallDims.textContent="X — × Y — × Z —";
-    flash("読み込み失敗: "+(e.message||e));
-  }finally{loading.classList.remove("show");fileInput.value=""; if(bigFileInput) bigFileInput.value="";}
-}
-function buildPartList(){
-  partsEl.innerHTML="";
-  parts.forEach((p,i)=>{
-    const b=document.createElement("button");b.className="part";
-    const s=document.createElement("span");s.className="swatch";
-    const t=document.createElement("div");t.className="ptext";
-    const n=document.createElement("div");n.className="pname";n.textContent=(i+1)+". "+p.name;
-    const d=document.createElement("div");d.className="pdim";d.textContent=dimsText(p.size);
-    t.append(n,d);b.append(s,t);
-    b.addEventListener("click",()=>{selectPart(p,true);});
-    p.listEl=b;partsEl.appendChild(b);
-  });
-}
-function setPartAppearance(mode){
-  parts.forEach(p=>p.meshes.forEach(m=>{
-    m.visible=mode!=="isolate" || p===selectedPart;
-    m.material.opacity=(mode==="ghost" && selectedPart && p!==selectedPart)?0.12:1;
-    m.material.depthWrite=!(mode==="ghost" && selectedPart && p!==selectedPart);
-  }));
-}
-function selectPart(p,fromList){
-  selectedPart=p;
-  parts.forEach(x=>{
-    if(x.listEl)x.listEl.classList.toggle("active",x===p);
-    x.meshes.forEach(m=>{
-      m.material.emissive.setHex(x===p?0x17345b:0x000000);
-      m.material.emissiveIntensity=x===p?.7:0;
-    });
-  });
-  if(p){
-    infoName.textContent=p.name;
-    infoDims.textContent=dimsText(p.size);
-    if(!measureMode)measureText.textContent="このパーツの外形寸法";
-    if(fromList){
-      drawer.classList.remove("open");
-      focusPart(p);
-    }
-  }else{
-    infoName.textContent="未選択";infoDims.textContent="X —　Y —　Z —";
-  }
-}
-function focusPart(p){
-  const b=new THREE.Box3().setFromObject(p.group);
-  frameBox(b);
-}
-function fitCamera(){frameBox(new THREE.Box3().setFromObject(modelRoot));}
-function frameBox(box){
-  if(box.isEmpty())return;
-  const size=new THREE.Vector3(),center=new THREE.Vector3();box.getSize(size);box.getCenter(center);
-  const max=Math.max(size.x,size.y,size.z,1);
-  const dist=max/(2*Math.tan(THREE.MathUtils.degToRad(camera.fov/2)))*1.65;
-  const dir=new THREE.Vector3(1,.75,1).normalize();
-  camera.position.copy(center).add(dir.multiplyScalar(dist));
-  camera.near=Math.max(dist/1000,.01);camera.far=Math.max(dist*50,1000);camera.updateProjectionMatrix();
-  controls.target.copy(center);controls.update();
-}
-function clearMeasure(){
-  measurementPoints=[];
-  while(measurementObjects.children.length){
-    const o=measurementObjects.children.pop();
-    if(o.geometry)o.geometry.dispose();if(o.material)o.material.dispose();
-  }
-  measureText.textContent=measureMode?"1点目をタップ":"パーツをタップするとサイズを表示";
-}
-function addMeasurePoint(p){
-  measurementPoints.push(p.clone());
-  const r=Math.max(assemblyDiagonal*.008,.35);
-  const dot=new THREE.Mesh(new THREE.SphereGeometry(r,16,10),new THREE.MeshBasicMaterial({color:0xf59e0b}));
-  dot.position.copy(p);measurementObjects.add(dot);
-  if(measurementPoints.length===1)measureText.textContent="2点目をタップ";
-  if(measurementPoints.length===2){
-    const g=new THREE.BufferGeometry().setFromPoints(measurementPoints);
-    const line=new THREE.Line(g,new THREE.LineBasicMaterial({color:0xfbbf24}));
-    measurementObjects.add(line);
-    const d=measurementPoints[0].distanceTo(measurementPoints[1]);
-    measureText.textContent="距離 "+d.toFixed(2)+" mm";
-    flash("測定: "+d.toFixed(2)+" mm");
-  }else if(measurementPoints.length>2){clearMeasure();addMeasurePoint(p);}
-}
-function pick(ev){
-  if(!parts.length)return;
-  const rect=renderer.domElement.getBoundingClientRect();
-  const x=ev.clientX!==undefined?ev.clientX:(ev.changedTouches&&ev.changedTouches[0]?ev.changedTouches[0].clientX:0);
-  const y=ev.clientY!==undefined?ev.clientY:(ev.changedTouches&&ev.changedTouches[0]?ev.changedTouches[0].clientY:0);
-  pointer.x=((x-rect.left)/rect.width)*2-1;
-  pointer.y=-((y-rect.top)/rect.height)*2+1;
-  raycaster.setFromCamera(pointer,camera);
-  const hits=raycaster.intersectObjects(parts.flatMap(p=>p.meshes.filter(m=>m.visible)),false);
-  if(!hits.length)return;
-  if(measureMode)addMeasurePoint(hits[0].point);
-  else{
-    const p=meshToPart.get(hits[0].object);
-    if(p)selectPart(p,false);
-  }
-}
-let down={x:0,y:0,t:0};
-renderer.domElement.addEventListener("pointerdown",e=>{down={x:e.clientX,y:e.clientY,t:performance.now()};});
-renderer.domElement.addEventListener("pointerup",e=>{
-  if(Math.hypot(e.clientX-down.x,e.clientY-down.y)<8 && performance.now()-down.t<500)pick(e);
-});
-
-document.getElementById("openBtn").onclick=()=>fileInput.click();
-fileInput.onchange=()=>openFile(fileInput.files[0]);
-const bigFileInput=document.getElementById("bigFileInput"); if(bigFileInput) bigFileInput.onchange=()=>openFile(bigFileInput.files[0]);
-document.getElementById("partsBtn").onclick=()=>drawer.classList.add("open");
-document.getElementById("closeDrawer").onclick=()=>drawer.classList.remove("open");
-document.getElementById("fitBtn").onclick=()=>fitCamera();
-document.getElementById("showAll").onclick=()=>{setPartAppearance("all");flash("全部表示");};
-document.getElementById("isolate").onclick=()=>{if(!selectedPart)return flash("パーツを選んでください");setPartAppearance("isolate");focusPart(selectedPart);};
-document.getElementById("ghost").onclick=()=>{if(!selectedPart)return flash("パーツを選んでください");setPartAppearance("ghost");};
-document.getElementById("measureBtn").onclick=e=>{
-  measureMode=!measureMode;
-  e.currentTarget.classList.toggle("active",measureMode);
-  clearMeasure();
-  measureText.textContent=measureMode?"1点目をタップ":"パーツをタップするとサイズを表示";
-  controls.enabled=true;
-};
-document.getElementById("explodeBtn").onclick=e=>{
-  explodeOn=!explodeOn;e.currentTarget.classList.toggle("active",explodeOn);
-  parts.forEach(p=>p.group.userData.target=explodeOn?p.explodeTarget.clone():new THREE.Vector3());
-};
-
-function animate(){
-  requestAnimationFrame(animate);
-  parts.forEach(p=>{
-    if(p.group.userData.target)p.group.position.lerp(p.group.userData.target,.12);
-  });
-  controls.update();renderer.render(scene,camera);
-}
-animate();
+function fmt(v){return Number.isFinite(v)?v.toFixed(v<10?2:1):"—"}function dimsText(v){return "X "+fmt(v.x)+" × Y "+fmt(v.y)+" × Z "+fmt(v.z)+" mm"}function flash(msg){toast.textContent=msg;toast.style.display="block";clearTimeout(flash.t);flash.t=setTimeout(()=>toast.style.display="none",2200)}
+function resize(){const r=wrap.getBoundingClientRect();renderer.setSize(r.width,r.height,false);camera.aspect=r.width/Math.max(r.height,1);camera.updateProjectionMatrix()}window.addEventListener("resize",resize);
+function disposeRoot(){scene.remove(modelRoot);modelRoot.traverse(o=>{o.geometry?.dispose();if(o.material)(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m.dispose())});modelRoot=new THREE.Group();scene.add(modelRoot);parts=[];meshToPart=new Map();selectedPart=null;clearMeasure()}
+function makeMaterial(srcColor){let c=new THREE.Color(0x9fb8d8);if(srcColor&&srcColor.length>=3){const mx=Math.max(...srcColor);c=new THREE.Color(mx>1?srcColor[0]/255:srcColor[0],mx>1?srcColor[1]/255:srcColor[1],mx>1?srcColor[2]/255:srcColor[2])}return new THREE.MeshStandardMaterial({color:c,metalness:.05,roughness:.62,side:THREE.DoubleSide,transparent:true,opacity:1})}
+function meshFromOcct(m){const g=new THREE.BufferGeometry();g.setAttribute("position",new THREE.Float32BufferAttribute(m.attributes.position.array,3));if(m.attributes.normal?.array)g.setAttribute("normal",new THREE.Float32BufferAttribute(m.attributes.normal.array,3));else g.computeVertexNormals();if(m.index?.array)g.setIndex(Array.from(m.index.array));const obj=new THREE.Mesh(g,makeMaterial(m.color));obj.name=m.name||"";return obj}
+function uniqueName(name,i){let n=(name||"").trim();if(!n||/^(compound|solid)$/i.test(n))n="パーツ "+(i+1);return n}
+function addPart(name,meshIndices,srcMeshes,used){const ids=meshIndices.filter(i=>Number.isInteger(i)&&i>=0&&i<srcMeshes.length&&!used.has(i));if(!ids.length)return;const pg=new THREE.Group(),part={name:uniqueName(name,parts.length),group:pg,meshes:[],size:new THREE.Vector3(),center:new THREE.Vector3(),explodeTarget:new THREE.Vector3()};ids.forEach(i=>{used.add(i);const obj=meshFromOcct(srcMeshes[i]);pg.add(obj);part.meshes.push(obj);meshToPart.set(obj,part)});modelRoot.add(pg);parts.push(part)}
+function walkNode(node,srcMeshes,used,path){if(!node)return;const label=node.name||path||"";if(Array.isArray(node.meshes)&&node.meshes.length)addPart(label,node.meshes,srcMeshes,used);if(Array.isArray(node.children))node.children.forEach((c,i)=>walkNode(c,srcMeshes,used,label+" "+(i+1)))}
+async function loadStep(buf){if(!occtPromise){if(typeof window.occtimportjs!=="function")throw new Error("STEPエンジンを読み込めませんでした");occtPromise=window.occtimportjs({locateFile:path=>path.endsWith(".wasm")?"https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.wasm":path})}const occt=await occtPromise;const result=occt.ReadStepFile(new Uint8Array(buf),{linearUnit:"millimeter",linearDeflectionType:"bounding_box_ratio",linearDeflection:.001,angularDeflection:.5});if(!result?.success)throw new Error("STEPの解析に失敗しました");const used=new Set();walkNode(result.root,result.meshes,used,"");result.meshes.forEach((m,i)=>{if(!used.has(i))addPart(m.name,[i],result.meshes,used)});if(!parts.length)throw new Error("表示できるパーツがありません")}
+function loadStl(buf){const g=new STLLoader().parse(buf);g.computeVertexNormals();const obj=new THREE.Mesh(g,makeMaterial(null)),pg=new THREE.Group();pg.add(obj);modelRoot.add(pg);const p={name:"STL パーツ",group:pg,meshes:[obj],size:new THREE.Vector3(),center:new THREE.Vector3(),explodeTarget:new THREE.Vector3()};parts=[p];meshToPart.set(obj,p);flash("STLは単位情報がないためmmとして表示します")}
+function finalizeParts(){modelRoot.updateMatrixWorld(true);const whole=new THREE.Box3().setFromObject(modelRoot);whole.getCenter(assemblyCenter);whole.getSize(originalAssemblySize);assemblyDiagonal=Math.max(originalAssemblySize.length(),1);parts.forEach((p,i)=>{const b=new THREE.Box3().setFromObject(p.group);b.getSize(p.size);b.getCenter(p.center);let dir=p.center.clone().sub(assemblyCenter);if(dir.length()<.001)dir.set(Math.cos(i*2.399),.25*Math.sin(i),Math.sin(i*2.399));p.explodeTarget.copy(dir.normalize().multiplyScalar(assemblyDiagonal*.23))});overallDims.textContent=dimsText(originalAssemblySize);partCount.textContent="("+parts.length+")";buildPartList();selectPart(parts[0]||null,false);fitCamera()}
+async function openFile(file){if(!file)return;const ext=(file.name.split(".").pop()||"").toLowerCase();if(!["step","stp","stl"].includes(ext)){alert("STEP / STP / STL ファイルを選んでください。");picker.value="";return}pickedName.textContent="選択: "+file.name;landing.style.display="none";viewerPage.style.display="block";fileName.textContent=file.name;requestAnimationFrame(()=>{resize();loading.classList.add("show")});try{disposeRoot();const buf=await file.arrayBuffer();if(ext==="stl")loadStl(buf);else await loadStep(buf);finalizeParts()}catch(e){console.error(e);viewerPage.style.display="none";landing.style.display="flex";bootError.textContent="読み込み失敗: "+(e.message||e);bootError.style.display="block"}finally{loading.classList.remove("show");picker.value=""}}
+picker.addEventListener("change",()=>openFile(picker.files?.[0]));
+function buildPartList(){partsEl.innerHTML="";parts.forEach((p,i)=>{const b=document.createElement("button");b.className="part";const d=document.createElement("span");d.className="dot";const t=document.createElement("div");t.className="ptext";const n=document.createElement("div");n.className="pname";n.textContent=(i+1)+". "+p.name;const s=document.createElement("div");s.className="pdim";s.textContent=dimsText(p.size);t.append(n,s);b.append(d,t);b.onclick=()=>selectPart(p,true);p.listEl=b;partsEl.appendChild(b)})}
+function setPartAppearance(mode){parts.forEach(p=>p.meshes.forEach(m=>{m.visible=mode!=="isolate"||p===selectedPart;m.material.opacity=(mode==="ghost"&&selectedPart&&p!==selectedPart)?.12:1;m.material.depthWrite=!(mode==="ghost"&&selectedPart&&p!==selectedPart)}))}
+function selectPart(p,fromList){selectedPart=p;parts.forEach(x=>{x.listEl?.classList.toggle("active",x===p);x.meshes.forEach(m=>{m.material.emissive.setHex(x===p?0x17345b:0);m.material.emissiveIntensity=x===p?.7:0})});if(p){infoName.textContent=p.name;infoDims.textContent=dimsText(p.size);if(!measureMode)measureText.textContent="このパーツの外形寸法";if(fromList){drawer.classList.remove("open");focusPart(p)}}}
+function focusPart(p){frameBox(new THREE.Box3().setFromObject(p.group))}function fitCamera(){frameBox(new THREE.Box3().setFromObject(modelRoot))}
+function frameBox(box){if(box.isEmpty())return;const size=new THREE.Vector3(),center=new THREE.Vector3();box.getSize(size);box.getCenter(center);const max=Math.max(size.x,size.y,size.z,1),dist=max/(2*Math.tan(THREE.MathUtils.degToRad(camera.fov/2)))*1.65,dir=new THREE.Vector3(1,.75,1).normalize();camera.position.copy(center).add(dir.multiplyScalar(dist));camera.near=Math.max(dist/1000,.01);camera.far=Math.max(dist*50,1000);camera.updateProjectionMatrix();controls.target.copy(center);controls.update()}
+function clearMeasure(){measurementPoints=[];while(measurementObjects.children.length){const o=measurementObjects.children.pop();o.geometry?.dispose();o.material?.dispose()}measureText.textContent=measureMode?"1点目をタップ":"パーツをタップするとサイズを表示"}
+function addMeasurePoint(p){if(measurementPoints.length>=2)clearMeasure();measurementPoints.push(p.clone());const r=Math.max(assemblyDiagonal*.008,.35),dot=new THREE.Mesh(new THREE.SphereGeometry(r,16,10),new THREE.MeshBasicMaterial({color:0xf59e0b}));dot.position.copy(p);measurementObjects.add(dot);if(measurementPoints.length===1)measureText.textContent="2点目をタップ";else{const g=new THREE.BufferGeometry().setFromPoints(measurementPoints),line=new THREE.Line(g,new THREE.LineBasicMaterial({color:0xfbbf24}));measurementObjects.add(line);const d=measurementPoints[0].distanceTo(measurementPoints[1]);measureText.textContent="距離 "+d.toFixed(2)+" mm";flash("測定 "+d.toFixed(2)+" mm")}}
+function pick(e){if(!parts.length)return;const rect=renderer.domElement.getBoundingClientRect();pointer.x=((e.clientX-rect.left)/rect.width)*2-1;pointer.y=-((e.clientY-rect.top)/rect.height)*2+1;raycaster.setFromCamera(pointer,camera);const hits=raycaster.intersectObjects(parts.flatMap(p=>p.meshes.filter(m=>m.visible)),false);if(!hits.length)return;if(measureMode)addMeasurePoint(hits[0].point);else{const p=meshToPart.get(hits[0].object);if(p)selectPart(p,false)}}
+let down={x:0,y:0,t:0};renderer.domElement.addEventListener("pointerdown",e=>down={x:e.clientX,y:e.clientY,t:performance.now()});renderer.domElement.addEventListener("pointerup",e=>{if(Math.hypot(e.clientX-down.x,e.clientY-down.y)<8&&performance.now()-down.t<500)pick(e)});
+document.getElementById("backBtn").onclick=()=>{viewerPage.style.display="none";landing.style.display="flex";pickedName.textContent="";drawer.classList.remove("open")};document.getElementById("partsBtn").onclick=()=>drawer.classList.add("open");document.getElementById("closeDrawer").onclick=()=>drawer.classList.remove("open");document.getElementById("showAll").onclick=()=>setPartAppearance("all");document.getElementById("isolate").onclick=()=>selectedPart?setPartAppearance("isolate"):flash("パーツを選んでください");document.getElementById("ghost").onclick=()=>selectedPart?setPartAppearance("ghost"):flash("パーツを選んでください");document.getElementById("fitBtn").onclick=()=>fitCamera();document.getElementById("measureBtn").onclick=e=>{measureMode=!measureMode;e.currentTarget.classList.toggle("active",measureMode);clearMeasure()};document.getElementById("explodeBtn").onclick=e=>{explodeOn=!explodeOn;e.currentTarget.classList.toggle("active",explodeOn);parts.forEach(p=>p.group.userData.target=explodeOn?p.explodeTarget.clone():new THREE.Vector3())};
+function animate(){requestAnimationFrame(animate);parts.forEach(p=>{if(p.group.userData.target)p.group.position.lerp(p.group.userData.target,.12)});controls.update();renderer.render(scene,camera)}animate();
 </script>
 </body>
 </html>
