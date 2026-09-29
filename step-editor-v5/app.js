@@ -92,6 +92,9 @@ let originalStepName = '';
 let editHistory = [];
 let editCursor = 0;
 let faceDrag = null;
+let touchDragEnabled = false;
+let editTargetConfirmed = false;
+let confirmedPatchKey = '';
 
 function setStatus(text, type = 'idle') {
   const el = $('status');
@@ -278,7 +281,7 @@ function setModelButtons(enabled) {
   [
     'fitBtn','isoBtn','frontBtn','rightBtn','backBtn','leftBtn','topBtn','bottomBtn',
     'modelDimBtn','measureBtn','clearMeasureBtn','unitBtn','saveGlbBtn',
-    'showAllBtn','wireBtn','partModeBtn','faceModeBtn','fineLevelBtn','normalLevelBtn','coarseLevelBtn'
+    'showAllBtn','wireBtn','partModeBtn','faceModeBtn','fineLevelBtn','normalLevelBtn','coarseLevelBtn','touchDragToggleBtn'
   ].forEach(id => $(id).disabled = !enabled);
 }
 
@@ -1056,6 +1059,7 @@ function selectPatch(partIndex, patchIndex, scroll=true) {
   highlightPatch(part,patch);
   showBoxDimensions(stats.box,'face');
   selectedPatch={partIndex,patchIndex};
+  resetEditConfirmation();
   updateFaceReadout(part,patchIndex,stats);
   updateEditTarget(part,patchIndex,stats);
 
@@ -1139,6 +1143,7 @@ function renderFacesList(part, partIndex) {
 
 function setSelectionMode(mode) {
   if(faceDrag){ controls.enabled=true; faceDrag=null; $('dragHud').classList.add('hidden'); }
+  resetEditConfirmation();
   selectionMode=mode==='face'?'face':'part';
   $('partModeBtn').classList.toggle('active',selectionMode==='part');
   $('faceModeBtn').classList.toggle('active',selectionMode==='face');
@@ -1146,7 +1151,7 @@ function setSelectionMode(mode) {
     ? '詳細面モード：面・穴・R部をタップ'
     : '部品モード：タップで外形寸法';
   $('modeHelp').textContent=selectionMode==='face'
-    ? '面をタップして選択。黄色になった面をもう一度指でつかんでドラッグすると直接伸び縮みします。'
+    ? '面をタップして黄色に選択 → 「この面を編集」で確定 → ±ボタンか数値で変更します。'
     : '部品全体を選択して X・Y・Z 外形寸法を表示します。';
   clearFaceHighlight();
   clearPartDimensions();
@@ -1159,7 +1164,7 @@ function setSelectionMode(mode) {
     if (selectionMode==='part' && selectedDimsOn && part.mesh.visible) {
       showBoxDimensions(new THREE.Box3().setFromObject(part.mesh),'part');
     } else if (selectionMode==='face') {
-      $('tapPoint').textContent='詳細面モード：面をタップ → 黄色の面を指でつかんでドラッグ';
+      $('tapPoint').textContent='詳細面モード：面をタップ → 黄色になったら編集面を確定';
     }
   }
 }
@@ -1276,18 +1281,85 @@ function featureSignature(part, patchIndex, stats) {
   };
 }
 
+
+function patchKey(partIndex,patchIndex){
+  return partIndex+':'+patchIndex;
+}
+
+function setEditControlsLocked(locked){
+  document.querySelectorAll('[data-push]').forEach(btn=>btn.disabled=locked);
+  $('applyPushPullBtn').disabled=locked;
+  if(locked) $('applyHoleBtn').disabled=true;
+  document.querySelectorAll('.editBlock').forEach(el=>el.classList.toggle('editLocked',locked));
+}
+
+function resetEditConfirmation(){
+  editTargetConfirmed=false;
+  confirmedPatchKey='';
+  $('confirmEditFaceBtn').disabled=!selectedPatch;
+  $('confirmEditFaceBtn').textContent='✓ この面を編集';
+  setEditControlsLocked(true);
+}
+
+function confirmSelectedFaceForEdit(){
+  if(!selectedPatch){
+    setStatus('先に詳細面を選んでください','error');
+    return;
+  }
+  editTargetConfirmed=true;
+  confirmedPatchKey=patchKey(selectedPatch.partIndex,selectedPatch.patchIndex);
+  $('confirmEditFaceBtn').disabled=true;
+  $('confirmEditFaceBtn').textContent='✓ 編集面を確定';
+  setEditControlsLocked(false);
+
+  const part=parts[selectedPatch.partIndex];
+  const patch=part?.patches?.[selectedPatch.patchIndex];
+  if(part&&patch){
+    const stats=computePatchStats(part,patch);
+    const hole=estimateHole(part,patch);
+    $('applyHoleBtn').disabled=!(stats.type==='曲面' && hole && hole.diameter>0);
+    focusSelected();
+    $('editTargetInfo').innerHTML=
+      '<strong>編集面を確定しました</strong><br>'+part.name+' / 詳細面 '+(selectedPatch.patchIndex+1)+
+      '<br>下の±ボタンか数値入力で変更してください。';
+  }
+  setStatus('編集面を確定しました','ok');
+}
+
+function ensureConfirmedEditTarget(){
+  if(!selectedPatch || !editTargetConfirmed ||
+     confirmedPatchKey!==patchKey(selectedPatch.partIndex,selectedPatch.patchIndex)){
+    setStatus('「この面を編集」で面を確定してください','error');
+    return false;
+  }
+  return true;
+}
+
+function toggleTouchDragAssist(){
+  touchDragEnabled=!touchDragEnabled;
+  $('touchDragToggleBtn').classList.toggle('active',touchDragEnabled);
+  $('touchDragToggleBtn').textContent=touchDragEnabled?'指ドラッグ補助 ON':'指ドラッグ補助 OFF';
+  setStatus(touchDragEnabled?'指ドラッグ補助をONにしました':'数値編集を基本に戻しました','ok');
+}
+
 function updateEditTarget(part,patchIndex,stats){
   const patch=part.patches?.[patchIndex];
   if(!patch) return;
+  if(confirmedPatchKey!==patchKey(selectedPatch?.partIndex ?? -1,patchIndex)){
+    editTargetConfirmed=false;
+    confirmedPatchKey='';
+    $('confirmEditFaceBtn').disabled=false;
+    $('confirmEditFaceBtn').textContent='✓ この面を編集';
+    setEditControlsLocked(true);
+  }
   $('editTargetInfo').innerHTML=
     '<strong>'+part.name+' / 詳細面 '+(patchIndex+1)+'</strong><br>'+
     stats.type+' ・ X '+formatLength(stats.size.x)+' / Y '+formatLength(stats.size.y)+' / Z '+formatLength(stats.size.z)+
     '<br><span style="color:#8fd6b3">境界も一緒に動かして部品形状を伸縮します</span>';
 
-  $('applyPushPullBtn').disabled=false;
   const hole=estimateHole(part,patch);
   const holeOkay=stats.type==='曲面' && hole && hole.diameter>0;
-  $('applyHoleBtn').disabled=!holeOkay;
+  $('applyHoleBtn').disabled=!(editTargetConfirmed && holeOkay);
   if(holeOkay){
     $('holeCurrentDia').textContent='Ø'+formatRawMm(hole.diameter)+' mm';
     $('holeAxis').textContent=hole.axis.toUpperCase()+'軸（推定）';
@@ -1417,6 +1489,7 @@ function commitEdit(cmd){
 }
 
 function applyPushPullValue(value){
+  if(!ensureConfirmedEditTarget()) return;
   if(!selectedPatch) {
     setStatus('先に詳細面を選んでください','error'); return;
   }
@@ -1445,6 +1518,7 @@ function applyPushPull(){
 }
 
 function applyHoleDiameter(){
+  if(!ensureConfirmedEditTarget()) return;
   if(!selectedPatch){setStatus('先に穴の内周を選んでください','error');return;}
   const part=parts[selectedPatch.partIndex];
   const patch=part?.patches?.[selectedPatch.patchIndex];
@@ -1576,7 +1650,7 @@ function currentSelectedPatchHit(hit){
 }
 
 function beginFaceDragCandidate(e, hit){
-  if(selectionMode!=='face' || measureMode || !selectedPatch || !currentSelectedPatchHit(hit)) return false;
+  if(!touchDragEnabled || !editTargetConfirmed || selectionMode!=='face' || measureMode || !selectedPatch || !currentSelectedPatchHit(hit)) return false;
   const part=parts[selectedPatch.partIndex];
   const patch=part?.patches?.[selectedPatch.patchIndex];
   if(!part||!patch) return false;
@@ -1740,7 +1814,7 @@ function pickAt(clientX, clientY) {
 
 renderer.domElement.addEventListener('pointerdown', (e) => {
   pointerDown = { x: e.clientX, y: e.clientY, id: e.pointerId };
-  if(selectionMode==='face' && selectedPatch && !measureMode){
+  if(touchDragEnabled && selectionMode==='face' && selectedPatch && !measureMode){
     const hits=pickAt(e.clientX,e.clientY);
     if(hits.length && beginFaceDragCandidate(e,hits[0])){
       e.preventDefault();
@@ -1957,6 +2031,8 @@ $('faceModeBtn').addEventListener('click',()=>setSelectionMode('face'));
 $('fineLevelBtn').addEventListener('click',()=>setDetailLevel(12,'fineLevelBtn'));
 $('normalLevelBtn').addEventListener('click',()=>setDetailLevel(25,'normalLevelBtn'));
 $('coarseLevelBtn').addEventListener('click',()=>setDetailLevel(45,'coarseLevelBtn'));
+$('confirmEditFaceBtn').addEventListener('click',confirmSelectedFaceForEdit);
+$('touchDragToggleBtn').addEventListener('click',toggleTouchDragAssist);
 $('applyPushPullBtn').addEventListener('click',applyPushPull);
 $('applyHoleBtn').addEventListener('click',applyHoleDiameter);
 $('undoBtn').addEventListener('click',undoEdit);
@@ -2107,4 +2183,5 @@ setSelectedButtons(false);
 updateDimensionButtons();
 setSelectionMode('part');
 updateEditHistoryUI();
+resetEditConfirmation();
 resize();
