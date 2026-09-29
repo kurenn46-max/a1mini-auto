@@ -1157,6 +1157,13 @@ function setSelectionMode(mode) {
   if(faceDrag){ controls.enabled=true; faceDrag=null; $('dragHud').classList.add('hidden'); }
   resetEditConfirmation();
   selectionMode=mode==='face'?'face':'part';
+
+  if(selectionMode==='face'){
+    selectedAxis=null;
+    clearGroup(axisSignGroup);
+    selectedPatch=null;
+    updateAxisPanel();
+  }
   $('partModeBtn').classList.toggle('active',selectionMode==='part');
   $('faceModeBtn').classList.toggle('active',selectionMode==='face');
   $('tapHint').textContent=selectionMode==='face'
@@ -1638,15 +1645,27 @@ function updateAxisPanel(){
 
 function selectAxis(axis){
   selectedAxis=axis;
+  selectedPatch=null;
+  resetEditConfirmation();
+
+  // Axis editing always uses the whole part. Keep the visible mode in sync.
+  selectionMode='part';
+  $('partModeBtn').classList.add('active');
+  $('faceModeBtn').classList.remove('active');
+  $('tapHint').textContent='部品モード：X/Y/Z軸編集';
+  $('modeHelp').textContent='部品全体を選択して X・Y・Z 外形寸法を編集します。';
+  clearGroup(faceHighlightGroup);
+
   const resolved=getAxisPart();
   if(resolved?.part?.mesh?.visible){
-    clearGroup(faceHighlightGroup);
+    selectedDimsOn=true;
     showBoxDimensions(new THREE.Box3().setFromObject(resolved.part.mesh),'part');
     $('tapPoint').textContent=
-      axis.toUpperCase()+'軸編集：部品全体の寸法を表示中（＋/−表示と同じ基準）';
+      axis.toUpperCase()+'軸編集：部品全体 '+formatRawMm(partWorldSize(resolved.part)[axis])+' mm';
   }
+  updateDimensionButtons();
   updateAxisPanel();
-  setStatus(axis.toUpperCase()+'軸を選択・部品全体寸法を表示','ok');
+  setStatus(axis.toUpperCase()+'軸を選択・部品モードへ切替','ok');
 }
 
 function commitAxisDimension(axis,target){
