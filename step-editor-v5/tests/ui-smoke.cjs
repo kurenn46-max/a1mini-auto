@@ -17,61 +17,84 @@ const { chromium } = require('playwright');
 
   await page.waitForSelector('#addBoxBtn');
 
-  // Build a real CAD part in the app so we can exercise the actual Three.js UI state.
+  // Real app geometry: 40 x 30 x 10 mm.
   await page.click('#addBoxBtn');
   await page.waitForFunction(() => document.querySelector('#partCount')?.textContent === '1');
 
-  // Enter detailed-face mode.
-  await page.click('#faceModeBtn');
-  if (!(await page.locator('#faceModeBtn').evaluate(el => el.classList.contains('active')))) {
-    throw new Error('詳細面モードへ切り替わらない');
-  }
+  let st = await page.evaluate(() => window.__okaTest.state());
+  if (Math.abs(st.partSize.z - 10) > 0.001) throw new Error('初期Z寸法が10mmではない');
+  const initialMinZ = st.bounds.min.z;
+  const initialMaxZ = st.bounds.max.z;
 
-  // Select an actual face from the list so face dimensions/highlight exist.
-  await page.waitForSelector('.faceRow');
-  await page.locator('.faceRow').first().click();
+  // Use actual detailed-face data to choose the +Z end face.
+  await page.click('#faceModeBtn');
+  const patchIndex = await page.evaluate(() => window.__okaTest.extremePatch('z','max'));
+  if (patchIndex == null) throw new Error('+Z端面を検出できない');
+
+  await page.locator('.faceRow[data-face-index="' + patchIndex + '"]').click();
   await page.waitForTimeout(100);
 
-  const beforeTexts = await page.locator('.dimensionLabel').allInnerTexts();
-  if (!beforeTexts.length) throw new Error('詳細面選択後に寸法表示が出ていない');
-
-  const selectedFaceBefore = await page.locator('.faceRow.selected').count();
-  if (!selectedFaceBefore) throw new Error('詳細面が選択状態になっていない');
-
-  // Tap Z axis. Requirement: add ONLY +/- signs. Do not change mode, face selection, or dimension labels.
+  // Selecting Z must not switch out of detailed-face mode.
   await page.click('#axisZCard');
   await page.waitForTimeout(100);
 
   const faceActive = await page.locator('#faceModeBtn').evaluate(el => el.classList.contains('active'));
   const partActive = await page.locator('#partModeBtn').evaluate(el => el.classList.contains('active'));
-  const zActive = await page.locator('#axisZCard').evaluate(el => el.classList.contains('active'));
-  const afterTexts = await page.locator('.dimensionLabel').allInnerTexts();
-  const selectedFaceAfter = await page.locator('.faceRow.selected').count();
+  if (!faceActive || partActive) throw new Error('Z軸選択で詳細面モードが変わった');
 
-  if (!faceActive) throw new Error('Z軸タップで詳細面モードが解除された');
-  if (partActive) throw new Error('Z軸タップで部品モードへ勝手に切り替わった');
-  if (!zActive) throw new Error('Z軸カードが選択状態にならない');
-  if (!selectedFaceAfter) throw new Error('Z軸タップで詳細面の選択が消えた');
-
-  if (JSON.stringify(beforeTexts) !== JSON.stringify(afterTexts)) {
-    throw new Error('Z軸タップで既存の詳細面寸法表示が変わった: ' +
-      JSON.stringify(beforeTexts) + ' -> ' + JSON.stringify(afterTexts));
+  // +Z face is moving, therefore -Z side must be fixed automatically.
+  if (!(await page.locator('#anchorMinBtn').evaluate(el => el.classList.contains('active')))) {
+    throw new Error('+Z端面選択時に−Z側固定が自動選択されない');
+  }
+  if (!(await page.locator('#anchorCenterBtn').isDisabled())) {
+    throw new Error('Move Face中に中心固定が無効化されていない');
   }
 
   const plus = (await page.locator('.axisSignLabel.plus').innerText()).trim();
   const minus = (await page.locator('.axisSignLabel.minus').innerText()).trim();
-  if (plus !== '＋Z' || minus !== '−Z') {
-    throw new Error('±Z表示が不正: ' + minus + ' / ' + plus);
+  if (plus !== '＋Z' || minus !== '−Z') throw new Error('±Z表示が不正');
+
+  // Change overall Z from 10 to 20. Only the selected +Z face may move.
+  await page.locator('#axisTargetInput').fill('20');
+  await page.click('#applyAxisTargetBtn');
+  await page.waitForTimeout(150);
+
+  st = await page.evaluate(() => window.__okaTest.state());
+  if (Math.abs(st.partSize.z - 20) > 0.001) {
+    throw new Error('Move Face後のZ寸法が20mmではない: ' + st.partSize.z);
+  }
+  if (Math.abs(st.bounds.min.z - initialMinZ) > 0.001) {
+    throw new Error('固定した−Z端が動いた: ' + initialMinZ + ' -> ' + st.bounds.min.z);
+  }
+  if (Math.abs(st.bounds.max.z - (initialMaxZ + 10)) > 0.001) {
+    throw new Error('選択した＋Z端が10mm移動していない');
   }
 
-  // Undo control must still exist; this was one of the regressions the user noticed earlier.
-  if (!(await page.locator('#axisUndoBtn').count()) || !(await page.locator('#undoBtn').count())) {
-    throw new Error('戻るボタンが欠落している');
+  const cmd = st.lastCommand;
+  if (!cmd || cmd.type !== 'axisDimension' || cmd.mode !== 'move-face') {
+    throw new Error('軸編集がMove Faceコマンドになっていない');
+  }
+  if (!(cmd.vertexCount > 0 && cmd.vertexCount < st.totalVertices)) {
+    throw new Error('選択面だけでなく全頂点を編集している疑い: ' +
+      cmd.vertexCount + '/' + st.totalVertices);
+  }
+  if (Math.abs(cmd.deltaWorldMm - 10) > 0.001) {
+    throw new Error('面移動量が10mmではない');
+  }
+
+  // Undo must restore exact original dimension and fixed boundary.
+  await page.click('#axisUndoBtn');
+  await page.waitForTimeout(120);
+  st = await page.evaluate(() => window.__okaTest.state());
+  if (Math.abs(st.partSize.z - 10) > 0.001 ||
+      Math.abs(st.bounds.min.z - initialMinZ) > 0.001 ||
+      Math.abs(st.bounds.max.z - initialMaxZ) > 0.001) {
+    throw new Error('戻るで元形状に復元できない');
   }
 
   if (errors.length) throw new Error(errors.join('\n'));
 
-  console.log('UI_SMOKE_PASS: 第2起点動作維持 + 詳細面/寸法そのまま + ±Zだけ追加 + 戻るボタン維持');
+  console.log('GEOMETRY_TEST_PASS: Move Face / 固定端不動 / 選択面頂点のみ / Z10→20 / Undo復元 OK');
   await browser.close();
 })().catch(err => {
   console.error(err);
