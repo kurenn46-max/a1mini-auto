@@ -1893,7 +1893,6 @@ function commitEdit(cmd){
   if(editCursor<editHistory.length) editHistory=editHistory.slice(0,editCursor);
   editHistory.push(cmd);
   editCursor=editHistory.length;
-  if(selectedIndex===index) selectedAxis=null;
   replayEdits();
   setStatus('編集を適用しました','ok');
 }
@@ -3017,6 +3016,7 @@ function commitNightPartDelete(index){
   };
   editHistory.push(cmd);
   editCursor=editHistory.length;
+  if(selectedIndex===index) selectedAxis=null;
   replayEdits();
   setStatus('部品を削除しました：'+part.name,'ok');
   setNightReply('「'+part.name+'」を削除したで。元に戻して、で復元できる。','ok');
