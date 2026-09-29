@@ -1,0 +1,28 @@
+name: STEP Editor UI Smoke
+
+on:
+  push:
+    paths:
+      - 'step-editor-v5/**'
+      - '.github/workflows/step-editor-ui-smoke.yml'
+  workflow_dispatch:
+
+jobs:
+  ui-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install browser test runtime
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Start local app server
+        run: |
+          python3 -m http.server 8000 > /tmp/step-editor-http.log 2>&1 &
+          sleep 2
+      - name: Run real browser UI smoke test
+        run: node step-editor-v5/tests/ui-smoke.cjs
