@@ -1191,6 +1191,29 @@ function uniquePatchVertexIndices(part, patch) {
   return Array.from(set);
 }
 
+function expandCoincidentVertexIndices(part, seedIndices, tolerance=1e-5) {
+  const attr=part.mesh.geometry.getAttribute('position');
+  if(!attr || !seedIndices?.length) return Array.from(seedIndices||[]);
+  const inv=1/Math.max(tolerance,1e-9);
+  const keys=new Set();
+  for(const i of seedIndices){
+    keys.add(
+      Math.round(attr.getX(i)*inv)+','+
+      Math.round(attr.getY(i)*inv)+','+
+      Math.round(attr.getZ(i)*inv)
+    );
+  }
+  const out=[];
+  for(let i=0;i<attr.count;i++){
+    const key=
+      Math.round(attr.getX(i)*inv)+','+
+      Math.round(attr.getY(i)*inv)+','+
+      Math.round(attr.getZ(i)*inv);
+    if(keys.has(key)) out.push(i);
+  }
+  return out;
+}
+
 function averagePatchNormalLocal(part, patch) {
   const sum=new THREE.Vector3();
   for (const t of patch.triangles) sum.add(triangleNormal(part.mesh.geometry,t,new THREE.Vector3()));
@@ -1199,7 +1222,7 @@ function averagePatchNormalLocal(part, patch) {
 }
 
 function patchLocalCenter(part, patch) {
-  const ids=uniquePatchVertexIndices(part,patch);
+  const ids=expandCoincidentVertexIndices(part,uniquePatchVertexIndices(part,patch));
   const pos=part.mesh.geometry.getAttribute('position');
   const c=new THREE.Vector3();
   if (!ids.length) return c;
@@ -1236,7 +1259,7 @@ function estimateHole(part, patch) {
   }
   const diameter=2*(sumR/ids.length);
   if (!Number.isFinite(diameter) || diameter<=0) return null;
-  return {axis,center,diameter,vertexIndices:ids};
+  return {axis,center,diameter,vertexIndices:expandCoincidentVertexIndices(part,ids)};
 }
 
 function featureSignature(part, patchIndex, stats) {
@@ -1258,7 +1281,8 @@ function updateEditTarget(part,patchIndex,stats){
   if(!patch) return;
   $('editTargetInfo').innerHTML=
     '<strong>'+part.name+' / 詳細面 '+(patchIndex+1)+'</strong><br>'+
-    stats.type+' ・ X '+formatLength(stats.size.x)+' / Y '+formatLength(stats.size.y)+' / Z '+formatLength(stats.size.z);
+    stats.type+' ・ X '+formatLength(stats.size.x)+' / Y '+formatLength(stats.size.y)+' / Z '+formatLength(stats.size.z)+
+    '<br><span style="color:#8fd6b3">境界も一緒に動かして部品形状を伸縮します</span>';
 
   $('applyPushPullBtn').disabled=false;
   const hole=estimateHole(part,patch);
@@ -1408,7 +1432,7 @@ function applyPushPullValue(value){
   const cmd={
     type:'pushPull',
     partIndex:selectedPatch.partIndex,
-    vertexIndices:uniquePatchVertexIndices(part,patch),
+    vertexIndices:expandCoincidentVertexIndices(part,uniquePatchVertexIndices(part,patch)),
     normal:[normal.x,normal.y,normal.z],
     deltaMm:delta,
     feature:featureSignature(part,selectedPatch.patchIndex,stats)
@@ -1649,7 +1673,7 @@ function updateFaceDrag(e){
   }
   $('dragHud').textContent='伸ばし '+(delta>=0?'+':'')+formatRawMm(delta)+' mm';
   $('dragHud').classList.remove('hidden');
-  setStatus('指で面を編集中','ok');
+  setStatus('部品を伸縮中','ok');
   return true;
 }
 
@@ -1700,7 +1724,7 @@ function endFaceDrag(e,cancel=false){
   };
   faceDrag=null;
   commitEdit(cmd);
-  setStatus('指ドラッグ編集を確定しました','ok');
+  setStatus('部品の伸縮を確定しました','ok');
   return true;
 }
 
