@@ -2304,7 +2304,7 @@ async function exportNightPackage(){
   const payload={
     format:'OKA-CAD-EDIT',
     version:1,
-    app:'岡重機 STEP Editor V5.6.3.2 STEP + STL READ',
+    app:'岡重機 STEP Editor BASE3 + NIGHT CMD 1.0',
     createdAt:new Date().toISOString(),
     sourceFile:originalStepName,
     unit:'mm',
@@ -2831,6 +2831,241 @@ document.querySelectorAll('[data-push]').forEach(btn=>{
 });
 
 
+
+function normalizeNightCommand(raw){
+  return String(raw??'')
+    .replace(/[！-～]/g,ch=>String.fromCharCode(ch.charCodeAt(0)-0xFEE0))
+    .replace(/　/g,' ')
+    .replace(/ミリメートル|ミリ/gi,'mm')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+
+function setNightReply(text,type='idle'){
+  const el=$('nightReply');
+  if(!el) return;
+  el.textContent=text;
+  el.className='nightReply '+type;
+}
+
+function nightAxisFromText(text){
+  const t=text.toUpperCase();
+  if(/(^|[^A-Z0-9])X(?:軸)?(?=[^A-Z0-9]|$)/.test(t) || /左右|横幅|全長|長さ/.test(text)) return 'x';
+  if(/(^|[^A-Z0-9])Y(?:軸)?(?=[^A-Z0-9]|$)/.test(t) || /前後|奥行/.test(text)) return 'y';
+  if(/(^|[^A-Z0-9])Z(?:軸)?(?=[^A-Z0-9]|$)/.test(t) || /上下|全高|高さ/.test(text)) return 'z';
+  return null;
+}
+
+function nightAnchorFromText(text){
+  if(/左(?:端|側)?(?:を)?固定/.test(text)) return {anchor:'min',axis:'x',label:'左端固定'};
+  if(/右(?:端|側)?(?:を)?固定/.test(text)) return {anchor:'max',axis:'x',label:'右端固定'};
+  if(/手前(?:端|側)?(?:を)?固定/.test(text)) return {anchor:'min',axis:'y',label:'手前固定'};
+  if(/奥(?:端|側)?(?:を)?固定/.test(text)) return {anchor:'max',axis:'y',label:'奥固定'};
+  if(/下(?:端|側)?(?:を)?固定/.test(text)) return {anchor:'min',axis:'z',label:'下端固定'};
+  if(/上(?:端|側)?(?:を)?固定/.test(text)) return {anchor:'max',axis:'z',label:'上端固定'};
+  if(/中心(?:を)?固定|中央(?:を)?固定/.test(text)) return {anchor:'center',axis:null,label:'中心固定'};
+  if(/(?:マイナス|−|-)側(?:を)?固定/.test(text)) return {anchor:'min',axis:null,label:'−側固定'};
+  if(/(?:プラス|\+|＋)側(?:を)?固定/.test(text)) return {anchor:'max',axis:null,label:'＋側固定'};
+  return null;
+}
+
+function nightSetAxis(axis){
+  if(!axis) return;
+  if(selectedAxis!==axis){
+    selectedAxis=axis;
+    showSelectedAxisDimension();
+  }
+  updateAxisPanel();
+}
+
+function nightSetAnchor(anchor){
+  if(!anchor) return;
+  axisAnchor=anchor;
+  updateAxisPanel();
+}
+
+function nightAnchorLabel(axis,anchor){
+  const d=axisDirectionNames(axis);
+  if(anchor==='min') return d.minusFixed;
+  if(anchor==='max') return d.plusFixed;
+  return '中心固定';
+}
+
+function nightUndo(){
+  if(editCursor<=0){
+    setNightReply('戻せる編集がまだないで。','error');
+    return {ok:false,action:'undo'};
+  }
+  undoEdit();
+  setNightReply('1つ前の編集に戻したで。','ok');
+  return {ok:true,action:'undo'};
+}
+
+function nightRedo(){
+  if(editCursor>=editHistory.length){
+    setNightReply('やり直せる編集はないで。','error');
+    return {ok:false,action:'redo'};
+  }
+  redoEdit();
+  setNightReply('編集を1つやり直したで。','ok');
+  return {ok:true,action:'redo'};
+}
+
+function runNightCommand(raw){
+  const text=normalizeNightCommand(raw);
+  if(!text){
+    setNightReply('指示を入れてな。例：Xを80mm、左固定','error');
+    return {ok:false,action:'empty'};
+  }
+
+  // Undo / redo are intentionally checked before size parsing.
+  if(/やり直|REDO/i.test(text)){
+    return nightRedo();
+  }
+  if(/元に戻|1つ戻|一つ戻|UNDO/i.test(text)){
+    return nightUndo();
+  }
+
+  if(/軸(?:を)?解除|軸なし|軸未選択|軸選択(?:を)?解除/.test(text)){
+    selectedAxis=null;
+    updateAxisPanel();
+    restoreDimensionsAfterAxisOff();
+    setNightReply('軸選択を解除したで。X / Y / Z どれも未選択。','ok');
+    return {ok:true,action:'axis-off'};
+  }
+
+  // "YをXに合わせて"
+  const match=text.toUpperCase().match(/([XYZ])\s*(?:軸)?\s*(?:を)?\s*([XYZ])\s*(?:軸)?\s*(?:に|と)?\s*(?:合わせ|同じ)/);
+  if(match){
+    const targetAxis=match[1].toLowerCase();
+    const sourceAxis=match[2].toLowerCase();
+    const resolved=getAxisPart();
+    if(!resolved){
+      setNightReply('先にSTEP / STLを開いて部品を選んでな。','error');
+      return {ok:false,action:'match'};
+    }
+    const source=partWorldSize(resolved.part)[sourceAxis];
+    nightSetAxis(targetAxis);
+    const beforeCursor=editCursor;
+    commitAxisDimension(targetAxis,source);
+    const ok=editCursor>beforeCursor;
+    setNightReply(
+      ok
+        ? targetAxis.toUpperCase()+'を'+sourceAxis.toUpperCase()+'と同じ '+formatRawMm(source)+'mm にしたで。'
+        : '変更できへんかった：'+$('status').textContent,
+      ok?'ok':'error'
+    );
+    return {ok,action:'match',axis:targetAxis,target:source};
+  }
+
+  let axis=nightAxisFromText(text);
+  const anchorInfo=nightAnchorFromText(text);
+
+  if(!axis && anchorInfo?.axis) axis=anchorInfo.axis;
+  if(axis && anchorInfo?.axis && anchorInfo.axis!==axis){
+    const dir=axisDirectionNames(axis);
+    setNightReply(
+      axis.toUpperCase()+'軸と「'+anchorInfo.label+'」の方向が合ってへん。'+
+      axis.toUpperCase()+'なら '+dir.minusFixed+' / '+dir.plusFixed+' / 中心固定 を使ってな。',
+      'error'
+    );
+    return {ok:false,action:'conflict'};
+  }
+
+  if(!axis){
+    if(anchorInfo && selectedAxis){
+      nightSetAnchor(anchorInfo.anchor);
+      setNightReply(selectedAxis.toUpperCase()+'軸を '+nightAnchorLabel(selectedAxis,axisAnchor)+' にしたで。','ok');
+      return {ok:true,action:'anchor',axis:selectedAxis,anchor:axisAnchor};
+    }
+    setNightReply('どの軸か分からへん。X / Y / Z のどれかを入れてな。','error');
+    return {ok:false,action:'no-axis'};
+  }
+
+  const resolved=getAxisPart();
+  if(!resolved){
+    setNightReply('先にSTEP / STLを開いてな。1部品なら自動で選ぶで。','error');
+    return {ok:false,action:'no-model'};
+  }
+
+  nightSetAxis(axis);
+  if(anchorInfo) nightSetAnchor(anchorInfo.anchor);
+
+  // Axis/anchor-only command, e.g. "X軸 左固定"
+  const numberMatch=text.match(/([+\-]?\d+(?:\.\d+)?)\s*(?:mm)?/i);
+  if(!numberMatch){
+    setNightReply(
+      axis.toUpperCase()+'軸を選択、'+nightAnchorLabel(axis,axisAnchor)+' にしたで。寸法も入れたらそのまま変更できる。',
+      'ok'
+    );
+    return {ok:true,action:'select',axis,anchor:axisAnchor};
+  }
+
+  const value=Number(numberMatch[1]);
+  if(!Number.isFinite(value)){
+    setNightReply('寸法の数字を読めへんかった。','error');
+    return {ok:false,action:'bad-number'};
+  }
+
+  const current=partWorldSize(resolved.part)[axis];
+  const grow=/伸ば|広げ|長く|増や/.test(text);
+  const shrink=/縮め|短く|減ら/.test(text);
+  const signed=/^[+\-]/.test(numberMatch[1]);
+  const relative=grow||shrink||signed;
+
+  let target=value;
+  if(relative){
+    let delta=Math.abs(value);
+    if(shrink || value<0) delta=-delta;
+    else if(value>0) delta=Math.abs(value);
+    target=current+delta;
+  }
+
+  if(!(target>0)){
+    setNightReply('変更後の寸法が0mm以下になるから実行せえへんで。','error');
+    return {ok:false,action:'invalid-target'};
+  }
+
+  const beforeCursor=editCursor;
+  commitAxisDimension(axis,target);
+  const ok=editCursor>beforeCursor;
+  if(ok){
+    const mode=relative
+      ? (target>=current?'伸ばし':'縮め')
+      : '指定寸法';
+    setNightReply(
+      '了解。'+axis.toUpperCase()+'を '+formatRawMm(current)+'→'+formatRawMm(target)+'mm、'+
+      nightAnchorLabel(axis,axisAnchor)+' で変更したで。['+mode+']',
+      'ok'
+    );
+  }else{
+    setNightReply('変更できへんかった：'+$('status').textContent,'error');
+  }
+  return {ok,action:'resize',axis,anchor:axisAnchor,current,target,relative};
+}
+
+function runNightPrompt(){
+  return runNightCommand($('nightPrompt').value);
+}
+
+$('nightRunBtn').addEventListener('click',runNightPrompt);
+$('nightClearBtn').addEventListener('click',()=>{
+  $('nightPrompt').value='';
+  setNightReply('ナイト待機中。','idle');
+});
+document.querySelectorAll('[data-night-example]').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    $('nightPrompt').value=btn.dataset.nightExample||'';
+    $('nightPrompt').focus();
+  });
+});
+$('nightPrompt').addEventListener('keydown',e=>{
+  if((e.ctrlKey||e.metaKey) && e.key==='Enter'){
+    e.preventDefault();
+    runNightPrompt();
+  }
+});
+
 $('axisXCard').addEventListener('click',()=>selectAxis('x'));
 $('axisYCard').addEventListener('click',()=>selectAxis('y'));
 $('axisZCard').addEventListener('click',()=>selectAxis('z'));
@@ -2982,6 +3217,8 @@ $('saveStlBtn').addEventListener('click',saveCadStl);
 
 if(new URLSearchParams(location.search).has('ui-smoke')){
   window.__okaTest={
+    runNight(text){ return runNightCommand(text); },
+    nightNormalize(text){ return normalizeNightCommand(text); },
     state(){
       const part=(selectedIndex>=0&&parts[selectedIndex])?parts[selectedIndex]:null;
       let bounds=null,totalVertices=0;
