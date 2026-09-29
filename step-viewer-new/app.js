@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 
 const $ = (id) => document.getElementById(id);
 const viewer = $('viewer');
@@ -19,6 +21,14 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.1;
 viewer.appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.domElement.className = 'label-layer';
+labelRenderer.domElement.style.position = 'absolute';
+labelRenderer.domElement.style.left = '0';
+labelRenderer.domElement.style.top = '0';
+labelRenderer.domElement.style.pointerEvents = 'none';
+viewer.appendChild(labelRenderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
@@ -51,6 +61,9 @@ scene.add(modelGroup);
 const measureGroup = new THREE.Group();
 scene.add(measureGroup);
 
+const dimensionGroup = new THREE.Group();
+scene.add(dimensionGroup);
+
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 
@@ -64,6 +77,10 @@ let measureMode = false;
 let measurePoints = [];
 let pointerDown = null;
 let cadCounter = 0;
+let unitMode = 'mm';
+let selectedDimsOn = true;
+let dimensionOwner = null;
+let lastTapPoint = null;
 
 function setStatus(text, type = 'idle') {
   const el = $('status');
@@ -76,10 +93,16 @@ function setLoading(show, text = '読み込み中…') {
   $('loadingText').textContent = text;
 }
 
+function setLoadProgress(percent, visible = true) {
+  $('loadProgress').classList.toggle('hidden', !visible);
+  $('loadProgressBar').style.width = Math.max(0, Math.min(100, percent)) + '%';
+}
+
 function resize() {
   const r = viewer.getBoundingClientRect();
   if (!r.width || !r.height) return;
   renderer.setSize(r.width, r.height, false);
+  labelRenderer.setSize(r.width, r.height);
   camera.aspect = r.width / r.height;
   camera.updateProjectionMatrix();
 }
@@ -91,6 +114,7 @@ function animate() {
   requestAnimationFrame(animate);
   controls.update();
   renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
 }
 animate();
 
@@ -101,13 +125,31 @@ function flatArray(value) {
   return Array.isArray(arr) ? arr : Array.from(arr);
 }
 
-function formatMm(v) {
+function formatRawMm(v) {
   if (!Number.isFinite(v)) return '—';
   const a = Math.abs(v);
   if (a >= 1000) return v.toFixed(1);
   if (a >= 100) return v.toFixed(2);
   if (a >= 10) return v.toFixed(2);
   return v.toFixed(3);
+}
+
+function unitName() {
+  return unitMode === 'm' ? 'm' : 'mm';
+}
+
+function formatLengthValue(mm) {
+  if (!Number.isFinite(mm)) return '—';
+  if (unitMode === 'm') {
+    const m = mm / 1000;
+    const a = Math.abs(m);
+    return a >= 10 ? m.toFixed(3) : m.toFixed(4);
+  }
+  return formatRawMm(mm);
+}
+
+function formatLength(mm) {
+  return formatLengthValue(mm) + ' ' + unitName();
 }
 
 function formatBytes(n) {
@@ -135,24 +177,53 @@ function colorFromData(c) {
   );
 }
 
-function collectNodeNames(root) {
-  const names = new Map();
+function collectNodeInfo(root) {
+  const info = new Map();
   function walk(node, path = []) {
     if (!node) return;
     const nodeName = safeName(node.name, '');
     const nextPath = nodeName ? [...path, nodeName] : path;
-    const label = nextPath.length ? nextPath[nextPath.length - 1] : '';
+    const label = nodeName || (nextPath.length ? nextPath[nextPath.length - 1] : '');
     for (const idx of node.meshes || []) {
-      if (!names.has(idx) && label) names.set(idx, label);
+      if (!info.has(idx)) {
+        info.set(idx, {
+          name: label || 'Part ' + (idx + 1),
+          path: nextPath.join(' / ')
+        });
+      }
     }
     for (const child of node.children || []) walk(child, nextPath);
   }
   walk(root);
-  return names;
+  return info;
+}
+
+function disposeObject(obj) {
+  obj.traverse?.((child) => {
+    if (child.element) child.element.remove();
+    child.geometry?.dispose?.();
+    if (Array.isArray(child.material)) child.material.forEach(m => m?.dispose?.());
+    else child.material?.dispose?.();
+  });
+}
+
+function clearGroup(group) {
+  while (group.children.length) {
+    const obj = group.children[group.children.length - 1];
+    group.remove(obj);
+    disposeObject(obj);
+  }
+}
+
+function clearPartDimensions() {
+  clearGroup(dimensionGroup);
+  dimensionOwner = null;
+  updateDimensionButtons();
 }
 
 function disposeModel() {
   clearMeasurement();
+  clearPartDimensions();
   for (const part of parts) {
     modelGroup.remove(part.mesh);
     part.mesh.geometry.dispose();
@@ -162,25 +233,47 @@ function disposeModel() {
   selectedIndex = -1;
   modelBox.makeEmpty();
   modelSize.set(0, 0, 0);
+  lastTapPoint = null;
   $('partsList').innerHTML = '<div class="empty">STEPを開くか、下のCAD作成から部品を追加してください</div>';
   $('partCount').textContent = '—';
   $('sizeX').textContent = '—';
   $('sizeY').textContent = '—';
   $('sizeZ').textContent = '—';
   $('selectedName').textContent = '未選択';
-  $('selectedDims').textContent = '—';
+  $('selectedPath').textContent = '';
+  $('selectedDims').textContent = 'モデルをタップ';
+  $('tapPoint').textContent = 'タップした部品の外形 X・Y・Z を3D上に自動表示します';
   updateVisibleCount();
   setModelButtons(false);
   setSelectedButtons(false);
 }
 
 function setModelButtons(enabled) {
-  ['fitBtn','isoBtn','frontBtn','topBtn','rightBtn','measureBtn','clearMeasureBtn','showAllBtn','wireBtn']
-    .forEach(id => $(id).disabled = !enabled);
+  [
+    'fitBtn','isoBtn','frontBtn','rightBtn','backBtn','leftBtn','topBtn','bottomBtn',
+    'modelDimBtn','measureBtn','clearMeasureBtn','unitBtn','saveGlbBtn',
+    'showAllBtn','wireBtn'
+  ].forEach(id => $(id).disabled = !enabled);
 }
 
 function setSelectedButtons(enabled) {
-  ['isolateBtn','hideBtn'].forEach(id => $(id).disabled = !enabled);
+  ['focusBtn','isolateBtn','hideBtn','dimSelectedBtn'].forEach(id => $(id).disabled = !enabled);
+  if (!enabled) {
+    $('applyPosBtn').disabled = true;
+    $('deleteCadBtn').disabled = true;
+  }
+}
+
+function getVisibleBox() {
+  const box = new THREE.Box3();
+  let any = false;
+  for (const part of parts) {
+    if (!part.mesh.visible) continue;
+    part.mesh.updateMatrixWorld(true);
+    box.expandByObject(part.mesh);
+    any = true;
+  }
+  return any ? box : null;
 }
 
 function recomputeModelStats(fit = false) {
@@ -195,11 +288,10 @@ function recomputeModelStats(fit = false) {
     updateVisibleCount();
     return;
   }
-  modelBox.setFromObject(modelGroup);
+  const box = getVisibleBox() || new THREE.Box3().setFromObject(modelGroup);
+  modelBox.copy(box);
   modelSize = modelBox.getSize(new THREE.Vector3());
-  $('sizeX').textContent = formatMm(modelSize.x);
-  $('sizeY').textContent = formatMm(modelSize.y);
-  $('sizeZ').textContent = formatMm(modelSize.z);
+  refreshStats();
   $('partCount').textContent = String(parts.length);
   setModelButtons(true);
   const hasCad = parts.some(p => p.source === 'cad');
@@ -207,6 +299,15 @@ function recomputeModelStats(fit = false) {
   $('clearCadBtn').disabled = !hasCad;
   updateVisibleCount();
   if (fit) fitView('iso');
+}
+
+function refreshStats() {
+  $('sizeX').textContent = formatLengthValue(modelSize.x);
+  $('sizeY').textContent = formatLengthValue(modelSize.y);
+  $('sizeZ').textContent = formatLengthValue(modelSize.z);
+  ['unitX','unitY','unitZ'].forEach(id => $(id).textContent = unitName());
+  $('unitBtn').textContent = '単位 ' + unitName();
+  if (selectedIndex >= 0 && parts[selectedIndex]) updateSelectedInfo(parts[selectedIndex]);
 }
 
 async function getOcct() {
@@ -248,14 +349,15 @@ function createGeometry(meshData) {
 }
 
 function buildModel(result) {
-  const nodeNames = collectNodeNames(result.root);
+  const nodeInfo = collectNodeInfo(result.root);
   const duplicateCount = new Map();
 
   (result.meshes || []).forEach((meshData, i) => {
     const geometry = createGeometry(meshData);
     if (!geometry) return;
 
-    const baseName = safeName(nodeNames.get(i) || meshData.name, 'Part ' + (i + 1));
+    const info = nodeInfo.get(i) || {};
+    const baseName = safeName(info.name || meshData.name, 'Part ' + (i + 1));
     const used = duplicateCount.get(baseName) || 0;
     duplicateCount.set(baseName, used + 1);
     const name = used ? baseName + ' #' + (used + 1) : baseName;
@@ -281,7 +383,9 @@ function buildModel(result) {
       ? Math.floor(geometry.index.count / 3)
       : Math.floor(geometry.getAttribute('position').count / 3);
 
-    parts.push({ mesh, name, localBox, localSize, triangles, source:'step' });
+    parts.push({
+      mesh, name, path: info.path || name, localBox, localSize, triangles, source:'step'
+    });
   });
 
   if (!parts.length) throw new Error('STEP内に表示できる形状が見つかりませんでした。');
@@ -312,7 +416,8 @@ function renderPartsList() {
       part.mesh.visible = !part.mesh.visible;
       eye.textContent = part.mesh.visible ? '👁' : '—';
       row.style.opacity = part.mesh.visible ? '1' : '.55';
-      updateVisibleCount();
+      if (!part.mesh.visible && index === selectedIndex) clearPartDimensions();
+      recomputeModelStats(false);
     });
 
     const nameWrap = document.createElement('div');
@@ -320,10 +425,12 @@ function renderPartsList() {
     const strong = document.createElement('strong');
     strong.textContent = (part.source === 'cad' ? 'CAD: ' : '') + part.name;
     const small = document.createElement('small');
+    const box = new THREE.Box3().setFromObject(part.mesh);
+    const size = box.getSize(new THREE.Vector3());
     small.textContent =
-      formatMm(part.localSize.x) + ' × ' +
-      formatMm(part.localSize.y) + ' × ' +
-      formatMm(part.localSize.z) + ' mm';
+      formatLengthValue(size.x) + ' × ' +
+      formatLengthValue(size.y) + ' × ' +
+      formatLengthValue(size.z) + ' ' + unitName();
     nameWrap.append(strong, small);
 
     const select = document.createElement('button');
@@ -348,20 +455,45 @@ function updateVisibleCount() {
 
 function clearSelectionHighlight() {
   for (const part of parts) {
-    part.mesh.material.emissive.setHex(0x000000);
-    part.mesh.material.emissiveIntensity = 0;
+    if (part.mesh.material?.emissive) {
+      part.mesh.material.emissive.setHex(0x000000);
+      part.mesh.material.emissiveIntensity = 0;
+    }
   }
   document.querySelectorAll('.partRow.selected').forEach(el => el.classList.remove('selected'));
 }
 
-function selectPart(index, scrollIntoView = false) {
+function updateSelectedInfo(part) {
+  const box = new THREE.Box3().setFromObject(part.mesh);
+  const size = box.getSize(new THREE.Vector3());
+  $('selectedName').textContent = part.name;
+  $('selectedPath').textContent = part.path && part.path !== part.name ? part.path : '';
+  $('selectedDims').innerHTML =
+    'X ' + formatLength(size.x) + '<br>' +
+    'Y ' + formatLength(size.y) + '<br>' +
+    'Z ' + formatLength(size.z);
+
+  if (lastTapPoint) {
+    $('tapPoint').textContent =
+      'タップ位置  X ' + formatLength(lastTapPoint.x) +
+      ' / Y ' + formatLength(lastTapPoint.y) +
+      ' / Z ' + formatLength(lastTapPoint.z);
+  } else {
+    $('tapPoint').textContent = '外形寸法を3D上にも表示中';
+  }
+}
+
+function selectPart(index, scrollIntoView = false, tapPoint = null) {
   if (index < 0 || index >= parts.length) return;
   selectedIndex = index;
+  lastTapPoint = tapPoint ? tapPoint.clone() : null;
   clearSelectionHighlight();
 
   const part = parts[index];
-  part.mesh.material.emissive.setHex(0x168fd2);
-  part.mesh.material.emissiveIntensity = 0.35;
+  if (part.mesh.material?.emissive) {
+    part.mesh.material.emissive.setHex(0x168fd2);
+    part.mesh.material.emissiveIntensity = 0.35;
+  }
 
   const row = document.querySelector('.partRow[data-index="' + index + '"]');
   if (row) {
@@ -369,12 +501,9 @@ function selectPart(index, scrollIntoView = false) {
     if (scrollIntoView) row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 
-  $('selectedName').textContent = part.name;
-  $('selectedDims').innerHTML =
-    'X ' + formatMm(part.localSize.x) + ' mm<br>' +
-    'Y ' + formatMm(part.localSize.y) + ' mm<br>' +
-    'Z ' + formatMm(part.localSize.z) + ' mm';
+  updateSelectedInfo(part);
   setSelectedButtons(true);
+
   const isCad = part.source === 'cad';
   $('applyPosBtn').disabled = !isCad;
   $('deleteCadBtn').disabled = !isCad;
@@ -384,41 +513,157 @@ function selectPart(index, scrollIntoView = false) {
     const baseZ = Number(part.baseOffsetZ || 0);
     $('posZ').value = Number((part.mesh.position.z - baseZ).toFixed(3));
   }
+
+  if (selectedDimsOn && part.mesh.visible) {
+    showBoxDimensions(new THREE.Box3().setFromObject(part.mesh), 'part');
+  } else {
+    clearPartDimensions();
+  }
+  updateDimensionButtons();
 }
 
-function fitView(mode = 'iso') {
-  if (!parts.length || modelBox.isEmpty()) return;
+function makeLine(points, color = 0x7fcfff, opacity = 1) {
+  const geometry = new THREE.BufferGeometry().setFromPoints(points);
+  const material = new THREE.LineBasicMaterial({ color, transparent: opacity < 1, opacity, depthTest: false });
+  const line = new THREE.Line(geometry, material);
+  line.renderOrder = 50;
+  return line;
+}
 
-  modelBox.setFromObject(modelGroup);
-  const center = modelBox.getCenter(new THREE.Vector3());
-  const size = modelBox.getSize(new THREE.Vector3());
+function addDimensionLine(a, b, witnessA, witnessB, label, axisClass, color) {
+  dimensionGroup.add(makeLine([a, b], color));
+  if (witnessA) dimensionGroup.add(makeLine([witnessA, a], color, 0.72));
+  if (witnessB) dimensionGroup.add(makeLine([witnessB, b], color, 0.72));
+
+  const el = document.createElement('div');
+  el.className = 'dimensionLabel ' + axisClass;
+  el.textContent = label;
+  const obj = new CSS2DObject(el);
+  obj.position.copy(a).lerp(b, 0.5);
+  dimensionGroup.add(obj);
+}
+
+function showBoxDimensions(box, owner = 'part') {
+  if (!box || box.isEmpty()) return;
+  clearGroup(dimensionGroup);
+
+  const b = box.clone();
+  const size = b.getSize(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z, 0.1);
+  const off = Math.max(maxDim * 0.085, 0.5);
+
+  const helper = new THREE.Box3Helper(b, owner === 'model' ? 0xffc857 : 0x49b8f2);
+  helper.material.depthTest = false;
+  helper.material.transparent = true;
+  helper.material.opacity = 0.72;
+  helper.renderOrder = 45;
+  dimensionGroup.add(helper);
+
+  const xA = new THREE.Vector3(b.min.x, b.min.y - off, b.min.z - off);
+  const xB = new THREE.Vector3(b.max.x, b.min.y - off, b.min.z - off);
+  addDimensionLine(
+    xA, xB,
+    new THREE.Vector3(b.min.x, b.min.y, b.min.z),
+    new THREE.Vector3(b.max.x, b.min.y, b.min.z),
+    'X ' + formatLength(size.x), 'axisX', 0xff6868
+  );
+
+  const yA = new THREE.Vector3(b.min.x - off, b.min.y, b.min.z - off);
+  const yB = new THREE.Vector3(b.min.x - off, b.max.y, b.min.z - off);
+  addDimensionLine(
+    yA, yB,
+    new THREE.Vector3(b.min.x, b.min.y, b.min.z),
+    new THREE.Vector3(b.min.x, b.max.y, b.min.z),
+    'Y ' + formatLength(size.y), 'axisY', 0x69df7b
+  );
+
+  const zA = new THREE.Vector3(b.min.x - off, b.min.y - off, b.min.z);
+  const zB = new THREE.Vector3(b.min.x - off, b.min.y - off, b.max.z);
+  addDimensionLine(
+    zA, zB,
+    new THREE.Vector3(b.min.x, b.min.y, b.min.z),
+    new THREE.Vector3(b.min.x, b.min.y, b.max.z),
+    'Z ' + formatLength(size.z), 'axisZ', 0x5da8ff
+  );
+
+  dimensionOwner = owner;
+  updateDimensionButtons();
+}
+
+function updateDimensionButtons() {
+  $('modelDimBtn').textContent = dimensionOwner === 'model' ? '📐 全体寸法 OFF' : '📐 全体寸法';
+  $('dimSelectedBtn').textContent = selectedDimsOn ? '寸法線 OFF' : '寸法線 ON';
+}
+
+function toggleSelectedDimensions() {
+  if (selectedIndex < 0 || !parts[selectedIndex]) return;
+  selectedDimsOn = !selectedDimsOn;
+  if (selectedDimsOn && parts[selectedIndex].mesh.visible) {
+    showBoxDimensions(new THREE.Box3().setFromObject(parts[selectedIndex].mesh), 'part');
+  } else {
+    clearPartDimensions();
+  }
+  updateDimensionButtons();
+}
+
+function toggleModelDimensions() {
+  if (dimensionOwner === 'model') {
+    clearPartDimensions();
+    return;
+  }
+  const box = getVisibleBox();
+  if (box) showBoxDimensions(box, 'model');
+}
+
+function fitBox(box, mode = 'iso') {
+  if (!box || box.isEmpty()) return;
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
   const maxDim = Math.max(size.x, size.y, size.z, 1);
   const fov = THREE.MathUtils.degToRad(camera.fov);
-  const dist = (maxDim / (2 * Math.tan(fov / 2))) * 1.45;
+  const dist = (maxDim / (2 * Math.tan(fov / 2))) * 1.55;
 
   let dir;
   if (mode === 'front') dir = new THREE.Vector3(0, -1, 0);
   else if (mode === 'right') dir = new THREE.Vector3(1, 0, 0);
+  else if (mode === 'back') dir = new THREE.Vector3(0, 1, 0);
+  else if (mode === 'left') dir = new THREE.Vector3(-1, 0, 0);
   else if (mode === 'top') dir = new THREE.Vector3(0, 0, 1);
+  else if (mode === 'bottom') dir = new THREE.Vector3(0, 0, -1);
   else dir = new THREE.Vector3(1, -1, 0.78).normalize();
 
   camera.up.set(0, 0, 1);
-  if (mode === 'top') camera.up.set(0, 1, 0);
+  if (mode === 'top' || mode === 'bottom') camera.up.set(0, 1, 0);
 
   camera.near = Math.max(maxDim / 10000, 0.001);
   camera.far = Math.max(maxDim * 1000, 1000);
   camera.updateProjectionMatrix();
-
   camera.position.copy(center).addScaledVector(dir, dist);
   controls.target.copy(center);
   controls.update();
+}
+
+function fitView(mode = 'iso') {
+  const box = getVisibleBox();
+  if (!box) return;
+  modelBox.copy(box);
+  modelSize = modelBox.getSize(new THREE.Vector3());
+  fitBox(box, mode);
+}
+
+function focusSelected() {
+  if (selectedIndex < 0 || !parts[selectedIndex]) return;
+  fitBox(new THREE.Box3().setFromObject(parts[selectedIndex].mesh), 'iso');
 }
 
 function showAll() {
   for (const part of parts) part.mesh.visible = true;
   document.querySelectorAll('.partRow').forEach(row => row.style.opacity = '1');
   document.querySelectorAll('.eyeBtn').forEach(btn => btn.textContent = '👁');
-  updateVisibleCount();
+  recomputeModelStats(false);
+  if (selectedIndex >= 0 && selectedDimsOn) {
+    showBoxDimensions(new THREE.Box3().setFromObject(parts[selectedIndex].mesh), 'part');
+  }
 }
 
 function isolateSelected() {
@@ -428,23 +673,9 @@ function isolateSelected() {
     row.style.opacity = i === selectedIndex ? '1' : '.55';
     row.querySelector('.eyeBtn').textContent = i === selectedIndex ? '👁' : '—';
   });
-  updateVisibleCount();
-  fitVisible();
-}
-
-function fitVisible() {
-  const box = new THREE.Box3();
-  let hasVisible = false;
-  for (const part of parts) {
-    if (!part.mesh.visible) continue;
-    box.expandByObject(part.mesh);
-    hasVisible = true;
-  }
-  if (!hasVisible) return;
-  const original = modelBox.clone();
-  modelBox.copy(box);
-  fitView('iso');
-  modelBox.copy(original);
+  recomputeModelStats(false);
+  if (selectedDimsOn) showBoxDimensions(new THREE.Box3().setFromObject(parts[selectedIndex].mesh), 'part');
+  focusSelected();
 }
 
 function hideSelected() {
@@ -455,7 +686,8 @@ function hideSelected() {
     row.style.opacity = '.55';
     row.querySelector('.eyeBtn').textContent = '—';
   }
-  updateVisibleCount();
+  clearPartDimensions();
+  recomputeModelStats(false);
 }
 
 function toggleWireframe() {
@@ -470,15 +702,27 @@ function toggleGrid() {
   $('gridBtn').textContent = grid.visible ? 'グリッド' : 'グリッドOFF';
 }
 
+function toggleUnit() {
+  unitMode = unitMode === 'mm' ? 'm' : 'mm';
+  refreshStats();
+  renderPartsList();
+
+  if (dimensionOwner === 'model') {
+    const box = getVisibleBox();
+    if (box) showBoxDimensions(box, 'model');
+  } else if (dimensionOwner === 'part' && selectedIndex >= 0 && parts[selectedIndex]) {
+    showBoxDimensions(new THREE.Box3().setFromObject(parts[selectedIndex].mesh), 'part');
+  }
+
+  if (measurePoints.length === 2) {
+    finishMeasurement(measurePoints[0], measurePoints[1], false);
+  }
+}
+
 function clearMeasurement() {
   measureMode = false;
   measurePoints = [];
-  while (measureGroup.children.length) {
-    const obj = measureGroup.children.pop();
-    obj.geometry?.dispose?.();
-    if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose?.());
-    else obj.material?.dispose?.();
-  }
+  clearGroup(measureGroup);
   $('measureHud').classList.add('hidden');
   $('measureBtn').textContent = '📏 2点測定';
 }
@@ -492,7 +736,8 @@ function startMeasurement() {
 }
 
 function modelScale() {
-  const s = modelBox.getSize(new THREE.Vector3());
+  const b = getVisibleBox() || modelBox;
+  const s = b.getSize(new THREE.Vector3());
   return Math.max(s.x, s.y, s.z, 1);
 }
 
@@ -502,19 +747,21 @@ function addMeasureMarker(point) {
   const m = new THREE.MeshBasicMaterial({ color: 0xffc857, depthTest: false });
   const dot = new THREE.Mesh(g, m);
   dot.position.copy(point);
-  dot.renderOrder = 20;
+  dot.renderOrder = 60;
   measureGroup.add(dot);
 }
 
-function finishMeasurement(a, b) {
-  const geometry = new THREE.BufferGeometry().setFromPoints([a, b]);
-  const material = new THREE.LineBasicMaterial({ color: 0xffd166, depthTest: false });
-  const line = new THREE.Line(geometry, material);
-  line.renderOrder = 19;
-  measureGroup.add(line);
-
+function finishMeasurement(a, b, createLine = true) {
+  if (createLine) {
+    const geometry = new THREE.BufferGeometry().setFromPoints([a, b]);
+    const material = new THREE.LineBasicMaterial({ color: 0xffd166, depthTest: false });
+    const line = new THREE.Line(geometry, material);
+    line.renderOrder = 59;
+    measureGroup.add(line);
+  }
   const distance = a.distanceTo(b);
-  $('measureHud').textContent = '距離 ' + formatMm(distance) + ' mm';
+  $('measureHud').textContent = '距離 ' + formatLength(distance);
+  $('measureHud').classList.remove('hidden');
   $('measureBtn').textContent = '📏 2点測定';
   measureMode = false;
 }
@@ -555,7 +802,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   }
 
   const idx = hits[0].object.userData.partIndex;
-  if (Number.isInteger(idx)) selectPart(idx, true);
+  if (Number.isInteger(idx)) selectPart(idx, true, hits[0].point);
 });
 
 input.addEventListener('click', () => {
@@ -576,14 +823,17 @@ input.addEventListener('change', async () => {
   disposeModel();
   $('fileInfo').textContent = file.name + ' ・ ' + formatBytes(file.size);
   setStatus('読込準備中', 'idle');
+  setLoadProgress(8, true);
   setLoading(true, 'STEPエンジンを準備中…');
 
   try {
     const occt = await getOcct();
+    setLoadProgress(28, true);
     setLoading(true, 'STEPを解析中… 大きいファイルは少し待ってください');
-    await new Promise(resolve => setTimeout(resolve, 40));
+    await new Promise(resolve => setTimeout(resolve, 30));
 
     const bytes = new Uint8Array(await file.arrayBuffer());
+    setLoadProgress(42, true);
     const result = occt.ReadStepFile(bytes, {
       linearUnit: 'millimeter',
       linearDeflectionType: 'bounding_box_ratio',
@@ -593,16 +843,20 @@ input.addEventListener('change', async () => {
 
     if (!result?.success) throw new Error('STEPの解析に失敗しました。');
 
-    setLoading(true, '3D表示を作成中…');
+    setLoadProgress(82, true);
+    setLoading(true, '部品と寸法情報を作成中…');
     await new Promise(resolve => setTimeout(resolve, 30));
     buildModel(result);
 
-    setStatus('表示完了', 'ok');
+    setLoadProgress(100, true);
+    setStatus('表示完了・部品をタップ', 'ok');
     $('fileInfo').textContent =
       file.name + ' ・ ' + formatBytes(file.size) + ' ・ ' + parts.length + '部品';
+    setTimeout(() => setLoadProgress(0, false), 650);
   } catch (err) {
     console.error(err);
     disposeModel();
+    setLoadProgress(0, false);
     setStatus('読込失敗', 'error');
     const msg = err?.message || String(err);
     $('fileInfo').textContent = 'エラー: ' + msg;
@@ -611,16 +865,83 @@ input.addEventListener('change', async () => {
   }
 });
 
+function saveBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+function buildExportGroup(filterFn = () => true) {
+  const group = new THREE.Group();
+  for (const part of parts) {
+    if (!part.mesh.visible || !filterFn(part)) continue;
+    const clone = part.mesh.clone();
+    clone.geometry = part.mesh.geometry.clone();
+    clone.material = part.mesh.material.clone();
+    if (clone.material?.emissive) {
+      clone.material.emissive.setHex(0x000000);
+      clone.material.emissiveIntensity = 0;
+    }
+    group.add(clone);
+  }
+  group.updateMatrixWorld(true);
+  return group;
+}
+
+function saveVisibleGlb() {
+  if (!parts.some(p => p.mesh.visible)) {
+    setStatus('保存する表示部品がありません', 'error');
+    return;
+  }
+  setLoading(true, 'GLBを作成中…');
+  try {
+    const group = buildExportGroup();
+    const exporter = new GLTFExporter();
+    exporter.parse(
+      group,
+      (result) => {
+        const blob = new Blob([result], { type:'model/gltf-binary' });
+        saveBlob(blob, 'oka-step-viewer-' + new Date().toISOString().replace(/[:.]/g,'-') + '.glb');
+        setLoading(false);
+        setStatus('GLBを保存しました', 'ok');
+      },
+      (err) => {
+        console.error(err);
+        setLoading(false);
+        setStatus('GLB保存に失敗しました', 'error');
+      },
+      { binary:true, onlyVisible:true }
+    );
+  } catch (e) {
+    console.error(e);
+    setLoading(false);
+    setStatus('GLB保存に失敗しました', 'error');
+  }
+}
+
 $('fitBtn').addEventListener('click', () => fitView('iso'));
 $('isoBtn').addEventListener('click', () => fitView('iso'));
 $('frontBtn').addEventListener('click', () => fitView('front'));
-$('topBtn').addEventListener('click', () => fitView('top'));
 $('rightBtn').addEventListener('click', () => fitView('right'));
+$('backBtn').addEventListener('click', () => fitView('back'));
+$('leftBtn').addEventListener('click', () => fitView('left'));
+$('topBtn').addEventListener('click', () => fitView('top'));
+$('bottomBtn').addEventListener('click', () => fitView('bottom'));
+$('modelDimBtn').addEventListener('click', toggleModelDimensions);
 $('measureBtn').addEventListener('click', startMeasurement);
 $('clearMeasureBtn').addEventListener('click', clearMeasurement);
+$('unitBtn').addEventListener('click', toggleUnit);
+$('saveGlbBtn').addEventListener('click', saveVisibleGlb);
 $('showAllBtn').addEventListener('click', () => { showAll(); fitView('iso'); });
+$('focusBtn').addEventListener('click', focusSelected);
 $('isolateBtn').addEventListener('click', isolateSelected);
 $('hideBtn').addEventListener('click', hideSelected);
+$('dimSelectedBtn').addEventListener('click', toggleSelectedDimensions);
 $('wireBtn').addEventListener('click', toggleWireframe);
 $('gridBtn').addEventListener('click', toggleGrid);
 
@@ -659,7 +980,9 @@ function addCadPart(kind) {
     const localBox=geometry.boundingBox.clone();
     const localSize=localBox.getSize(new THREE.Vector3());
     const triangles=geometry.index?Math.floor(geometry.index.count/3):Math.floor(geometry.getAttribute('position').count/3);
-    parts.push({mesh,name,localBox,localSize,triangles,source:'cad',kind,baseOffsetZ});
+    parts.push({
+      mesh,name,path:name,localBox,localSize,triangles,source:'cad',kind,baseOffsetZ
+    });
     renderPartsList();
     recomputeModelStats(true);
     selectPart(parts.length-1,true);
@@ -678,8 +1001,12 @@ function applyCadPosition() {
     part.mesh.position.set(x,y,z + Number(part.baseOffsetZ||0));
     part.mesh.updateMatrixWorld(true);
     recomputeModelStats(false);
+    updateSelectedInfo(part);
+    if (selectedDimsOn) showBoxDimensions(new THREE.Box3().setFromObject(part.mesh), 'part');
     setStatus('CAD位置を更新しました','ok');
-  } catch(e) { setStatus(e.message || '位置入力エラー','error'); }
+  } catch(e) {
+    setStatus(e.message || '位置入力エラー','error');
+  }
 }
 
 function deleteSelectedCad() {
@@ -692,11 +1019,13 @@ function deleteSelectedCad() {
   parts.splice(selectedIndex,1);
   selectedIndex=-1;
   clearSelectionHighlight();
+  clearPartDimensions();
+  lastTapPoint=null;
   $('selectedName').textContent='未選択';
-  $('selectedDims').textContent='—';
+  $('selectedPath').textContent='';
+  $('selectedDims').textContent='モデルをタップ';
+  $('tapPoint').textContent='タップした部品の外形 X・Y・Z を3D上に自動表示します';
   setSelectedButtons(false);
-  $('applyPosBtn').disabled=true;
-  $('deleteCadBtn').disabled=true;
   renderPartsList();
   recomputeModelStats(true);
   setStatus('CAD部品を削除しました','ok');
@@ -714,11 +1043,13 @@ function clearCadParts() {
   parts=keep;
   selectedIndex=-1;
   clearSelectionHighlight();
+  clearPartDimensions();
+  lastTapPoint=null;
   $('selectedName').textContent='未選択';
-  $('selectedDims').textContent='—';
+  $('selectedPath').textContent='';
+  $('selectedDims').textContent='モデルをタップ';
+  $('tapPoint').textContent='タップした部品の外形 X・Y・Z を3D上に自動表示します';
   setSelectedButtons(false);
-  $('applyPosBtn').disabled=true;
-  $('deleteCadBtn').disabled=true;
   renderPartsList();
   recomputeModelStats(true);
   setStatus('CAD部品を全削除しました','ok');
@@ -726,26 +1057,14 @@ function clearCadParts() {
 
 function saveCadStl() {
   const cad=parts.filter(p=>p.source==='cad' && p.mesh.visible);
-  if (!cad.length) { setStatus('保存するCAD部品がありません','error'); return; }
-  const group=new THREE.Group();
-  cad.forEach(p=>{
-    const clone=p.mesh.clone();
-    clone.geometry=p.mesh.geometry.clone();
-    clone.material=p.mesh.material.clone();
-    group.add(clone);
-  });
-  group.updateMatrixWorld(true);
+  if (!cad.length) {
+    setStatus('保存するCAD部品がありません','error');
+    return;
+  }
+  const group=buildExportGroup(p=>p.source==='cad');
   const exporter=new STLExporter();
   const data=exporter.parse(group,{binary:true});
-  const blob=new Blob([data],{type:'model/stl'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  a.href=url;
-  a.download='oka-cad-' + new Date().toISOString().replace(/[:.]/g,'-') + '.stl';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),1500);
+  saveBlob(new Blob([data],{type:'model/stl'}), 'oka-cad-' + new Date().toISOString().replace(/[:.]/g,'-') + '.stl');
   setStatus('STLを保存しました','ok');
 }
 
@@ -758,4 +1077,5 @@ $('saveStlBtn').addEventListener('click',saveCadStl);
 
 setModelButtons(false);
 setSelectedButtons(false);
+updateDimensionButtons();
 resize();
