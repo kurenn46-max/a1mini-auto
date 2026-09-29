@@ -7,13 +7,13 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <title>岡重機 STEP Viewer + CAD</title>
-  <link rel="stylesheet" href="./style.css?v=3">
+  <link rel="stylesheet" href="./style.css?v=4">
 </head>
 <body>
 <header class="topbar">
   <div>
     <h1>岡重機 STEP Viewer + CAD</h1>
-    <p>タップ選択 → 部品寸法表示・測定・CAD作成</p>
+    <p>部品 / 詳細面をタップ → 個別寸法表示・測定・CAD作成</p>
   </div>
   <button id="fitBtn" class="toolBtn" disabled>全体表示</button>
 </header>
@@ -40,7 +40,7 @@
       <div id="loadingText">読み込み中…</div>
     </div>
     <div id="measureHud" class="measureHud hidden">測定: 1点目をタップ</div>
-    <div id="tapHint" class="tapHint">部品をタップすると寸法表示</div>
+    <div id="tapHint" class="tapHint">部品モード：タップで外形寸法</div>
   </section>
 
   <section class="viewTools">
@@ -60,6 +60,21 @@
     <button id="unitBtn" disabled>単位 mm</button>
     <button id="saveGlbBtn" disabled>💾 GLB保存</button>
     <button id="gridBtn">グリッド</button>
+  </section>
+
+  <section class="selectModePanel">
+    <div class="modeLabel">選択モード</div>
+    <div class="modeButtons">
+      <button id="partModeBtn" class="active" disabled>🧩 部品</button>
+      <button id="faceModeBtn" disabled>🔎 詳細面</button>
+    </div>
+    <div id="modeHelp" class="modeHelp">部品全体を選択して X・Y・Z 外形寸法を表示します。</div>
+    <div class="detailLevel">
+      <span>詳細面の分け方</span>
+      <button id="fineLevelBtn" class="active" disabled>細かい</button>
+      <button id="normalLevelBtn" disabled>標準</button>
+      <button id="coarseLevelBtn" disabled>粗い</button>
+    </div>
   </section>
 
   <section class="statsGrid">
@@ -99,6 +114,20 @@
     </div>
     <div id="partsList" class="partsList">
       <div class="empty">STEPを開くか、下のCAD作成から部品を追加してください</div>
+    </div>
+  </section>
+
+  <section class="panel" id="facesPanel">
+    <div class="panelHead">
+      <div>
+        <div class="eyebrow">詳細面一覧</div>
+        <h2 id="facesTitle">部品を選択してください</h2>
+      </div>
+      <span id="faceCount" class="pill">0 面</span>
+    </div>
+    <div id="faceInfo" class="tapPoint">「詳細面」モードに切り替えると、面・穴まわり・R部などを個別にタップできます。</div>
+    <div id="facesList" class="partsList compactFaces">
+      <div class="empty">部品を選ぶと詳細面がここに並びます</div>
     </div>
   </section>
 
@@ -152,7 +181,7 @@
 
   <details class="panel tips">
     <summary>操作方法</summary>
-    <p>モデル上の部品をタップすると、その部品の外形寸法 X・Y・Z を表示します。1本指ドラッグ＝回転、2本指＝移動、ピンチ＝拡大縮小。</p>
+    <p>「部品」モードは部品全体、「詳細面」モードは平面・穴内周・R部などの滑らかにつながる面グループを選択します。選択した範囲の X・Y・Z・面積を表示します。1本指ドラッグ＝回転、2本指＝移動、ピンチ＝拡大縮小。</p>
     <p>「2点測定」はモデル上の2点間の直線距離を測ります。表示寸法と測定値はSTEPを表示用に三角形化した形状から計算します。</p>
     <p class="privacy">STEPファイルは端末内で処理し、サーバーへアップロードしません。</p>
   </details>
@@ -165,6 +194,6 @@
   "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
 }}
 </script>
-<script type="module" src="./app.js?v=3"></script>
+<script type="module" src="./app.js?v=4"></script>
 </body>
 </html>
