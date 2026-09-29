@@ -6,14 +6,14 @@
   <meta name="theme-color" content="#091522">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
-  <title>岡重機 STEP Editor V5.4 MOBILE PRECISION</title>
-  <link rel="stylesheet" href="./style.css?v=5.4.0">
+  <title>岡重機 STEP Editor V5.5 AXIS EASY</title>
+  <link rel="stylesheet" href="./style.css?v=5.5.0">
 </head>
 <body>
 <header class="topbar">
   <div>
-    <h1>岡重機 STEP Editor <small>V5.4 MOBILE PRECISION</small></h1>
-    <p>見る・測る・選ぶ・数値で精密編集・ナイト用データ書出し</p>
+    <h1>岡重機 STEP Editor <small>V5.5 AXIS EASY</small></h1>
+    <p>X/Y/Zをタップして簡単寸法編集・測定・ナイト用データ書出し</p>
   </div>
   <button id="fitBtn" class="toolBtn" disabled>全体表示</button>
 </header>
@@ -79,10 +79,61 @@
   </section>
 
   <section class="statsGrid">
-    <div class="stat"><span>X</span><strong id="sizeX">—</strong><small id="unitX">mm</small></div>
-    <div class="stat"><span>Y</span><strong id="sizeY">—</strong><small id="unitY">mm</small></div>
-    <div class="stat"><span>Z</span><strong id="sizeZ">—</strong><small id="unitZ">mm</small></div>
+    <button id="axisXCard" class="stat axisStat" type="button" data-axis="x" disabled><span>X</span><strong id="sizeX">—</strong><small id="unitX">mm</small></button>
+    <button id="axisYCard" class="stat axisStat" type="button" data-axis="y" disabled><span>Y</span><strong id="sizeY">—</strong><small id="unitY">mm</small></button>
+    <button id="axisZCard" class="stat axisStat" type="button" data-axis="z" disabled><span>Z</span><strong id="sizeZ">—</strong><small id="unitZ">mm</small></button>
     <div class="stat"><span>部品</span><strong id="partCount">—</strong><small>個</small></div>
+  </section>
+
+  <section class="panel axisEditPanel">
+    <div class="panelHead">
+      <div>
+        <div class="eyebrow">かんたん寸法編集</div>
+        <h2 id="axisEditTitle">X / Y / Z をタップ</h2>
+      </div>
+      <span id="axisEditBadge" class="pill">軸 未選択</span>
+    </div>
+
+    <div id="axisEditHelp" class="axisEditHelp">
+      上の X・Y・Z をタップすると、その軸だけ編集できます。
+    </div>
+
+    <div class="anchorChoice">
+      <span>どこを固定する？</span>
+      <div class="anchorButtons">
+        <button id="anchorMinBtn" class="active" type="button" disabled>−側固定</button>
+        <button id="anchorCenterBtn" type="button" disabled>中心固定</button>
+        <button id="anchorMaxBtn" type="button" disabled>＋側固定</button>
+      </div>
+    </div>
+
+    <div class="axisQuick">
+      <button type="button" data-axis-delta="-1" disabled>−1.0</button>
+      <button type="button" data-axis-delta="-0.5" disabled>−0.5</button>
+      <button type="button" data-axis-delta="-0.2" disabled>−0.2</button>
+      <button type="button" data-axis-delta="0.2" disabled>+0.2</button>
+      <button type="button" data-axis-delta="0.5" disabled>+0.5</button>
+      <button type="button" data-axis-delta="1" disabled>+1.0</button>
+    </div>
+
+    <div class="axisTargetRow">
+      <label>目標寸法 mm
+        <input id="axisTargetInput" type="number" inputmode="decimal" min="0.01" step="0.1" placeholder="例 45.0" disabled>
+      </label>
+      <button id="applyAxisTargetBtn" class="axisApplyBtn" type="button" disabled>この寸法にする</button>
+    </div>
+
+    <div class="matchHead">他の軸をこの寸法に合わせる</div>
+    <div class="matchButtons">
+      <button id="matchAxis1Btn" type="button" disabled>—</button>
+      <button id="matchAxis2Btn" type="button" disabled>—</button>
+    </div>
+
+    <div class="axisHistoryBar">
+      <button id="axisUndoBtn" type="button" disabled>↶ 戻る</button>
+      <button id="axisRedoBtn" type="button" disabled>↷ やり直す</button>
+    </div>
+    <p class="editNote">※画面上は編集プレビュー。ナイト用データには「どの軸を何mmにしたか」を正確に記録します。</p>
   </section>
 
   <section class="panel selectedPanel">
@@ -269,6 +320,6 @@
   "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
 }}
 </script>
-<script type="module" src="./app.js?v=5.4.0"></script>
+<script type="module" src="./app.js?v=5.5.0"></script>
 </body>
 </html>
