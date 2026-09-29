@@ -112,3 +112,16 @@ main{max-width:980px;margin:0 auto;padding:14px 14px 40px}
   .statsGrid{gap:6px}
   .stat strong{font-size:16px}
 }
+.cadPanel h3{margin:0 0 10px;font-size:14px}
+.cadBlock{margin-top:14px;padding:13px;border:1px solid #233b55;border-radius:14px;background:#091522}
+.cadFields{display:grid;gap:8px}
+.cadFields.three{grid-template-columns:repeat(3,1fr)}
+.cadFields.two{grid-template-columns:repeat(2,1fr)}
+.cadFields label{font-size:11px;color:var(--muted);font-weight:800}
+.cadFields input{width:100%;margin-top:5px;padding:11px 9px;border-radius:10px;border:1px solid #34506d;background:#06101b;color:var(--text);font:inherit;font-weight:700}
+.cadPrimary{width:100%;margin-top:10px;padding:12px;border:1px solid #43b7ed;border-radius:11px;background:#147fb8;color:white;font-weight:800}
+.cadActions{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
+.cadActions button{min-height:44px;border:1px solid var(--line);border-radius:11px;background:#14253a;color:var(--text);font-weight:800}
+.cadActions .dangerBtn{border-color:#743345;background:#3b1722}
+.cadNote{margin:12px 0 0;color:var(--muted);font-size:11px;line-height:1.55}
+@media(max-width:420px){.cadFields input{padding:10px 7px}.cadBlock{padding:11px}}
