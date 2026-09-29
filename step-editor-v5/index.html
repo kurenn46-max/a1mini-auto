@@ -6,14 +6,14 @@
   <meta name="theme-color" content="#091522">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
-  <title>岡重機 STEP Editor V5.5 AXIS EASY</title>
-  <link rel="stylesheet" href="./style.css?v=5.5.0">
+  <title>岡重機 STEP Editor V5.6 TAP & LOCK</title>
+  <link rel="stylesheet" href="./style.css?v=5.6.0">
 </head>
 <body>
 <header class="topbar">
   <div>
-    <h1>岡重機 STEP Editor <small>V5.5 AXIS EASY</small></h1>
-    <p>X/Y/Zをタップして簡単寸法編集・測定・ナイト用データ書出し</p>
+    <h1>岡重機 STEP Editor <small>V5.6 TAP & LOCK</small></h1>
+    <p>軸を選ぶ → 3Dの端を固定 → 寸法入力 → 確定</p>
   </div>
   <button id="fitBtn" class="toolBtn" disabled>全体表示</button>
 </header>
@@ -99,11 +99,12 @@
     </div>
 
     <div class="anchorChoice">
-      <span>どこを固定する？</span>
-      <div class="anchorButtons">
-        <button id="anchorMinBtn" class="active" type="button" disabled>−側固定</button>
-        <button id="anchorCenterBtn" type="button" disabled>中心固定</button>
-        <button id="anchorMaxBtn" type="button" disabled>＋側固定</button>
+      <span>固定する側を選ぶ</span>
+      <div id="axisLockState" class="axisLockState">X / Y / Z を選ぶと、3D上に固定用の丸が出ます。</div>
+      <div class="anchorButtons anchorButtonsSimple">
+        <button id="anchorMinBtn" class="hidden" type="button" disabled>端A固定</button>
+        <button id="anchorCenterBtn" type="button" disabled>◎ 中心を固定</button>
+        <button id="anchorMaxBtn" class="hidden" type="button" disabled>端B固定</button>
       </div>
     </div>
 
@@ -120,10 +121,10 @@
       <label>目標寸法 mm
         <input id="axisTargetInput" type="number" inputmode="decimal" min="0.01" step="0.1" placeholder="例 45.0" disabled>
       </label>
-      <button id="applyAxisTargetBtn" class="axisApplyBtn" type="button" disabled>この寸法にする</button>
+      <button id="applyAxisTargetBtn" class="axisApplyBtn" type="button" disabled>✓ この寸法で確定</button>
     </div>
 
-    <div class="matchHead">他の軸をこの寸法に合わせる</div>
+    <div class="matchHead">確定後、他の軸もワンタップで合わせる</div>
     <div class="matchButtons">
       <button id="matchAxis1Btn" type="button" disabled>—</button>
       <button id="matchAxis2Btn" type="button" disabled>—</button>
@@ -133,7 +134,7 @@
       <button id="axisUndoBtn" type="button" disabled>↶ 戻る</button>
       <button id="axisRedoBtn" type="button" disabled>↷ やり直す</button>
     </div>
-    <p class="editNote">※画面上は編集プレビュー。ナイト用データには「どの軸を何mmにしたか」を正確に記録します。</p>
+    <p class="editNote">数値変更はまず半透明でプレビューされます。「✓ この寸法で確定」を押すまで元形状は変更しません。</p>
   </section>
 
   <section class="panel selectedPanel">
@@ -320,6 +321,6 @@
   "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
 }}
 </script>
-<script type="module" src="./app.js?v=5.5.0"></script>
+<script type="module" src="./app.js?v=5.6.0"></script>
 </body>
 </html>
