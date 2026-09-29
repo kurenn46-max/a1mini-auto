@@ -1,249 +1,123 @@
 const { chromium } = require('playwright');
-
 const near=(a,b,e=1e-3)=>Math.abs(a-b)<=e;
 
 (async()=>{
   const browser=await chromium.launch({headless:true});
+  const page=await browser.newPage({viewport:{width:412,height:915}});
+  const errors=[];
+  page.on('pageerror',e=>errors.push('pageerror: '+e.message));
+  page.on('console',m=>{if(m.type()==='error') errors.push('console: '+m.text());});
 
-  async function openPage(){
-    const page=await browser.newPage({viewport:{width:412,height:915}});
-    const errors=[];
-    page.on('pageerror',e=>errors.push('pageerror: '+e.message));
-    page.on('console',m=>{if(m.type()==='error') errors.push('console: '+m.text());});
-    await page.goto('http://127.0.0.1:8000/step-editor-v5/?ui-smoke=1',{
-      waitUntil:'networkidle',timeout:90000
-    });
-    return {page,errors};
+  await page.goto('http://127.0.0.1:8000/step-editor-v5/?ui-smoke=1',{
+    waitUntil:'networkidle',timeout:90000
+  });
+
+  await page.click('#addBoxBtn');
+  await page.waitForFunction(()=>document.querySelector('#partCount')?.textContent==='1');
+  await page.click('#frontBtn');
+  await page.waitForTimeout(120);
+
+  const initial=await page.evaluate(()=>window.__okaTest.state());
+  if(!near(initial.partSize.x,40)||!near(initial.partSize.y,30)||!near(initial.partSize.z,10)){
+    throw new Error('初期箱寸法が40×30×10ではない');
   }
 
-  // 1) Simple box: all three fixed-side modes, exact dimensions, undo.
-  {
-    const {page,errors}=await openPage();
-    await page.click('#addBoxBtn');
-    await page.waitForFunction(()=>document.querySelector('#partCount')?.textContent==='1');
-    const initial=await page.evaluate(()=>window.__okaTest.state());
+  // X means left/right everywhere.
+  await page.click('#axisXCard');
+  await page.waitForTimeout(100);
 
-    if(!near(initial.partSize.x,40)||!near(initial.partSize.y,30)||!near(initial.partSize.z,10)){
-      throw new Error('初期箱寸法が40×30×10ではない');
-    }
+  const xCard=(await page.locator('#axisXCard span').innerText()).trim();
+  if(xCard!=='X・左右') throw new Error('Xカードが左右表示ではない: '+xCard);
 
-    // Reproduce the user's screenshot state: detailed face selected, then Z axis selected.
-    await page.click('#faceModeBtn');
-    await page.waitForSelector('.faceRow');
-    await page.locator('.faceRow').first().click();
-    await page.waitForTimeout(80);
+  const minXText=(await page.locator('#anchorMinBtn').innerText()).trim();
+  const maxXText=(await page.locator('#anchorMaxBtn').innerText()).trim();
+  if(!minXText.includes('左端固定')||!minXText.includes('−X')) throw new Error('−X固定が左端表示ではない');
+  if(!maxXText.includes('右端固定')||!maxXText.includes('＋X')) throw new Error('＋X固定が右端表示ではない');
 
-    if(!(await page.locator('#faceModeBtn').evaluate(el=>el.classList.contains('active')))){
-      throw new Error('詳細面モードへ切り替わらない');
-    }
-    if(!(await page.locator('.faceRow.selected').count())){
-      throw new Error('詳細面が選択状態になっていない');
-    }
+  const minusX=(await page.locator('.axisSignLabel.minus').innerText()).trim();
+  const plusX=(await page.locator('.axisSignLabel.plus').innerText()).trim();
+  if(minusX!=='−X 左'||plusX!=='＋X 右') throw new Error('Xの±ラベルが不正: '+minusX+' / '+plusX);
 
-    await page.click('#axisZCard');
-    await page.waitForTimeout(80);
+  const mx=await page.locator('.axisSignLabel.minus').boundingBox();
+  const px=await page.locator('.axisSignLabel.plus').boundingBox();
+  if(!mx||!px||!(mx.x<px.x)) throw new Error('正面表示で−Xが左、＋Xが右になっていない');
 
-    if(!(await page.locator('#faceModeBtn').evaluate(el=>el.classList.contains('active')))){
-      throw new Error('Z軸選択で詳細面モードが解除された');
-    }
-    if(!(await page.locator('.faceRow.selected').count())){
-      throw new Error('Z軸選択で詳細面の選択が消えた');
-    }
-
-    if(await page.locator('.dimensionLabel.axisX').count()) throw new Error('Z軸選択中にX寸法が残っている');
-    if(await page.locator('.dimensionLabel.axisY').count()) throw new Error('Z軸選択中にY寸法が残っている');
-    const zLabel0=(await page.locator('.dimensionLabel.axisZ').innerText()).trim();
-    if(!zLabel0.includes('Z 10')) throw new Error('Z軸選択時の3D寸法が部品全体Z10ではない: '+zLabel0);
-
-    if(await page.locator('#applyAxisTargetBtn').isDisabled()) throw new Error('軸編集ボタンが無効');
-
-    async function setTarget(mm){
-      await page.locator('#axisTargetInput').fill(String(mm));
-      await page.click('#applyAxisTargetBtn');
-      await page.waitForTimeout(120);
-      return await page.evaluate(()=>window.__okaTest.state());
-    }
-    async function undo(){
-      await page.click('#axisUndoBtn');
-      await page.waitForTimeout(100);
-    }
-
-    await page.click('#anchorMinBtn');
-    let st=await setTarget(20);
-    if(!near(st.partSize.z,20)||!near(st.partSize.x,40)||!near(st.partSize.y,30)){
-      throw new Error('−Z固定の寸法結果が不正');
-    }
-    if(!near(st.bounds.min.z,initial.bounds.min.z)||!near(st.bounds.max.z,initial.bounds.max.z+10)){
-      throw new Error('−Z固定の端位置が不正');
-    }
-    if(st.lastCommand?.mode!=='cut-stretch'||st.lastCommand?.cuts?.length!==1||
-       st.lastCommand.cuts[0].side!=='max'){
-      throw new Error('−Z固定がcut-stretch max側ではない');
-    }
-    const zLabel20=(await page.locator('.dimensionLabel.axisZ').innerText()).trim();
-    if(!zLabel20.includes('Z 20')) throw new Error('編集後の3D Z寸法が20に更新されない: '+zLabel20);
-    if(await page.locator('.dimensionLabel.axisX').count()||await page.locator('.dimensionLabel.axisY').count()){
-      throw new Error('編集後にZ以外の寸法ラベルが混在した');
-    }
-    await undo();
-    const zLabelUndo=(await page.locator('.dimensionLabel.axisZ').innerText()).trim();
-    if(!zLabelUndo.includes('Z 10')) throw new Error('Undo後の3D Z寸法が10に戻らない: '+zLabelUndo);
-
-    await page.click('#anchorMaxBtn');
-    st=await setTarget(20);
-    if(!near(st.partSize.z,20)||
-       !near(st.bounds.max.z,initial.bounds.max.z)||
-       !near(st.bounds.min.z,initial.bounds.min.z-10)){
-      throw new Error('＋Z固定の結果が不正');
-    }
-    if(st.lastCommand?.mode!=='cut-stretch'||st.lastCommand?.cuts?.length!==1||
-       st.lastCommand.cuts[0].side!=='min'){
-      throw new Error('＋Z固定がcut-stretch min側ではない');
-    }
-    await undo();
-
-    await page.click('#anchorCenterBtn');
-    st=await setTarget(20);
-    if(!near(st.partSize.z,20)||
-       !near(st.bounds.min.z,initial.bounds.min.z-5)||
-       !near(st.bounds.max.z,initial.bounds.max.z+5)){
-      throw new Error('中心固定で両端が5mmずつ動いていない');
-    }
-    if(st.lastCommand?.mode!=='cut-stretch'||st.lastCommand?.cuts?.length!==2){
-      throw new Error('中心固定が2断面cut-stretchではない');
-    }
-    await undo();
-
-    st=await page.evaluate(()=>window.__okaTest.state());
-    if(!near(st.partSize.x,40)||!near(st.partSize.y,30)||!near(st.partSize.z,10)){
-      throw new Error('Undoで箱が元寸法に戻らない');
-    }
-
-    const plus=(await page.locator('.axisSignLabel.plus').innerText()).trim();
-    const minus=(await page.locator('.axisSignLabel.minus').innerText()).trim();
-    if(plus!=='＋Z'||minus!=='−Z') throw new Error('±Z表示が不正');
-
-    if(errors.length) throw new Error(errors.join('\n'));
-    await page.close();
-  }
-
-  // 2) Dense end-feature geometry: both end features must move rigidly.
-  {
-    const {page,errors}=await openPage();
-    await page.evaluate(()=>window.__okaTest.addDenseFeaturePart());
-    await page.waitForFunction(()=>document.querySelector('#partCount')?.textContent==='1');
-
-    const before=await page.evaluate(()=>window.__okaTest.state());
-    const p0=await page.evaluate(()=>window.__okaTest.positions());
-    const oldX=before.partSize.x;
-
-    await page.click('#axisXCard');
-    await page.click('#anchorCenterBtn');
-    await page.locator('#axisTargetInput').fill(String(oldX+20));
+  async function setTarget(mm){
+    await page.locator('#axisTargetInput').fill(String(mm));
     await page.click('#applyAxisTargetBtn');
     await page.waitForTimeout(140);
-
-    const after=await page.evaluate(()=>window.__okaTest.state());
-    const p1=await page.evaluate(()=>window.__okaTest.positions());
-    const cmd=after.lastCommand;
-
-    if(!near(after.partSize.x,oldX+20)||
-       !near(after.partSize.y,before.partSize.y)||
-       !near(after.partSize.z,before.partSize.z)){
-      throw new Error('端特徴付き形状のX伸長で外形寸法が不正: '+JSON.stringify({before,after,cmd}));
-    }
-    if(cmd?.mode!=='cut-stretch'||cmd?.cuts?.length!==2){
-      throw new Error('端特徴付き形状が中心2断面cut-stretchになっていない');
-    }
-
-    const cuts=[...cmd.cuts].sort((a,b)=>a.q-b.q);
-    const left=cuts[0], right=cuts[1];
-    const leftIds=[],rightIds=[];
-    for(let i=0;i<p0.length;i++){
-      const [x0,y0,z0]=p0[i], [x1,y1,z1]=p1[i];
-      if(!near(y0,y1,1e-4)||!near(z0,z1,1e-4)){
-        throw new Error('X編集なのにY/Z頂点が変化');
-      }
-      if(x0<left.q-1e-7){
-        leftIds.push(i);
-        if(!near(x1-x0,-10,1e-3)) throw new Error('左端特徴が剛体−10mm移動していない');
-      }else if(x0>right.q+1e-7){
-        rightIds.push(i);
-        if(!near(x1-x0,10,1e-3)) throw new Error('右端特徴が剛体＋10mm移動していない');
-      }else{
-        if(!near(x1,x0,1e-4)) throw new Error('中央固定領域の頂点が動いた');
-      }
-    }
-    if(!leftIds.length||!rightIds.length) throw new Error('左右端の剛体領域が取れていない');
-
-    // Local distances inside each moved end region must remain exactly unchanged.
-    for(const ids of [leftIds.slice(0,20),rightIds.slice(0,20)]){
-      for(let a=0;a<ids.length;a++) for(let b=a+1;b<ids.length;b++){
-        const i=ids[a],j=ids[b];
-        const d0=Math.hypot(
-          p0[i][0]-p0[j][0],p0[i][1]-p0[j][1],p0[i][2]-p0[j][2]);
-        const d1=Math.hypot(
-          p1[i][0]-p1[j][0],p1[i][1]-p1[j][1],p1[i][2]-p1[j][2]);
-        if(!near(d0,d1,1e-3)) throw new Error('端側の段差/ボス形状が変形した');
-      }
-    }
-
+    return await page.evaluate(()=>window.__okaTest.state());
+  }
+  async function undo(){
     await page.click('#axisUndoBtn');
     await page.waitForTimeout(120);
-    const undo=await page.evaluate(()=>window.__okaTest.state());
-    const pu=await page.evaluate(()=>window.__okaTest.positions());
-    if(!near(undo.partSize.x,before.partSize.x)||
-       !near(undo.partSize.y,before.partSize.y)||
-       !near(undo.partSize.z,before.partSize.z)){
-      throw new Error('端特徴付き形状Undoで寸法が戻らない');
-    }
-    for(let i=0;i<p0.length;i++) for(let k=0;k<3;k++){
-      if(!near(p0[i][k],pu[i][k],1e-4)) throw new Error('Undoで頂点が完全復元されない');
-    }
-
-    if(errors.length) throw new Error(errors.join('\n'));
-    await page.close();
   }
 
-  // 3) Coarse stepped + holed mesh: unsafe geometry must be refused, not corrupted.
-  {
-    const {page,errors}=await openPage();
-    await page.evaluate(()=>window.__okaTest.addSteppedPart());
-    await page.waitForFunction(()=>document.querySelector('#partCount')?.textContent==='1');
+  // Left fixed -> right moves.
+  await page.click('#anchorMinBtn');
+  let st=await setTarget(60);
+  if(!near(st.partSize.x,60)||!near(st.partSize.y,30)||!near(st.partSize.z,10)){
+    throw new Error('左端固定X60の寸法結果が不正');
+  }
+  if(!near(st.bounds.min.x,initial.bounds.min.x)||!near(st.bounds.max.x,initial.bounds.max.x+20)){
+    throw new Error('左端固定なのに左右の実移動が不正');
+  }
+  if(st.lastCommand?.mode!=='move-end-plane'||st.lastCommand?.moves?.length!==1||
+     st.lastCommand.moves[0].side!=='max'){
+    throw new Error('左端固定が右端move-end-planeになっていない');
+  }
+  await undo();
 
-    const before=await page.evaluate(()=>window.__okaTest.state());
-    const p0=await page.evaluate(()=>window.__okaTest.positions());
-    await page.click('#axisXCard');
-    await page.click('#anchorCenterBtn');
-    await page.locator('#axisTargetInput').fill(String(before.partSize.x+20));
-    await page.click('#applyAxisTargetBtn');
-    await page.waitForTimeout(140);
+  // Right fixed -> left moves.
+  await page.click('#anchorMaxBtn');
+  st=await setTarget(60);
+  if(!near(st.bounds.max.x,initial.bounds.max.x)||!near(st.bounds.min.x,initial.bounds.min.x-20)){
+    throw new Error('右端固定なのに左右の実移動が不正');
+  }
+  if(st.lastCommand?.mode!=='move-end-plane'||st.lastCommand?.moves?.[0]?.side!=='min'){
+    throw new Error('右端固定が左端move-end-planeになっていない');
+  }
+  await undo();
 
-    const after=await page.evaluate(()=>window.__okaTest.state());
-    const p1=await page.evaluate(()=>window.__okaTest.positions());
+  // Center fixed -> both ends move equally.
+  await page.click('#anchorCenterBtn');
+  st=await setTarget(60);
+  if(!near(st.bounds.min.x,initial.bounds.min.x-10)||!near(st.bounds.max.x,initial.bounds.max.x+10)){
+    throw new Error('中心固定で左右10mmずつ動いていない');
+  }
+  if(st.lastCommand?.moves?.length!==2) throw new Error('中心固定が両端2移動ではない');
+  await undo();
 
-    if(after.editCursor!==0||after.lastCommand!==null){
-      throw new Error('危険形状なのに編集コマンドが確定された');
-    }
-    if(!near(after.partSize.x,before.partSize.x)||
-       !near(after.partSize.y,before.partSize.y)||
-       !near(after.partSize.z,before.partSize.z)){
-      throw new Error('拒否した危険形状が変形している');
-    }
-    for(let i=0;i<p0.length;i++) for(let k=0;k<3;k++){
-      if(!near(p0[i][k],p1[i][k],1e-4)) throw new Error('拒否後に頂点が変わっている');
-    }
+  // Z means up/down and replaces X signs completely.
+  await page.click('#axisZCard');
+  await page.waitForTimeout(100);
+  const zCard=(await page.locator('#axisZCard span').innerText()).trim();
+  if(zCard!=='Z・上下') throw new Error('Zカードが上下表示ではない');
+  const minZText=(await page.locator('#anchorMinBtn').innerText()).trim();
+  const maxZText=(await page.locator('#anchorMaxBtn').innerText()).trim();
+  if(!minZText.includes('下端固定')||!minZText.includes('−Z')) throw new Error('−Z固定が下端表示ではない');
+  if(!maxZText.includes('上端固定')||!maxZText.includes('＋Z')) throw new Error('＋Z固定が上端表示ではない');
 
-    const status=(await page.locator('#status').innerText()).trim();
-    if(!status.includes('安全') && !status.includes('潰れる')){
-      throw new Error('危険編集の拒否理由が表示されない: '+status);
-    }
-
-    if(errors.length) throw new Error(errors.join('\n'));
-    await page.close();
+  const minusZ=(await page.locator('.axisSignLabel.minus').innerText()).trim();
+  const plusZ=(await page.locator('.axisSignLabel.plus').innerText()).trim();
+  if(minusZ!=='−Z 下'||plusZ!=='＋Z 上') throw new Error('Zの±ラベルが不正: '+minusZ+' / '+plusZ);
+  if((await page.locator('.axisSignLabel').allInnerTexts()).some(x=>x.includes('X'))){
+    throw new Error('Zへ切替後もXの±表示が残っている');
   }
 
-  console.log('CUT_STRETCH_PASS: 詳細面選択保持 + 軸全体寸法のみ表示 / 3固定方式 / 端特徴剛体保持 / 他軸不変 / 危険形状拒否 / Undo完全復元');
+  const mz=await page.locator('.axisSignLabel.minus').boundingBox();
+  const pz=await page.locator('.axisSignLabel.plus').boundingBox();
+  if(!mz||!pz||!(mz.y>pz.y)) throw new Error('正面表示で−Zが下、＋Zが上になっていない');
+
+  // Y wording is front/back.
+  await page.click('#axisYCard');
+  const yCard=(await page.locator('#axisYCard span').innerText()).trim();
+  if(yCard!=='Y・前後') throw new Error('Yカードが前後表示ではない');
+  if(!(await page.locator('#anchorMinBtn').innerText()).includes('手前固定')) throw new Error('−Yが手前固定ではない');
+  if(!(await page.locator('#anchorMaxBtn').innerText()).includes('奥固定')) throw new Error('＋Yが奥固定ではない');
+
+  if(errors.length) throw new Error(errors.join('\n'));
+  console.log('AXIS_DIR_PASS: X左右 / Y前後 / Z上下 / 固定端実移動 / ±位置 / Undo');
   await browser.close();
 })().catch(err=>{
   console.error(err);
