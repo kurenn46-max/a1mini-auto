@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 
 const $ = (id) => document.getElementById(id);
@@ -433,6 +434,47 @@ function buildModel(result) {
   });
 
   if (!parts.length) throw new Error('STEP内に表示できる形状が見つかりませんでした。');
+
+  renderPartsList();
+  recomputeModelStats(false);
+  setSelectedButtons(false);
+  fitView('iso');
+}
+
+function buildStlModel(arrayBuffer,fileName='model.stl'){
+  const loader=new STLLoader();
+  const geometry=loader.parse(arrayBuffer);
+  if(!geometry?.getAttribute('position') || geometry.getAttribute('position').count<3){
+    throw new Error('STL内に表示できる形状が見つかりませんでした。');
+  }
+
+  if(!geometry.getAttribute('normal')) geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+
+  const color=new THREE.Color(0x9fb8d8);
+  const material=new THREE.MeshStandardMaterial({
+    color,roughness:0.72,metalness:0.05,side:THREE.DoubleSide
+  });
+  const name=safeName(String(fileName||'STL').replace(/\.stl$/i,''),'STL Part');
+  const mesh=new THREE.Mesh(geometry,material);
+  mesh.name=name;
+  mesh.userData.partIndex=0;
+  mesh.userData.baseColor=color.getHex();
+  modelGroup.add(mesh);
+
+  const localBox=geometry.boundingBox.clone();
+  const localSize=localBox.getSize(new THREE.Vector3());
+  const triangles=geometry.index
+    ? Math.floor(geometry.index.count/3)
+    : Math.floor(geometry.getAttribute('position').count/3);
+
+  parts.push({
+    mesh,name,path:name,localBox,localSize,triangles,source:'stl',
+    brepFaces:[],
+    patches:null,triToPatch:null,patchMode:null,patchAngle:null,
+    basePosition:new Float32Array(geometry.getAttribute('position').array)
+  });
 
   renderPartsList();
   recomputeModelStats(false);
@@ -2262,7 +2304,7 @@ async function exportNightPackage(){
   const payload={
     format:'OKA-CAD-EDIT',
     version:1,
-    app:'岡重機 STEP Editor V5.6.3.1 ANDROID READ FIX',
+    app:'岡重機 STEP Editor V5.6.3.2 STEP + STL READ',
     createdAt:new Date().toISOString(),
     sourceFile:originalStepName,
     unit:'mm',
@@ -2578,78 +2620,115 @@ function isStepFilename(name=''){
   return /\.(step|stp)$/i.test(String(name).trim());
 }
 
+function isStlFilename(name=''){
+  return /\.stl$/i.test(String(name).trim());
+}
+
+function looksLikeStlBytes(bytes){
+  if(!bytes || bytes.length<15) return false;
+
+  // ASCII STL
+  try{
+    const head=new TextDecoder('utf-8',{fatal:false})
+      .decode(bytes.subarray(0,Math.min(bytes.length,4096)))
+      .trimStart()
+      .toLowerCase();
+    if(head.startsWith('solid') && head.includes('facet normal')) return true;
+  }catch(_){}
+
+  // Binary STL: 80-byte header + uint32 triangle count + 50 bytes/triangle.
+  if(bytes.length>=84){
+    try{
+      const dv=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+      const tri=dv.getUint32(80,true);
+      const expected=84+tri*50;
+      if(tri>0 && expected===bytes.length) return true;
+    }catch(_){}
+  }
+  return false;
+}
+
 input.addEventListener('click', () => {
   input.value = '';
 });
 
 input.addEventListener('change', async () => {
-  const file = input.files?.[0];
-  if (!file) return;
+  const file=input.files?.[0];
+  if(!file) return;
 
-  setStatus('ファイル確認中', 'idle');
-  $('fileInfo').textContent = file.name + ' ・ ' + formatBytes(file.size);
-  setLoadProgress(5, true);
-  setLoading(true, 'STEPデータか確認中…');
+  setStatus('ファイル確認中','idle');
+  $('fileInfo').textContent=file.name+' ・ '+formatBytes(file.size);
+  setLoadProgress(5,true);
+  setLoading(true,'3Dデータを確認中…');
 
-  try {
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const nameLooksStep=isStepFilename(file.name);
-    const contentLooksStep=looksLikeStepBytes(bytes);
+  try{
+    const buffer=await file.arrayBuffer();
+    const bytes=new Uint8Array(buffer);
 
-    if(!nameLooksStep && !contentLooksStep){
+    const stepByName=isStepFilename(file.name);
+    const stlByName=isStlFilename(file.name);
+    const stepByContent=looksLikeStepBytes(bytes);
+    const stlByContent=looksLikeStlBytes(bytes);
+
+    let format=null;
+    if(stepByName || stepByContent) format='step';
+    else if(stlByName || stlByContent) format='stl';
+
+    if(!format){
       setLoadProgress(0,false);
-      setStatus('STEPデータではありません', 'error');
-      $('fileInfo').textContent =
-        file.name + ' ・ 中身を確認しましたがSTEP形式ではありません';
+      setStatus('STEP / STLデータではありません','error');
+      $('fileInfo').textContent=file.name+' ・ STEP / STLとして認識できません';
       return;
     }
 
     disposeModel();
-    $('fileInfo').textContent =
-      file.name + ' ・ ' + formatBytes(file.size) +
-      (nameLooksStep ? '' : ' ・ 拡張子なしSTEPとして認識');
-    setStatus('読込準備中', 'idle');
-    setLoadProgress(12, true);
-    setLoading(true, 'STEPエンジンを準備中…');
-
-    const occt = await getOcct();
-    setLoadProgress(28, true);
-    setLoading(true, 'STEPを解析中… 大きいファイルは少し待ってください');
-    await new Promise(resolve => setTimeout(resolve, 30));
-
-    originalStepBytes = bytes.slice();
-    originalStepName = file.name || 'download.step';
-    editHistory = [];
-    editCursor = 0;
+    originalStepBytes=bytes.slice();
+    originalStepName=file.name || (format==='stl'?'download.stl':'download.step');
+    editHistory=[];
+    editCursor=0;
     updateEditHistoryUI();
-    setLoadProgress(42, true);
-    const result = occt.ReadStepFile(bytes, {
-      linearUnit: 'millimeter',
-      linearDeflectionType: 'bounding_box_ratio',
-      linearDeflection: 0.003,
-      angularDeflection: 0.5
-    });
 
-    if (!result?.success) throw new Error('STEPの解析に失敗しました。');
+    if(format==='stl'){
+      setLoadProgress(35,true);
+      setLoading(true,'STLを読み込み中…');
+      await new Promise(resolve=>setTimeout(resolve,20));
+      buildStlModel(buffer,file.name);
+    }else{
+      setLoadProgress(12,true);
+      setLoading(true,'STEPエンジンを準備中…');
+      const occt=await getOcct();
+      setLoadProgress(28,true);
+      setLoading(true,'STEPを解析中… 大きいファイルは少し待ってください');
+      await new Promise(resolve=>setTimeout(resolve,30));
 
-    setLoadProgress(82, true);
-    setLoading(true, '部品と寸法情報を作成中…');
-    await new Promise(resolve => setTimeout(resolve, 30));
-    buildModel(result);
+      setLoadProgress(42,true);
+      const result=occt.ReadStepFile(bytes,{
+        linearUnit:'millimeter',
+        linearDeflectionType:'bounding_box_ratio',
+        linearDeflection:0.003,
+        angularDeflection:0.5
+      });
+      if(!result?.success) throw new Error('STEPの解析に失敗しました。');
 
-    setLoadProgress(100, true);
-    setStatus('表示完了・部品 / 詳細面をタップ', 'ok');
-    $('fileInfo').textContent =
-      file.name + ' ・ ' + formatBytes(file.size) + ' ・ ' + parts.length + '部品';
-    setTimeout(() => setLoadProgress(0, false), 650);
-  } catch (err) {
+      setLoadProgress(82,true);
+      setLoading(true,'部品と寸法情報を作成中…');
+      await new Promise(resolve=>setTimeout(resolve,30));
+      buildModel(result);
+    }
+
+    setLoadProgress(100,true);
+    setStatus((format==='stl'?'STL':'STEP')+' 表示完了・部品 / 詳細面をタップ','ok');
+    $('fileInfo').textContent=
+      file.name+' ・ '+formatBytes(file.size)+' ・ '+parts.length+'部品 ・ '+format.toUpperCase();
+    setTimeout(()=>setLoadProgress(0,false),650);
+  }catch(err){
     console.error(err);
     disposeModel();
-    setLoadProgress(0, false);
-    setStatus('読込失敗', 'error');
-    const msg = err?.message || String(err);
-    $('fileInfo').textContent = 'エラー: ' + msg;
-  } finally {
+    setLoadProgress(0,false);
+    setStatus('読込失敗','error');
+    const msg=err?.message||String(err);
+    $('fileInfo').textContent='エラー: '+msg;
+  }finally{
     setLoading(false);
   }
 });
@@ -3030,6 +3109,10 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
       return parts.length-1;
     },
     isStepName(name){ return isStepFilename(name); },
+    isStlName(name){ return isStlFilename(name); },
+    sniffStlText(text){
+      return looksLikeStlBytes(new TextEncoder().encode(String(text||'')));
+    },
     sniffStepText(text){
       const bytes=new TextEncoder().encode(String(text||''));
       return looksLikeStepBytes(bytes);
