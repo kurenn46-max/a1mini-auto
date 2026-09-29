@@ -3340,6 +3340,12 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
   window.__okaTest={
     runNight(text){ return runNightCommand(text); },
     nightNormalize(text){ return normalizeNightCommand(text); },
+    exportableCount(){
+      const g=buildExportGroup();
+      const n=g.children.length;
+      disposeObject(g);
+      return n;
+    },
     state(){
       const part=(selectedIndex>=0&&parts[selectedIndex])?parts[selectedIndex]:null;
       let bounds=null,totalVertices=0;
