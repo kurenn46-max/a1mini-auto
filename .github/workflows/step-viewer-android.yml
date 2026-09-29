@@ -24,19 +24,20 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install SDK packages
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
+      - name: Check Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          ls "$ANDROID_HOME/platforms" | tail -20
+          ls "$ANDROID_HOME/build-tools" | tail -20
+
       - name: Build debug APK
-        run: gradle -p android-step-viewer assembleDebug
+        run: gradle -p android-step-viewer assembleDebug --stacktrace
 
       - name: Rename APK
         run: cp android-step-viewer/app/build/outputs/apk/debug/app-debug.apk OkaStepViewer.apk
