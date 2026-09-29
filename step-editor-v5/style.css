@@ -258,3 +258,20 @@ main{max-width:980px;margin:0 auto;padding:14px 14px 40px}
   .axisQuick{grid-template-columns:repeat(3,1fr)}
   .axisTargetRow{grid-template-columns:1fr}
 }
+
+.axisLockState{
+  margin:7px 0 9px;padding:10px 11px;border:1px solid #34536f;border-radius:11px;
+  background:#081522;color:#b3c9db;font-size:12px;font-weight:800;line-height:1.45
+}
+.axisLockState.locked{border-color:#49d397;background:#0b3024;color:#baf3d8}
+.anchorButtonsSimple{grid-template-columns:1fr}
+.axisLockLabel{
+  padding:6px 9px;border-radius:999px;background:rgba(7,17,29,.94);border:1px solid #54c7f2;
+  color:#fff;font-size:11px;font-weight:900;white-space:nowrap;pointer-events:none
+}
+.axisLockLabel.locked{border-color:#53dc9d;background:rgba(12,72,51,.96)}
+.axisPreviewLabel{
+  padding:5px 8px;border-radius:8px;background:rgba(13,27,42,.94);border:1px solid #ffd166;
+  color:#fff;font-size:11px;font-weight:900;white-space:nowrap;pointer-events:none
+}
+.axisApplyBtn.ready{background:#147b53;border-color:#52dda0}
