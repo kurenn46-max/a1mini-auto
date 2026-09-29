@@ -1,14 +1,15 @@
-name: Build Android STEP Viewer APK
+name: Build STEP Viewer Android APK
 
 on:
-  workflow_dispatch:
   push:
+    branches: [main]
     paths:
-      - 'android-step-viewer/**'
-      - '.github/workflows/step-viewer-android.yml'
+      - "step-viewer-android/**"
+      - ".github/workflows/step-viewer-android.yml"
+  workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -22,29 +23,55 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.7'
+          gradle-version: "8.9"
 
-      - name: Check Android SDK
+      - name: Install Android SDK 35
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          ls "$ANDROID_HOME/platforms" | tail -20
-          ls "$ANDROID_HOME/build-tools" | tail -20
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Bundle offline 3D viewer libraries
+        run: |
+          set -eux
+          V="step-viewer-android/app/src/main/assets/vendor"
+          mkdir -p "$V/controls" "$V/loaders"
+
+          curl --fail --location --retry 3             "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js"             -o "$V/three.module.js"
+
+          curl --fail --location --retry 3             "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/controls/OrbitControls.js"             -o "$V/controls/OrbitControls.js"
+
+          curl --fail --location --retry 3             "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/loaders/STLLoader.js"             -o "$V/loaders/STLLoader.js"
+
+          curl --fail --location --retry 3             "https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.js"             -o "$V/occt-import-js.js"
+
+          curl --fail --location --retry 3             "https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.wasm"             -o "$V/occt-import-js.wasm"
 
       - name: Build debug APK
-        run: gradle -p android-step-viewer assembleDebug --stacktrace
+        working-directory: step-viewer-android
+        run: gradle :app:assembleDebug --stacktrace
 
       - name: Rename APK
-        run: cp android-step-viewer/app/build/outputs/apk/debug/app-debug.apk OkaStepViewer.apk
+        run: cp step-viewer-android/app/build/outputs/apk/debug/app-debug.apk oka-step-viewer.apk
 
-      - name: Upload APK
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OkaStepViewer-APK
-          path: OkaStepViewer.apk
+          name: oka-step-viewer-apk
+          path: oka-step-viewer.apk
           if-no-files-found: error
+
+      - name: Publish stable APK download
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eux
+          if gh release view step-viewer-latest >/dev/null 2>&1; then
+            gh release upload step-viewer-latest oka-step-viewer.apk --clobber
+          else
+            gh release create step-viewer-latest               oka-step-viewer.apk               --target "$GITHUB_SHA"               --title "岡重機 STEP Viewer Android"               --notes "Filesから STEP / STP / STL を直接開けるAndroid版。"
+          fi
