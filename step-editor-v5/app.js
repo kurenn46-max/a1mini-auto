@@ -1507,7 +1507,7 @@ function worldAxisScale(part, axis) {
 
 function estimateHole(part, patch) {
   const geometry=part.mesh.geometry;
-  const ids=uniquePatchVertexIndices(part,patch);
+  const ids=expandCoincidentVertexIndices(part,uniquePatchVertexIndices(part,patch));
   if (ids.length<3) return null;
   const pos=geometry.getAttribute('position');
   const center=patchLocalCenter(part,patch);
@@ -1985,30 +1985,38 @@ function commitAxisDimension(axis,target){
   }
 
   const deltaWorld=to-current;
-  const plan=planCutStretch(part,axis,axisAnchor,deltaWorld);
-  if(!plan){
-    setStatus('穴・R・段差を避けた安全な伸縮断面が見つかりません','error');
-    return;
-  }
-
-  const preview=simulateCutStretch(part,axis,plan.cuts);
-  if(!preview){
-    setStatus('この変更量では面が潰れる可能性があります。変更量を小さくしてください','error');
-    return;
-  }
-
   const before=partSizeSnapshot(part);
+  const scale=worldAxisScale(part,axis);
+  const deltaLocal=deltaWorld/scale;
+
+  // V5.6.1: 寸法編集は「端の形を丸ごと平行移動」に戻す。
+  // 中間断面を引き伸ばす方式は、IGLOOの穴・R・段差の途中に
+  // 新しい段差を作ることがあった。端部の全頂点を同量移動すれば、
+  // 端にある穴・R・爪の相対形状を保ったまま外形寸法だけ変えられる。
+  const moves=[];
+  if(axisAnchor==='min'){
+    const ids=extremePlaneVertexIndices(part,axis,'max');
+    if(!ids.length){setStatus('＋側の端形状を取得できません','error');return;}
+    moves.push({side:'max',deltaLocalMm:deltaLocal,vertexIndices:ids});
+  }else if(axisAnchor==='max'){
+    const ids=extremePlaneVertexIndices(part,axis,'min');
+    if(!ids.length){setStatus('−側の端形状を取得できません','error');return;}
+    moves.push({side:'min',deltaLocalMm:-deltaLocal,vertexIndices:ids});
+  }else{
+    const minIds=extremePlaneVertexIndices(part,axis,'min');
+    const maxIds=extremePlaneVertexIndices(part,axis,'max');
+    if(!minIds.length||!maxIds.length){setStatus('両端の形状を取得できません','error');return;}
+    moves.push({side:'min',deltaLocalMm:-deltaLocal/2,vertexIndices:minIds});
+    moves.push({side:'max',deltaLocalMm:deltaLocal/2,vertexIndices:maxIds});
+  }
+
   const cmd={
     type:'axisDimension',
-    mode:'cut-stretch',
+    mode:'move-end-plane',
     partIndex:resolved.index,
     axis,
     anchor:axisAnchor,
-    cuts:plan.cuts.map(c=>({
-      side:c.side,
-      q:c.q,
-      deltaLocal:c.deltaLocal
-    })),
+    moves,
     deltaWorldMm:deltaWorld,
     fromDimensionMm:current,
     toDimensionMm:to,
@@ -2017,16 +2025,10 @@ function commitAxisDimension(axis,target){
       partPath:part.path||part.name,
       axis,
       anchor:axisAnchor,
-      editMode:'cut-stretch',
-      cuts:plan.cuts.map(c=>({
-        side:c.side,
-        cutMm:Number(c.q.toFixed(6)),
-        deltaMm:Number(c.deltaLocal.toFixed(6)),
-        crossTriangles:c.quality?.crossCount||0,
-        maxAxisNormal:Number((c.quality?.maxAxisNormal||0).toFixed(6))
-      }))
+      editMode:'move-end-plane',
+      movedEnds:moves.map(m=>({side:m.side,deltaMm:Number(m.deltaLocalMm.toFixed(6)),vertexCount:m.vertexIndices.length}))
     },
-    inputMethod:'axis-card-cut-stretch'
+    inputMethod:'axis-card-end-plane'
   };
 
   if(editCursor<editHistory.length) editHistory=editHistory.slice(0,editCursor);
@@ -2169,7 +2171,7 @@ async function exportNightPackage(){
   const payload={
     format:'OKA-CAD-EDIT',
     version:1,
-    app:'岡重機 STEP Editor V5.6.0 IGLOO VERIFIED',
+    app:'岡重機 STEP Editor V5.6.1 END SHAPE',
     createdAt:new Date().toISOString(),
     sourceFile:originalStepName,
     unit:'mm',
