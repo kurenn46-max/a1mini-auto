@@ -7,13 +7,13 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <title>岡重機 STEP Viewer + CAD</title>
-  <link rel="stylesheet" href="./style.css?v=2">
+  <link rel="stylesheet" href="./style.css?v=3">
 </head>
 <body>
 <header class="topbar">
   <div>
     <h1>岡重機 STEP Viewer + CAD</h1>
-    <p>STEP閲覧・寸法確認・その場で簡易CAD作成</p>
+    <p>タップ選択 → 部品寸法表示・測定・CAD作成</p>
   </div>
   <button id="fitBtn" class="toolBtn" disabled>全体表示</button>
 </header>
@@ -26,9 +26,10 @@
         <strong>STEPファイルを選ぶ</strong>
         <small>Androidの「Files」から .step / .stp を選択</small>
       </span>
-      <input id="stepInput" type="file" accept=".step,.stp,model/step,application/step" />
+      <input id="stepInput" type="file" accept=".step,.stp,model/step,application/step">
     </label>
     <div id="fileInfo" class="fileInfo">まだファイルを選んでいません</div>
+    <div id="loadProgress" class="loadProgress hidden"><div id="loadProgressBar"></div></div>
   </section>
 
   <section class="viewerCard">
@@ -39,38 +40,52 @@
       <div id="loadingText">読み込み中…</div>
     </div>
     <div id="measureHud" class="measureHud hidden">測定: 1点目をタップ</div>
+    <div id="tapHint" class="tapHint">部品をタップすると寸法表示</div>
+  </section>
+
+  <section class="viewTools">
+    <button id="isoBtn" disabled>アイソメ</button>
+    <button id="frontBtn" disabled>正面</button>
+    <button id="rightBtn" disabled>右</button>
+    <button id="backBtn" disabled>背面</button>
+    <button id="leftBtn" disabled>左</button>
+    <button id="topBtn" disabled>上</button>
+    <button id="bottomBtn" disabled>下</button>
   </section>
 
   <section class="quickTools">
-    <button id="isoBtn" disabled>アイソメ</button>
-    <button id="frontBtn" disabled>正面</button>
-    <button id="topBtn" disabled>上</button>
-    <button id="rightBtn" disabled>右</button>
+    <button id="modelDimBtn" disabled>📐 全体寸法</button>
     <button id="measureBtn" disabled>📏 2点測定</button>
     <button id="clearMeasureBtn" disabled>測定消去</button>
+    <button id="unitBtn" disabled>単位 mm</button>
+    <button id="saveGlbBtn" disabled>💾 GLB保存</button>
+    <button id="gridBtn">グリッド</button>
   </section>
 
   <section class="statsGrid">
-    <div class="stat"><span>X</span><strong id="sizeX">—</strong><small>mm</small></div>
-    <div class="stat"><span>Y</span><strong id="sizeY">—</strong><small>mm</small></div>
-    <div class="stat"><span>Z</span><strong id="sizeZ">—</strong><small>mm</small></div>
+    <div class="stat"><span>X</span><strong id="sizeX">—</strong><small id="unitX">mm</small></div>
+    <div class="stat"><span>Y</span><strong id="sizeY">—</strong><small id="unitY">mm</small></div>
+    <div class="stat"><span>Z</span><strong id="sizeZ">—</strong><small id="unitZ">mm</small></div>
     <div class="stat"><span>部品</span><strong id="partCount">—</strong><small>個</small></div>
   </section>
 
-  <section class="panel">
+  <section class="panel selectedPanel">
     <div class="panelHead">
       <div>
         <div class="eyebrow">選択部品</div>
         <h2 id="selectedName">未選択</h2>
+        <div id="selectedPath" class="selectedPath"></div>
       </div>
-      <div class="selectedDims" id="selectedDims">—</div>
+      <div class="selectedDims" id="selectedDims">モデルをタップ</div>
     </div>
+    <div id="tapPoint" class="tapPoint">タップした部品の外形 X・Y・Z を3D上に自動表示します</div>
     <div class="partActions">
+      <button id="focusBtn" disabled>選択を拡大</button>
       <button id="isolateBtn" disabled>これだけ表示</button>
       <button id="hideBtn" disabled>非表示</button>
       <button id="showAllBtn" disabled>全て表示</button>
+      <button id="dimSelectedBtn" disabled>寸法線 ON</button>
       <button id="wireBtn" disabled>ワイヤー</button>
-      <button id="gridBtn">グリッド</button>
     </div>
   </section>
 
@@ -132,26 +147,24 @@
       <button id="saveStlBtn" disabled>💾 CADをSTL保存</button>
       <button id="clearCadBtn" disabled>CADだけ全削除</button>
     </div>
-    <p class="cadNote">箱・円柱は端末内だけで作成します。STEPで読んだ部品は消さず、その上にCAD部品を追加できます。</p>
+    <p class="cadNote">STEP部品はそのまま残し、その上にCAD部品を追加できます。CADはSTLで保存できます。</p>
   </section>
 
   <details class="panel tips">
     <summary>操作方法</summary>
-    <p>1本指ドラッグ＝回転、2本指＝移動、ピンチ＝拡大縮小。部品を画面または一覧でタップすると選択できます。</p>
-    <p>「2点測定」を押してモデル上の2点を順にタップすると距離を表示します。測定値はSTEPを三角形化した表示形状上の近似値です。</p>
+    <p>モデル上の部品をタップすると、その部品の外形寸法 X・Y・Z を表示します。1本指ドラッグ＝回転、2本指＝移動、ピンチ＝拡大縮小。</p>
+    <p>「2点測定」はモデル上の2点間の直線距離を測ります。表示寸法と測定値はSTEPを表示用に三角形化した形状から計算します。</p>
     <p class="privacy">STEPファイルは端末内で処理し、サーバーへアップロードしません。</p>
   </details>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.js"></script>
 <script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
-  }
-}
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+}}
 </script>
-<script type="module" src="./app.js?v=2"></script>
+<script type="module" src="./app.js?v=3"></script>
 </body>
 </html>
