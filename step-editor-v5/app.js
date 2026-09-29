@@ -641,6 +641,41 @@ function showBoxDimensions(box, owner = 'part') {
   updateDimensionButtons();
 }
 
+function showSingleAxisDimension(box, axis, owner='axis') {
+  if (!box || box.isEmpty() || !['x','y','z'].includes(axis)) return;
+  clearGroup(dimensionGroup);
+
+  const b=box.clone();
+  const size=b.getSize(new THREE.Vector3());
+  const maxDim=Math.max(size.x,size.y,size.z,0.1);
+  const off=Math.max(maxDim*0.085,0.5);
+
+  if(axis==='x'){
+    const a=new THREE.Vector3(b.min.x,b.min.y-off,b.min.z-off);
+    const c=new THREE.Vector3(b.max.x,b.min.y-off,b.min.z-off);
+    addDimensionLine(a,c,
+      new THREE.Vector3(b.min.x,b.min.y,b.min.z),
+      new THREE.Vector3(b.max.x,b.min.y,b.min.z),
+      'X '+formatLength(size.x),'axisX',0xff6868);
+  }else if(axis==='y'){
+    const a=new THREE.Vector3(b.min.x-off,b.min.y,b.min.z-off);
+    const c=new THREE.Vector3(b.min.x-off,b.max.y,b.min.z-off);
+    addDimensionLine(a,c,
+      new THREE.Vector3(b.min.x,b.min.y,b.min.z),
+      new THREE.Vector3(b.min.x,b.max.y,b.min.z),
+      'Y '+formatLength(size.y),'axisY',0x69df7b);
+  }else{
+    const a=new THREE.Vector3(b.min.x-off,b.min.y-off,b.min.z);
+    const c=new THREE.Vector3(b.min.x-off,b.min.y-off,b.max.z);
+    addDimensionLine(a,c,
+      new THREE.Vector3(b.min.x,b.min.y,b.min.z),
+      new THREE.Vector3(b.min.x,b.min.y,b.max.z),
+      'Z '+formatLength(size.z),'axisZ',0x5da8ff);
+  }
+  dimensionOwner=owner;
+  updateDimensionButtons();
+}
+
 function updateDimensionButtons() {
   $('modelDimBtn').textContent = dimensionOwner === 'model' ? '📐 全体寸法 OFF' : '📐 全体寸法';
   $('dimSelectedBtn').textContent = selectedDimsOn ? '寸法線 OFF' : '寸法線 ON';
@@ -1161,7 +1196,6 @@ function setSelectionMode(mode) {
   if(selectionMode==='face'){
     selectedAxis=null;
     clearGroup(axisSignGroup);
-    selectedPatch=null;
     updateAxisPanel();
   }
   $('partModeBtn').classList.toggle('active',selectionMode==='part');
@@ -1183,6 +1217,14 @@ function setSelectionMode(mode) {
     if (selectionMode==='part' && selectedDimsOn && part.mesh.visible) {
       showBoxDimensions(new THREE.Box3().setFromObject(part.mesh),'part');
     } else if (selectionMode==='face') {
+      if(selectedPatch && selectedPatch.partIndex===selectedIndex){
+        const patch=part.patches?.[selectedPatch.patchIndex];
+        if(patch){
+          const stats=computePatchStats(part,patch);
+          highlightPatch(part,patch);
+          showBoxDimensions(stats.box,'face');
+        }
+      }
       $('tapPoint').textContent='詳細面モード：面をタップ → 黄色になったら編集面を確定';
     }
   }
@@ -1393,9 +1435,13 @@ function updateEditTarget(part,patchIndex,stats){
 function refreshEditSelection(){
   if(selectedAxis){
     const resolved=getAxisPart();
+    if(selectedPatch){
+      const part=parts[selectedPatch.partIndex];
+      const patch=part?.patches?.[selectedPatch.patchIndex];
+      if(part&&patch) highlightPatch(part,patch);
+    }
     if(resolved?.part?.mesh?.visible){
-      clearGroup(faceHighlightGroup);
-      showBoxDimensions(new THREE.Box3().setFromObject(resolved.part.mesh),'part');
+      showSingleAxisDimension(new THREE.Box3().setFromObject(resolved.part.mesh),selectedAxis,'axis');
     }
     return;
   }
@@ -1645,27 +1691,16 @@ function updateAxisPanel(){
 
 function selectAxis(axis){
   selectedAxis=axis;
-  selectedPatch=null;
   resetEditConfirmation();
-
-  // Axis editing always uses the whole part. Keep the visible mode in sync.
-  selectionMode='part';
-  $('partModeBtn').classList.add('active');
-  $('faceModeBtn').classList.remove('active');
-  $('tapHint').textContent='部品モード：X/Y/Z軸編集';
-  $('modeHelp').textContent='部品全体を選択して X・Y・Z 外形寸法を編集します。';
-  clearGroup(faceHighlightGroup);
 
   const resolved=getAxisPart();
   if(resolved?.part?.mesh?.visible){
-    selectedDimsOn=true;
-    showBoxDimensions(new THREE.Box3().setFromObject(resolved.part.mesh),'part');
+    showSingleAxisDimension(new THREE.Box3().setFromObject(resolved.part.mesh),axis,'axis');
     $('tapPoint').textContent=
-      axis.toUpperCase()+'軸編集：部品全体 '+formatRawMm(partWorldSize(resolved.part)[axis])+' mm';
+      axis.toUpperCase()+'軸表示：部品全体 '+formatRawMm(partWorldSize(resolved.part)[axis])+' mm（選択モードはそのまま）';
   }
-  updateDimensionButtons();
   updateAxisPanel();
-  setStatus(axis.toUpperCase()+'軸を選択・部品モードへ切替','ok');
+  setStatus(axis.toUpperCase()+'軸を表示・選択モードは変更しません','ok');
 }
 
 function commitAxisDimension(axis,target){
