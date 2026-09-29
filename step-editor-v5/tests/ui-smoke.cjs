@@ -90,7 +90,7 @@ const { chromium } = require('playwright');
   await page.click('#anchorCenterBtn');
   await setTarget(20);
   st = await state();
-  if (Math.abs(st.partSize.z-20)>0.001) throw new Error('中心固定でZ20にならない');
+  if (Math.abs(st.partSize.z-20)>0.001) throw new Error('中心固定でZ20にならない: '+JSON.stringify(st));
   if (Math.abs(st.bounds.min.z-(initial.bounds.min.z-5))>0.001 ||
       Math.abs(st.bounds.max.z-(initial.bounds.max.z+5))>0.001) {
     throw new Error('中心固定で両端が5mmずつ動いていない');
