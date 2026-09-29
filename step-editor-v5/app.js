@@ -1266,6 +1266,30 @@ function moveFaceVertexIndices(part, patch) {
   return expandCoincidentVertexIndices(part,uniquePatchVertexIndices(part,patch));
 }
 
+function extremePlaneVertexIndices(part, axis, side) {
+  const geometry=part?.mesh?.geometry;
+  const attr=geometry?.getAttribute('position');
+  if(!geometry||!attr||!['x','y','z'].includes(axis)) return [];
+
+  geometry.computeBoundingBox();
+  const box=geometry.boundingBox;
+  if(!box||box.isEmpty()) return [];
+
+  const target=side==='min'?box.min[axis]:box.max[axis];
+  const extent=Math.max(box.max[axis]-box.min[axis],1e-9);
+  const tol=Math.max(extent*1e-6,1e-5);
+  const ids=[];
+
+  for(let i=0;i<attr.count;i++){
+    let v=0;
+    if(axis==='x') v=attr.getX(i);
+    else if(axis==='y') v=attr.getY(i);
+    else v=attr.getZ(i);
+    if(Math.abs(v-target)<=tol) ids.push(i);
+  }
+  return ids;
+}
+
 function worldAxisScale(part, axis) {
   const ws=new THREE.Vector3();
   part.mesh.getWorldScale(ws);
@@ -1449,7 +1473,17 @@ function applyEditCommand(cmd){
       );
     }
   }else if(cmd.type==='axisDimension'){
-    if(cmd.mode==='move-face' && Array.isArray(cmd.vertexIndices) && cmd.vertexIndices.length){
+    if(cmd.mode==='move-end-plane' && Array.isArray(cmd.moves) && cmd.moves.length){
+      for(const move of cmd.moves){
+        const delta=Number(move.deltaLocalMm)||0;
+        const ids=Array.from(move.vertexIndices||[]);
+        for(const i of ids){
+          if(cmd.axis==='x') attr.setX(i,attr.getX(i)+delta);
+          else if(cmd.axis==='y') attr.setY(i,attr.getY(i)+delta);
+          else attr.setZ(i,attr.getZ(i)+delta);
+        }
+      }
+    }else if(cmd.mode==='move-face' && Array.isArray(cmd.vertexIndices) && cmd.vertexIndices.length){
       const delta=Number(cmd.deltaLocalMm)||0;
       for(const i of cmd.vertexIndices){
         if(cmd.axis==='x') attr.setX(i,attr.getX(i)+delta);
@@ -1516,7 +1550,7 @@ function editDescription(cmd){
     return '面を '+sign+Number(cmd.deltaMm.toFixed(3))+' mm 移動';
   }
   if(cmd.type==='axisDimension'){
-    const prefix=cmd.mode==='move-face'?'面移動 ':'';
+    const prefix=cmd.mode==='move-end-plane'?'端面移動 ':(cmd.mode==='move-face'?'面移動 ':'');
     return prefix+cmd.axis.toUpperCase()+'寸法 '+Number(cmd.fromDimensionMm.toFixed(3))+' → '+Number(cmd.toDimensionMm.toFixed(3))+' mm';
   }
   if(cmd.type==='holeDiameter'){
@@ -1637,130 +1671,106 @@ function updateAxisPanel(){
     setAxisControlsEnabled(false);
     return;
   }
+
   const resolved=getAxisPart();
   if(!resolved){
     $('axisEditHelp').textContent='先に編集する部品をタップしてください。';
     setAxisControlsEnabled(false);
     return;
   }
-  const size=partWorldSize(resolved.part);
-  const dim=size[selectedAxis];
+
+  const dim=partWorldSize(resolved.part)[selectedAxis];
   const axisLabel=selectedAxis.toUpperCase();
   $('anchorMinBtn').textContent='−'+axisLabel+'側固定';
   $('anchorMaxBtn').textContent='＋'+axisLabel+'側固定';
-  $('axisEditTitle').textContent=selectedAxis.toUpperCase()+'方向を編集';
-  $('axisEditBadge').textContent=selectedAxis.toUpperCase()+' 選択中';
-  const part=resolved.part;
-  const patch=(selectedPatch && selectedPatch.partIndex===resolved.index)
-    ? part.patches?.[selectedPatch.patchIndex] : null;
-  const side=patch ? patchAxisSide(part,patch,selectedAxis) : null;
-
+  $('axisEditTitle').textContent=axisLabel+'方向を編集';
+  $('axisEditBadge').textContent=axisLabel+' 選択中';
   $('axisTargetInput').value=Number(dim.toFixed(3));
 
-  if(!patch){
-    $('axisEditHelp').textContent=
-      '先に「詳細面」で動かす端面を選んでください。軸編集は全体スケールせず、選んだ面だけを移動します。';
-    setAxisControlsEnabled(false);
-  }else if(!side){
-    $('axisEditHelp').textContent=
-      'この面は '+selectedAxis.toUpperCase()+'軸の端面ではありません。'+
-      selectedAxis.toUpperCase()+'方向のいちばん端の平らな面を選んでください。';
-    setAxisControlsEnabled(false);
-  }else{
-    axisAnchor=side==='max'?'min':'max';
-    $('axisEditHelp').textContent=
-      resolved.part.name+' の '+selectedAxis.toUpperCase()+'寸法 '+formatRawMm(dim)+
-      ' mm。選択した '+(side==='max'?'＋':'−')+selectedAxis.toUpperCase()+
-      '端面だけを移動します。';
-    setAxisControlsEnabled(true);
-    $('anchorCenterBtn').disabled=true;
-    if(side==='max'){
-      $('anchorMaxBtn').disabled=true;
-      $('anchorMinBtn').disabled=false;
-    }else{
-      $('anchorMinBtn').disabled=true;
-      $('anchorMaxBtn').disabled=false;
-    }
-    ['anchorMinBtn','anchorCenterBtn','anchorMaxBtn'].forEach(id=>$(id).classList.remove('active'));
-    $(axisAnchor==='min'?'anchorMinBtn':'anchorMaxBtn').classList.add('active');
-  }
+  setAxisControlsEnabled(true);
+  $('anchorMinBtn').disabled=false;
+  $('anchorCenterBtn').disabled=false;
+  $('anchorMaxBtn').disabled=false;
+
+  let moveText='';
+  if(axisAnchor==='min') moveText='＋'+axisLabel+'端だけ動かします';
+  else if(axisAnchor==='max') moveText='−'+axisLabel+'端だけ動かします';
+  else moveText='両端を半分ずつ動かします';
+
+  $('axisEditHelp').textContent=
+    resolved.part.name+' の '+axisLabel+'寸法 '+formatRawMm(dim)+' mm。'+moveText+'。詳細面の選択は不要です。';
 
   const others=['x','y','z'].filter(a=>a!==selectedAxis);
-  $('matchAxis1Btn').textContent=others[0].toUpperCase()+'を'+selectedAxis.toUpperCase()+'に合わせる';
+  $('matchAxis1Btn').textContent=others[0].toUpperCase()+'を'+axisLabel+'に合わせる';
   $('matchAxis1Btn').dataset.targetAxis=others[0];
-  $('matchAxis2Btn').textContent=others[1].toUpperCase()+'を'+selectedAxis.toUpperCase()+'に合わせる';
+  $('matchAxis2Btn').textContent=others[1].toUpperCase()+'を'+axisLabel+'に合わせる';
   $('matchAxis2Btn').dataset.targetAxis=others[1];
 }
 
 function selectAxis(axis){
   selectedAxis=axis;
-  const resolved=getAxisPart();
-  const patch=(resolved && selectedPatch && selectedPatch.partIndex===resolved.index)
-    ? resolved.part.patches?.[selectedPatch.patchIndex] : null;
-  const side=patch ? patchAxisSide(resolved.part,patch,axis) : null;
-  if(side) axisAnchor=side==='max'?'min':'max';
   updateAxisPanel();
-  setStatus(side
-    ? axis.toUpperCase()+'軸：選択端面をMove Face編集'
-    : axis.toUpperCase()+'軸を選択・先に端面を選んでください','ok');
+  setStatus(axis.toUpperCase()+'軸を選択・そのまま寸法編集できます','ok');
 }
 
 function commitAxisDimension(axis,target){
   const resolved=getAxisPart();
   if(!resolved){setStatus('先に編集する部品を選んでください','error');return;}
-  if(!selectedPatch || selectedPatch.partIndex!==resolved.index){
-    setStatus('先に詳細面で動かす端面を選んでください','error'); return;
-  }
 
   const part=resolved.part;
-  const patch=part.patches?.[selectedPatch.patchIndex];
-  if(!patch){setStatus('選択面を取得できません','error');return;}
-
-  const side=patchAxisSide(part,patch,axis);
-  if(!side){
-    setStatus(axis.toUpperCase()+'軸の端面を選んでください','error'); return;
-  }
-
-  const requiredAnchor=side==='max'?'min':'max';
-  if(axisAnchor!==requiredAnchor){
-    setStatus('選んだ面を動かすため '+(requiredAnchor==='min'?'−':'＋')+
-      axis.toUpperCase()+'側を固定してください','error');
-    return;
-  }
-
   const current=partWorldSize(part)[axis];
   const to=Number(target);
   if(!Number.isFinite(to)||to<=0){setStatus('目標寸法を確認してください','error');return;}
   if(Math.abs(to-current)<0.0001){setStatus('現在と同じ寸法です','error');return;}
 
   const deltaWorld=to-current;
-  const deltaLocal=(side==='max'?deltaWorld:-deltaWorld)/worldAxisScale(part,axis);
-  const vertexIndices=moveFaceVertexIndices(part,patch);
-  if(!vertexIndices.length){setStatus('選択面の頂点を取得できません','error');return;}
+  const scale=worldAxisScale(part,axis);
+  const moves=[];
 
-  const stats=computePatchStats(part,patch);
+  if(axisAnchor==='min'){
+    const ids=extremePlaneVertexIndices(part,axis,'max');
+    if(!ids.length){setStatus('＋'+axis.toUpperCase()+'端を取得できません','error');return;}
+    moves.push({side:'max',vertexIndices:ids,deltaLocalMm:deltaWorld/scale});
+  }else if(axisAnchor==='max'){
+    const ids=extremePlaneVertexIndices(part,axis,'min');
+    if(!ids.length){setStatus('−'+axis.toUpperCase()+'端を取得できません','error');return;}
+    moves.push({side:'min',vertexIndices:ids,deltaLocalMm:-deltaWorld/scale});
+  }else{
+    const minIds=extremePlaneVertexIndices(part,axis,'min');
+    const maxIds=extremePlaneVertexIndices(part,axis,'max');
+    if(!minIds.length||!maxIds.length){setStatus('両端を取得できません','error');return;}
+    moves.push({side:'min',vertexIndices:minIds,deltaLocalMm:-(deltaWorld/2)/scale});
+    moves.push({side:'max',vertexIndices:maxIds,deltaLocalMm:(deltaWorld/2)/scale});
+  }
+
+  const movedCount=moves.reduce((n,m)=>n+m.vertexIndices.length,0);
+  const totalVertices=part.mesh.geometry.getAttribute('position')?.count||0;
+  if(!movedCount || movedCount>=totalVertices){
+    setStatus('端面の検出結果が不正です','error'); return;
+  }
+
   const cmd={
     type:'axisDimension',
-    mode:'move-face',
+    mode:'move-end-plane',
     partIndex:resolved.index,
-    patchIndex:selectedPatch.patchIndex,
-    vertexIndices,
     axis,
-    side,
-    anchor:requiredAnchor,
+    anchor:axisAnchor,
+    moves,
     deltaWorldMm:deltaWorld,
-    deltaLocalMm:deltaLocal,
     fromDimensionMm:current,
     toDimensionMm:to,
     feature:{
-      ...featureSignature(part,selectedPatch.patchIndex,stats),
+      partName:part.name,
+      partPath:part.path||part.name,
       axis,
-      side,
-      anchor:requiredAnchor,
-      editMode:'move-face'
+      anchor:axisAnchor,
+      editMode:'move-end-plane',
+      movedVertexCount:movedCount,
+      totalVertexCount:totalVertices
     },
-    inputMethod:'axis-card-move-face'
+    inputMethod:'axis-card-end-plane'
   };
+
   commitEdit(cmd);
   updateAxisPanel();
 }
@@ -1867,6 +1877,9 @@ function resetEdits(){
 function serializableCommand(cmd){
   const out={...cmd};
   out.vertexIndices=Array.from(cmd.vertexIndices||[]);
+  if(Array.isArray(cmd.moves)){
+    out.moves=cmd.moves.map(m=>({...m,vertexIndices:Array.from(m.vertexIndices||[])}));
+  }
   return out;
 }
 
@@ -1878,7 +1891,7 @@ async function exportNightPackage(){
   const payload={
     format:'OKA-CAD-EDIT',
     version:1,
-    app:'岡重機 STEP Editor V5.5.5 MOVE FACE',
+    app:'岡重機 STEP Editor V5.5.6 END PLANE',
     createdAt:new Date().toISOString(),
     sourceFile:originalStepName,
     unit:'mm',
@@ -2514,7 +2527,12 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
           type:cmd.type,mode:cmd.mode,axis:cmd.axis,side:cmd.side,anchor:cmd.anchor,
           deltaWorldMm:cmd.deltaWorldMm,deltaLocalMm:cmd.deltaLocalMm,
           fromDimensionMm:cmd.fromDimensionMm,toDimensionMm:cmd.toDimensionMm,
-          vertexCount:Array.from(cmd.vertexIndices||[]).length
+          vertexCount:Array.from(cmd.vertexIndices||[]).length,
+          moves:Array.isArray(cmd.moves)?cmd.moves.map(m=>({
+            side:m.side,
+            deltaLocalMm:m.deltaLocalMm,
+            vertexCount:Array.from(m.vertexIndices||[]).length
+          })):[]
         }:null
       };
     },
