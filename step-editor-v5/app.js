@@ -1854,6 +1854,12 @@ function makeAxisSign(text, cls){
   return new CSS2DObject(el);
 }
 
+function axisDirectionNames(axis){
+  if(axis==='x') return {minus:'左',plus:'右',minusFixed:'左端固定',plusFixed:'右端固定',name:'左右'};
+  if(axis==='y') return {minus:'手前',plus:'奥',minusFixed:'手前固定',plusFixed:'奥固定',name:'前後'};
+  return {minus:'下',plus:'上',minusFixed:'下端固定',plusFixed:'上端固定',name:'上下'};
+}
+
 function updateAxisSignsOnly(){
   clearGroup(axisSignGroup);
   if(!selectedAxis) return;
@@ -1872,8 +1878,10 @@ function updateAxisSignsOnly(){
   minP[selectedAxis]=box.min[selectedAxis]-pad;
   maxP[selectedAxis]=box.max[selectedAxis]+pad;
 
-  const minus=makeAxisSign('−'+selectedAxis.toUpperCase(),'minus');
-  const plus=makeAxisSign('＋'+selectedAxis.toUpperCase(),'plus');
+  const names=axisDirectionNames(selectedAxis);
+  const a=selectedAxis.toUpperCase();
+  const minus=makeAxisSign('−'+a+' '+names.minus,'minus');
+  const plus=makeAxisSign('＋'+a+' '+names.plus,'plus');
   minus.position.copy(minP);
   plus.position.copy(maxP);
   axisSignGroup.add(minus,plus);
@@ -1906,10 +1914,11 @@ function updateAxisPanel(){
 
   const dim=partWorldSize(resolved.part)[selectedAxis];
   const axisLabel=selectedAxis.toUpperCase();
-  $('anchorMinBtn').textContent='−'+axisLabel+'側固定';
-  $('anchorMaxBtn').textContent='＋'+axisLabel+'側固定';
-  $('axisEditTitle').textContent=axisLabel+'方向を編集';
-  $('axisEditBadge').textContent=axisLabel+' 選択中';
+  const dir=axisDirectionNames(selectedAxis);
+  $('anchorMinBtn').textContent=dir.minusFixed+'（−'+axisLabel+'）';
+  $('anchorMaxBtn').textContent=dir.plusFixed+'（＋'+axisLabel+'）';
+  $('axisEditTitle').textContent=axisLabel+'・'+dir.name+'方向を編集';
+  $('axisEditBadge').textContent=axisLabel+' '+dir.name;
   $('axisTargetInput').value=Number(dim.toFixed(3));
 
   setAxisControlsEnabled(true);
@@ -1918,13 +1927,13 @@ function updateAxisPanel(){
   $('anchorMaxBtn').disabled=false;
 
   let moveText='';
-  if(axisAnchor==='min') moveText='−'+axisLabel+'側を固定して、＋側の形を丸ごと移動';
-  else if(axisAnchor==='max') moveText='＋'+axisLabel+'側を固定して、−側の形を丸ごと移動';
-  else moveText='中心を保って左右の形を丸ごと移動';
+  if(axisAnchor==='min') moveText=dir.minusFixed+'、'+dir.plus+'側を動かします';
+  else if(axisAnchor==='max') moveText=dir.plusFixed+'、'+dir.minus+'側を動かします';
+  else moveText='中心固定で'+dir.minus+'・'+dir.plus+'を半分ずつ動かします';
 
   $('axisEditHelp').textContent=
-    resolved.part.name+' の '+axisLabel+'寸法 '+formatRawMm(dim)+' mm。'+moveText+
-    'し、穴・R・段差を避けた途中断面だけを伸ばします。適用後に寸法を再計測し、異常なら自動で戻します。';
+    resolved.part.name+' の '+axisLabel+'（'+dir.name+'）寸法 '+formatRawMm(dim)+' mm。'+moveText+
+    '。±表示と固定方向は必ずこの軸と同じ向きです。';
 
   const others=['x','y','z'].filter(a=>a!==selectedAxis);
   $('matchAxis1Btn').textContent=others[0].toUpperCase()+'を'+axisLabel+'に合わせる';
@@ -2171,7 +2180,7 @@ async function exportNightPackage(){
   const payload={
     format:'OKA-CAD-EDIT',
     version:1,
-    app:'岡重機 STEP Editor V5.6.1 END SHAPE',
+    app:'岡重機 STEP Editor V5.6.2 AXIS DIR',
     createdAt:new Date().toISOString(),
     sourceFile:originalStepName,
     unit:'mm',
