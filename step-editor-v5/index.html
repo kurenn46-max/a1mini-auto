@@ -6,13 +6,13 @@
   <meta name="theme-color" content="#091522">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
-  <title>岡重機 STEP Editor V5.6.4 SIZE SCOPE</title>
-  <link rel="stylesheet" href="./style.css?v=5.6.4">
+  <title>岡重機 STEP Editor V5.6.3 X SAFE + AXIS OFF</title>
+  <link rel="stylesheet" href="./style.css?v=5.6.3">
 </head>
 <body>
 <header class="topbar">
   <div>
-    <h1>岡重機 STEP Editor <small>V5.6.4 SIZE SCOPE</small></h1>
+    <h1>岡重機 STEP Editor <small>V5.6.3 X SAFE + AXIS OFF</small></h1>
     <p>X/Y/Zをタップして簡単寸法編集・測定・ナイト用データ書出し</p>
   </div>
   <button id="fitBtn" class="toolBtn" disabled>全体表示</button>
@@ -78,22 +78,11 @@
     </div>
   </section>
 
-  <section class="sizeScopePanel">
-    <div class="sizeScopeHead">全体サイズ <small>表示中モデル全体・見るだけ</small></div>
-    <div class="statsGrid">
-      <div class="stat totalStat"><span>全体 X</span><strong id="totalSizeX">—</strong><small id="totalUnitX">mm</small></div>
-      <div class="stat totalStat"><span>全体 Y</span><strong id="totalSizeY">—</strong><small id="totalUnitY">mm</small></div>
-      <div class="stat totalStat"><span>全体 Z</span><strong id="totalSizeZ">—</strong><small id="totalUnitZ">mm</small></div>
-      <div class="stat totalStat"><span>読込部品</span><strong id="partCount">—</strong><small>個</small></div>
-    </div>
-
-    <div class="sizeScopeHead selectedScope">選択部品サイズ <small>ここをタップして編集</small></div>
-    <div class="statsGrid selectedSizeGrid">
-      <button id="axisXCard" class="stat axisStat" type="button" data-axis="x" disabled><span>X・左右</span><strong id="sizeX">—</strong><small id="unitX">mm</small></button>
-      <button id="axisYCard" class="stat axisStat" type="button" data-axis="y" disabled><span>Y・前後</span><strong id="sizeY">—</strong><small id="unitY">mm</small></button>
-      <button id="axisZCard" class="stat axisStat" type="button" data-axis="z" disabled><span>Z・上下</span><strong id="sizeZ">—</strong><small id="unitZ">mm</small></button>
-    </div>
-    <div id="sizeScopeNote" class="sizeScopeNote">部品を選択すると、その部品だけの寸法を表示します。</div>
+  <section class="statsGrid">
+    <button id="axisXCard" class="stat axisStat" type="button" data-axis="x" disabled><span>X・左右</span><strong id="sizeX">—</strong><small id="unitX">mm</small></button>
+    <button id="axisYCard" class="stat axisStat" type="button" data-axis="y" disabled><span>Y・前後</span><strong id="sizeY">—</strong><small id="unitY">mm</small></button>
+    <button id="axisZCard" class="stat axisStat" type="button" data-axis="z" disabled><span>Z・上下</span><strong id="sizeZ">—</strong><small id="unitZ">mm</small></button>
+    <div class="stat"><span>部品</span><strong id="partCount">—</strong><small>個</small></div>
   </section>
 
   <section class="panel axisEditPanel">
@@ -331,6 +320,6 @@
   "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
 }}
 </script>
-<script type="module" src="./app.js?v=5.6.4"></script>
+<script type="module" src="./app.js?v=5.6.3"></script>
 </body>
 </html>
