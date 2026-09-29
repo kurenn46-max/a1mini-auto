@@ -2262,7 +2262,7 @@ async function exportNightPackage(){
   const payload={
     format:'OKA-CAD-EDIT',
     version:1,
-    app:'岡重機 STEP Editor V5.6.3 X SAFE + AXIS OFF',
+    app:'岡重機 STEP Editor V5.6.3.1 ANDROID READ FIX',
     createdAt:new Date().toISOString(),
     sourceFile:originalStepName,
     unit:'mm',
@@ -2562,6 +2562,22 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   }
 }, true);
 
+function looksLikeStepBytes(bytes){
+  if(!bytes || !bytes.length) return false;
+  const head=bytes.subarray(0,Math.min(bytes.length,8192));
+  let text='';
+  try{
+    text=new TextDecoder('utf-8',{fatal:false}).decode(head).toUpperCase();
+  }catch(_){
+    for(let i=0;i<head.length;i++) text+=String.fromCharCode(head[i]).toUpperCase();
+  }
+  return text.includes('ISO-10303-21') && (text.includes('HEADER;') || text.includes('DATA;'));
+}
+
+function isStepFilename(name=''){
+  return /\.(step|stp)$/i.test(String(name).trim());
+}
+
 input.addEventListener('click', () => {
   input.value = '';
 });
@@ -2570,28 +2586,39 @@ input.addEventListener('change', async () => {
   const file = input.files?.[0];
   if (!file) return;
 
-  const ext = file.name.toLowerCase().split('.').pop();
-  if (!['step', 'stp'].includes(ext)) {
-    setStatus('STEP / STPを選んでください', 'error');
-    $('fileInfo').textContent = file.name + ' は対象外です';
-    return;
-  }
-
-  disposeModel();
+  setStatus('ファイル確認中', 'idle');
   $('fileInfo').textContent = file.name + ' ・ ' + formatBytes(file.size);
-  setStatus('読込準備中', 'idle');
-  setLoadProgress(8, true);
-  setLoading(true, 'STEPエンジンを準備中…');
+  setLoadProgress(5, true);
+  setLoading(true, 'STEPデータか確認中…');
 
   try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const nameLooksStep=isStepFilename(file.name);
+    const contentLooksStep=looksLikeStepBytes(bytes);
+
+    if(!nameLooksStep && !contentLooksStep){
+      setLoadProgress(0,false);
+      setStatus('STEPデータではありません', 'error');
+      $('fileInfo').textContent =
+        file.name + ' ・ 中身を確認しましたがSTEP形式ではありません';
+      return;
+    }
+
+    disposeModel();
+    $('fileInfo').textContent =
+      file.name + ' ・ ' + formatBytes(file.size) +
+      (nameLooksStep ? '' : ' ・ 拡張子なしSTEPとして認識');
+    setStatus('読込準備中', 'idle');
+    setLoadProgress(12, true);
+    setLoading(true, 'STEPエンジンを準備中…');
+
     const occt = await getOcct();
     setLoadProgress(28, true);
     setLoading(true, 'STEPを解析中… 大きいファイルは少し待ってください');
     await new Promise(resolve => setTimeout(resolve, 30));
 
-    const bytes = new Uint8Array(await file.arrayBuffer());
     originalStepBytes = bytes.slice();
-    originalStepName = file.name;
+    originalStepName = file.name || 'download.step';
     editHistory = [];
     editCursor = 0;
     updateEditHistoryUI();
@@ -3001,6 +3028,11 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
       recomputeModelStats(true);
       selectPart(parts.length-1,false);
       return parts.length-1;
+    },
+    isStepName(name){ return isStepFilename(name); },
+    sniffStepText(text){
+      const bytes=new TextEncoder().encode(String(text||''));
+      return looksLikeStepBytes(bytes);
     },
     addSteppedPart(){
       const shape=new THREE.Shape();
