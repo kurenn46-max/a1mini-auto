@@ -306,7 +306,7 @@ function getVisibleBox() {
   const box = new THREE.Box3();
   let any = false;
   for (const part of parts) {
-    if (!part.mesh.visible) continue;
+    if (part.deleted || !part.mesh.visible) continue;
     part.mesh.updateMatrixWorld(true);
     box.expandByObject(part.mesh);
     any = true;
@@ -315,11 +315,12 @@ function getVisibleBox() {
 }
 
 function recomputeModelStats(fit = false) {
-  if (!parts.length) {
+  const active=parts.filter(p=>!p.deleted);
+  if (!active.length) {
     modelBox.makeEmpty();
     modelSize.set(0,0,0);
     $('sizeX').textContent='—'; $('sizeY').textContent='—'; $('sizeZ').textContent='—';
-    $('partCount').textContent='—';
+    $('partCount').textContent='0';
     setModelButtons(false);
     $('saveStlBtn').disabled = true;
     $('clearCadBtn').disabled = true;
@@ -330,9 +331,9 @@ function recomputeModelStats(fit = false) {
   modelBox.copy(box);
   modelSize = modelBox.getSize(new THREE.Vector3());
   refreshStats();
-  $('partCount').textContent = String(parts.length);
+  $('partCount').textContent = String(active.length);
   setModelButtons(true);
-  const hasCad = parts.some(p => p.source === 'cad');
+  const hasCad = active.some(p => p.source === 'cad');
   $('saveStlBtn').disabled = !hasCad;
   $('clearCadBtn').disabled = !hasCad;
   updateVisibleCount();
@@ -487,6 +488,7 @@ function renderPartsList() {
   list.innerHTML = '';
 
   parts.forEach((part, index) => {
+    if(part.deleted) return;
     part.mesh.userData.partIndex = index;
     const row = document.createElement('div');
     row.className = 'partRow';
@@ -536,8 +538,9 @@ function renderPartsList() {
 }
 
 function updateVisibleCount() {
-  const visible = parts.filter(p => p.mesh.visible).length;
-  $('visibleCount').textContent = visible + ' / ' + parts.length;
+  const active=parts.filter(p=>!p.deleted);
+  const visible = active.filter(p => p.mesh.visible).length;
+  $('visibleCount').textContent = visible + ' / ' + active.length;
 }
 
 function clearSelectionHighlight() {
@@ -571,7 +574,7 @@ function updateSelectedInfo(part) {
 }
 
 function selectPart(index, scrollIntoView = false, tapPoint = null) {
-  if (index < 0 || index >= parts.length) return;
+  if (index < 0 || index >= parts.length || parts[index]?.deleted) return;
   selectedIndex = index;
   lastTapPoint = tapPoint ? tapPoint.clone() : null;
   clearSelectionHighlight();
@@ -1695,6 +1698,13 @@ function refreshEditSelection(){
   updateEditTarget(part,selectedPatch.patchIndex,stats);
 }
 
+function resetPartPresence(){
+  for(const part of parts){
+    part.deleted=false;
+    if(part.mesh.parent!==modelGroup) modelGroup.add(part.mesh);
+  }
+}
+
 function resetGeometryToBase(){
   for(const part of parts){
     const attr=part.mesh.geometry.getAttribute('position');
@@ -1710,6 +1720,13 @@ function resetGeometryToBase(){
 function applyEditCommand(cmd){
   const part=parts[cmd.partIndex];
   if(!part) return;
+
+  if(cmd.type==='deletePart'){
+    part.deleted=true;
+    if(part.mesh.parent===modelGroup) modelGroup.remove(part.mesh);
+    return;
+  }
+
   const geometry=part.mesh.geometry;
   const attr=geometry.getAttribute('position');
   if(!attr) return;
@@ -1799,11 +1816,25 @@ function applyEditCommand(cmd){
 }
 
 function replayEdits(){
+  resetPartPresence();
   resetGeometryToBase();
   for(let i=0;i<editCursor;i++) applyEditCommand(editHistory[i]);
+
+  if(selectedIndex>=0 && parts[selectedIndex]?.deleted){
+    selectedIndex=-1;
+    selectedPatch=null;
+    lastTapPoint=null;
+    clearGroup(faceHighlightGroup);
+    clearPartDimensions();
+    $('selectedName').textContent='未選択';
+    $('selectedPath').textContent='';
+    $('selectedDims').textContent='モデルをタップ';
+    setSelectedButtons(false);
+  }
+
   recomputeModelStats(false);
   renderPartsList();
-  if(selectedIndex>=0&&parts[selectedIndex]){
+  if(selectedIndex>=0&&parts[selectedIndex]&&!parts[selectedIndex].deleted){
     renderFacesList(parts[selectedIndex],selectedIndex);
   }
   refreshEditSelection();
@@ -1822,6 +1853,9 @@ function editDescription(cmd){
   }
   if(cmd.type==='holeDiameter'){
     return '穴径 Ø'+Number(cmd.fromDiameterMm.toFixed(3))+' → Ø'+Number(cmd.toDiameterMm.toFixed(3))+' mm';
+  }
+  if(cmd.type==='deletePart'){
+    return '部品を削除：'+(cmd.feature?.partName||('Part '+(cmd.partIndex+1)));
   }
   return cmd.type;
 }
@@ -1847,7 +1881,9 @@ function updateEditHistoryUI(){
     row.className='historyItem'+(i<editCursor?' current':'');
     row.textContent=(i+1)+'. '+editDescription(cmd);
     const small=document.createElement('small');
-    small.textContent=cmd.feature?.partName+' / 詳細面 '+((cmd.feature?.patchIndex??0)+1)+(i>=editCursor?' （やり直し待ち）':'');
+    small.textContent=cmd.type==='deletePart'
+      ? (cmd.feature?.partName||'部品')+(i>=editCursor?' （やり直し待ち）':'')
+      : cmd.feature?.partName+' / 詳細面 '+((cmd.feature?.patchIndex??0)+1)+(i>=editCursor?' （やり直し待ち）':'');
     row.appendChild(small);
     list.appendChild(row);
   });
@@ -1863,10 +1899,15 @@ function commitEdit(cmd){
 
 
 function getAxisPart(){
-  if(selectedIndex>=0 && parts[selectedIndex]) return {part:parts[selectedIndex],index:selectedIndex};
-  if(parts.length===1){
-    selectPart(0,false);
-    return {part:parts[0],index:0};
+  if(selectedIndex>=0 && parts[selectedIndex] && !parts[selectedIndex].deleted){
+    return {part:parts[selectedIndex],index:selectedIndex};
+  }
+  const active=parts
+    .map((part,index)=>({part,index}))
+    .filter(x=>!x.part.deleted);
+  if(active.length===1){
+    selectPart(active[0].index,false);
+    return active[0];
   }
   return null;
 }
@@ -2304,7 +2345,7 @@ async function exportNightPackage(){
   const payload={
     format:'OKA-CAD-EDIT',
     version:1,
-    app:'岡重機 STEP Editor BASE3 + NIGHT CMD 1.0',
+    app:'岡重機 STEP Editor BASE3 + NIGHT CMD 1.1',
     createdAt:new Date().toISOString(),
     sourceFile:originalStepName,
     unit:'mm',
@@ -2340,7 +2381,7 @@ async function exportNightPackage(){
 }
 
 function saveEditedStl(){
-  if(!parts.length){setStatus('モデルがありません','error');return;}
+  if(!parts.some(p=>!p.deleted)){setStatus('モデルがありません','error');return;}
   const group=buildExportGroup();
   const exporter=new STLExporter();
   const data=exporter.parse(group,{binary:true});
@@ -2530,7 +2571,7 @@ function pickAt(clientX, clientY) {
   pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
   pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
-  const meshes = parts.filter(p => p.mesh.visible).map(p => p.mesh);
+  const meshes = parts.filter(p => !p.deleted && p.mesh.visible).map(p => p.mesh);
   return raycaster.intersectObjects(meshes, false);
 }
 
@@ -2747,7 +2788,7 @@ function saveBlob(blob, filename) {
 function buildExportGroup(filterFn = () => true) {
   const group = new THREE.Group();
   for (const part of parts) {
-    if (!part.mesh.visible || !filterFn(part)) continue;
+    if (part.deleted || !part.mesh.visible || !filterFn(part)) continue;
     const clone = part.mesh.clone();
     clone.geometry = part.mesh.geometry.clone();
     clone.material = part.mesh.material.clone();
@@ -2762,7 +2803,7 @@ function buildExportGroup(filterFn = () => true) {
 }
 
 function saveVisibleGlb() {
-  if (!parts.some(p => p.mesh.visible)) {
+  if (!parts.some(p => !p.deleted && p.mesh.visible)) {
     setStatus('保存する表示部品がありません', 'error');
     return;
   }
@@ -2911,6 +2952,76 @@ function nightRedo(){
   return {ok:true,action:'redo'};
 }
 
+function activePartEntries(){
+  return parts
+    .map((part,index)=>({part,index}))
+    .filter(x=>!x.part.deleted);
+}
+
+function nightPartTextKey(value){
+  return normalizeNightCommand(String(value||''))
+    .toUpperCase()
+    .replace(/[\s　]+/g,'')
+    .replace(/[‐‑‒–—―]/g,'-');
+}
+
+function findNightPartTarget(text){
+  const active=activePartEntries();
+  const asksCurrent=/(この|選択中|選択した|今の)(?:パーツ|部品)|(?:この)?パーツを|(?:この)?部品を/.test(text);
+  if(asksCurrent && selectedIndex>=0 && parts[selectedIndex] && !parts[selectedIndex].deleted){
+    return {part:parts[selectedIndex],index:selectedIndex};
+  }
+
+  const key=nightPartTextKey(text);
+  for(const entry of active){
+    const name=nightPartTextKey(entry.part.name);
+    const path=nightPartTextKey(entry.part.path);
+    if((name && key.includes(name)) || (path && key.includes(path))) return entry;
+
+    const short=name.replace(/^\d+[_-]?/,'');
+    if(short.length>=3 && key.includes(short)) return entry;
+  }
+
+  const aliases=[
+    {re:/土台|ベース|BASE/i,token:'BASE'},
+    {re:/ポスト|立ち上がり|POST/i,token:'POST'},
+    {re:/アーム|腕|ARM/i,token:'ARM'}
+  ];
+  for(const a of aliases){
+    if(!a.re.test(text)) continue;
+    const found=active.find(x=>nightPartTextKey(x.part.name).includes(a.token));
+    if(found) return found;
+  }
+
+  if(active.length===1 && /(パーツ|部品)/.test(text)) return active[0];
+  return null;
+}
+
+function commitNightPartDelete(index){
+  const part=parts[index];
+  if(!part || part.deleted){
+    setNightReply('そのパーツは見つからへんで。','error');
+    return {ok:false,action:'delete-part'};
+  }
+
+  if(editCursor<editHistory.length) editHistory=editHistory.slice(0,editCursor);
+  const cmd={
+    type:'deletePart',
+    partIndex:index,
+    feature:{
+      partName:part.name,
+      partPath:part.path||part.name
+    },
+    inputMethod:'night-delete-part'
+  };
+  editHistory.push(cmd);
+  editCursor=editHistory.length;
+  replayEdits();
+  setStatus('部品を削除しました：'+part.name,'ok');
+  setNightReply('「'+part.name+'」を削除したで。元に戻して、で復元できる。','ok');
+  return {ok:true,action:'delete-part',partIndex:index,partName:part.name};
+}
+
 function runNightCommand(raw){
   const text=normalizeNightCommand(raw);
   if(!text){
@@ -2924,6 +3035,15 @@ function runNightCommand(raw){
   }
   if(/元に戻|1つ戻|一つ戻|UNDO/i.test(text)){
     return nightUndo();
+  }
+
+  if(/削除|消して|消す|取り除|除去|なくして/.test(text) && /(パーツ|部品|BASE|POST|ARM|土台|ベース|ポスト|アーム|立ち上がり)/i.test(text)){
+    const target=findNightPartTarget(text);
+    if(!target){
+      setNightReply('どのパーツを消すか分からへん。先にパーツを選ぶか、部品名を入れてな。','error');
+      return {ok:false,action:'delete-part-no-target'};
+    }
+    return commitNightPartDelete(target.index);
   }
 
   if(/軸(?:を)?解除|軸なし|軸未選択|軸選択(?:を)?解除/.test(text)){
@@ -3235,6 +3355,9 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
       return {
         selectionMode,selectedAxis,selectedPatch: selectedPatch?{...selectedPatch}:null,
         selectedIndex,editCursor,
+        activePartCount:parts.filter(p=>!p.deleted).length,
+        activePartNames:parts.filter(p=>!p.deleted).map(p=>p.name),
+        deletedPartNames:parts.filter(p=>p.deleted).map(p=>p.name),
         partSize:part?{x:partWorldSize(part).x,y:partWorldSize(part).y,z:partWorldSize(part).z}:null,
         bounds,totalVertices,
         lastCommand:cmd?{
