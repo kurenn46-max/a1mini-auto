@@ -200,7 +200,7 @@ const near=(a,b,e=1e-3)=>Math.abs(a-b)<=e;
       if(!near(p0[i][k],p1[i][k],1e-4)) throw new Error('拒否後に頂点が変わっている');
     }
 
-    const status=(await page.locator('#statusText').innerText()).trim();
+    const status=(await page.locator('#status').innerText()).trim();
     if(!status.includes('安全') && !status.includes('潰れる')){
       throw new Error('危険編集の拒否理由が表示されない: '+status);
     }
