@@ -116,7 +116,7 @@ const near=(a,b,e=1e-3)=>Math.abs(a-b)<=e;
     if(!near(after.partSize.x,oldX+20)||
        !near(after.partSize.y,before.partSize.y)||
        !near(after.partSize.z,before.partSize.z)){
-      throw new Error('複雑形状のX伸長で外形寸法が不正');
+      throw new Error('複雑形状のX伸長で外形寸法が不正: '+JSON.stringify({before,after,cmd}));
     }
     if(cmd?.mode!=='cut-stretch'||cmd?.cuts?.length!==2){
       throw new Error('複雑形状が中心2断面cut-stretchになっていない');
