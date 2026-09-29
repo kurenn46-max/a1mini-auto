@@ -210,3 +210,10 @@ main{max-width:980px;margin:0 auto;padding:14px 14px 40px}
   .holeReadout{grid-template-columns:auto 1fr}
   .editInputRow{grid-template-columns:1fr}
 }
+
+.dragHud{
+  position:absolute;z-index:9;left:50%;bottom:58px;transform:translateX(-50%);
+  padding:10px 14px;border-radius:999px;background:rgba(104,70,5,.96);
+  border:1px solid #f0b84c;color:#fff;font-size:13px;font-weight:900;white-space:nowrap;
+  pointer-events:none
+}
