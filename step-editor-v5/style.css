@@ -260,9 +260,9 @@ main{max-width:980px;margin:0 auto;padding:14px 14px 40px}
 }
 
 .axisSignLabel{
-  padding:5px 9px;border-radius:999px;background:rgba(5,15,25,.94);
-  border:1px solid #5bc7f2;color:#fff;font-size:12px;font-weight:900;
-  white-space:nowrap;pointer-events:none;box-shadow:0 1px 4px rgba(0,0,0,.45)
+  padding:4px 8px;border-radius:999px;background:rgba(5,15,25,.94);
+  color:#fff;font-size:12px;font-weight:900;white-space:nowrap;
+  pointer-events:none;box-shadow:0 1px 4px rgba(0,0,0,.45)
 }
-.axisSignLabel.minus{border-color:#ff8a8a}
-.axisSignLabel.plus{border-color:#6fd6ff}
+.axisSignLabel.minus{border:1px solid #ff8585}
+.axisSignLabel.plus{border:1px solid #67cfff}
