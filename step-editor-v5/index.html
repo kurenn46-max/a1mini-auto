@@ -6,13 +6,13 @@
   <meta name="theme-color" content="#091522">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
-  <title>岡重機 STEP Editor V5.1 FIX</title>
-  <link rel="stylesheet" href="./style.css?v=5.1.1">
+  <title>岡重機 STEP Editor V5.2 TOUCH</title>
+  <link rel="stylesheet" href="./style.css?v=5.2.0">
 </head>
 <body>
 <header class="topbar">
   <div>
-    <h1>岡重機 STEP Editor <small>V5.1 FIX</small></h1>
+    <h1>岡重機 STEP Editor <small>V5.2 TOUCH</small></h1>
     <p>見る・測る・選ぶ・簡単編集・ナイト用データ書出し</p>
   </div>
   <button id="fitBtn" class="toolBtn" disabled>全体表示</button>
@@ -40,6 +40,7 @@
       <div id="loadingText">読み込み中…</div>
     </div>
     <div id="measureHud" class="measureHud hidden">測定: 1点目をタップ</div>
+    <div id="dragHud" class="dragHud hidden">面をドラッグ</div>
     <div id="tapHint" class="tapHint">部品モード：タップで外形寸法</div>
   </section>
 
@@ -147,7 +148,7 @@
     </div>
 
     <div id="editTargetInfo" class="editTargetInfo">
-      「🔎 詳細面」に切り替えて、伸ばしたい面や穴の内周をタップしてください。
+      「🔎 詳細面」に切り替えて面をタップ。黄色になった面をもう一度つかんで指でドラッグすると伸び縮みします。
     </div>
 
     <div class="editBlock">
@@ -169,7 +170,7 @@
         </label>
         <button id="applyPushPullBtn" class="editPrimary" disabled>この面を変更</button>
       </div>
-      <p class="editNote">＋は面の法線方向、−は反対方向。端面を選べば長さ変更として使えます。</p>
+      <p class="editNote">黄色の面は指で直接ドラッグできます。＋は面の法線方向、−は反対方向。端面を選べば長さ変更として使えます。</p>
     </div>
 
     <div class="editBlock">
@@ -263,6 +264,6 @@
   "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
 }}
 </script>
-<script type="module" src="./app.js?v=5.1.2"></script>
+<script type="module" src="./app.js?v=5.2.0"></script>
 </body>
 </html>
