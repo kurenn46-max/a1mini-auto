@@ -1266,6 +1266,142 @@ function moveFaceVertexIndices(part, patch) {
   return expandCoincidentVertexIndices(part,uniquePatchVertexIndices(part,patch));
 }
 
+
+function axisCoord(attr,index,axis){
+  return axis==='x'?attr.getX(index):(axis==='y'?attr.getY(index):attr.getZ(index));
+}
+
+function analyzeCutCandidates(part,axis,tMin,tMax,targetT){
+  const geometry=part?.mesh?.geometry;
+  const attr=geometry?.getAttribute('position');
+  if(!geometry||!attr||!['x','y','z'].includes(axis)) return null;
+
+  geometry.computeBoundingBox();
+  const box=geometry.boundingBox;
+  if(!box||box.isEmpty()) return null;
+
+  const lo=box.min[axis], hi=box.max[axis], extent=hi-lo;
+  if(!(extent>1e-9)) return null;
+
+  const triCount=triangleCountFor(geometry);
+  const data=new Array(triCount);
+  for(let t=0;t<triCount;t++){
+    let mn=Infinity,mx=-Infinity;
+    for(let c=0;c<3;c++){
+      const vi=triangleVertexIndex(geometry,t,c);
+      const v=axisCoord(attr,vi,axis);
+      mn=Math.min(mn,v); mx=Math.max(mx,v);
+    }
+    const n=triangleNormal(geometry,t,new THREE.Vector3());
+    data[t]={mn,mx,na:Math.abs(n[axis])};
+  }
+
+  let best=null;
+  const steps=100;
+  const eps=Math.max(extent*1e-9,1e-8);
+
+  for(let i=0;i<=steps;i++){
+    const tt=tMin+(tMax-tMin)*(i/steps);
+    const q=lo+extent*tt;
+    let crossCount=0,badCount=0,maxAxisNormal=0;
+
+    for(const d of data){
+      if(d.mn < q-eps && d.mx > q+eps){
+        crossCount++;
+        maxAxisNormal=Math.max(maxAxisNormal,d.na);
+        if(d.na>0.06) badCount++;
+      }
+    }
+    if(!crossCount) continue;
+
+    // A good stretch plane only crosses faces running parallel to the edit axis.
+    // Strongly reject holes, R, steps, or end walls that would be distorted.
+    const score=
+      badCount*1000000 +
+      maxAxisNormal*10000 +
+      crossCount*0.001 +
+      Math.abs(tt-targetT);
+
+    const candidate={q,t:tt,crossCount,badCount,maxAxisNormal,score};
+    if(!best || candidate.score<best.score) best=candidate;
+  }
+
+  if(!best || best.badCount>0 || best.maxAxisNormal>0.06) return null;
+  return best;
+}
+
+function planCutStretch(part,axis,anchor,deltaWorld){
+  const scale=worldAxisScale(part,axis);
+  const deltaLocal=deltaWorld/scale;
+  let cuts=[];
+
+  if(anchor==='min'){
+    const c=analyzeCutCandidates(part,axis,0.45,0.78,0.62);
+    if(!c) return null;
+    cuts=[{side:'max',q:c.q,deltaLocal,quality:c}];
+  }else if(anchor==='max'){
+    const c=analyzeCutCandidates(part,axis,0.22,0.55,0.38);
+    if(!c) return null;
+    cuts=[{side:'min',q:c.q,deltaLocal:-deltaLocal,quality:c}];
+  }else{
+    const left=analyzeCutCandidates(part,axis,0.15,0.45,0.35);
+    const right=analyzeCutCandidates(part,axis,0.55,0.85,0.65);
+    if(!left||!right||left.q>=right.q) return null;
+    cuts=[
+      {side:'min',q:left.q,deltaLocal:-deltaLocal/2,quality:left},
+      {side:'max',q:right.q,deltaLocal:deltaLocal/2,quality:right}
+    ];
+  }
+
+  return {cuts,deltaLocal};
+}
+
+function simulateCutStretch(part,axis,cuts){
+  const geometry=part.mesh.geometry;
+  const attr=geometry.getAttribute('position');
+  const count=attr.count;
+  const coords=new Float64Array(count);
+  for(let i=0;i<count;i++) coords[i]=axisCoord(attr,i,axis);
+
+  const next=new Float64Array(coords);
+  const eps=1e-9;
+  for(let i=0;i<count;i++){
+    let d=0;
+    const v=coords[i];
+    for(const cut of cuts){
+      if(cut.side==='max' && v>cut.q+eps) d+=cut.deltaLocal;
+      if(cut.side==='min' && v<cut.q-eps) d+=cut.deltaLocal;
+    }
+    next[i]=v+d;
+  }
+
+  // Reject edits that collapse or invert any triangle.
+  const triCount=triangleCountFor(geometry);
+  for(let t=0;t<triCount;t++){
+    const ids=[0,1,2].map(c=>triangleVertexIndex(geometry,t,c));
+    const before=ids.map(i=>{
+      const p=new THREE.Vector3(attr.getX(i),attr.getY(i),attr.getZ(i));
+      return p;
+    });
+    const after=ids.map((i,k)=>{
+      const p=before[k].clone();
+      p[axis]=next[i];
+      return p;
+    });
+
+    const nb=new THREE.Vector3().subVectors(before[1],before[0])
+      .cross(new THREE.Vector3().subVectors(before[2],before[0]));
+    const na=new THREE.Vector3().subVectors(after[1],after[0])
+      .cross(new THREE.Vector3().subVectors(after[2],after[0]));
+    const lb=nb.length(), la=na.length();
+    if(!(la>1e-10) || !(lb>1e-10)) return null;
+    nb.multiplyScalar(1/lb); na.multiplyScalar(1/la);
+    if(nb.dot(na)<0.98) return null;
+  }
+
+  return next;
+}
+
 function extremePlaneVertexIndices(part, axis, side) {
   const geometry=part?.mesh?.geometry;
   const attr=geometry?.getAttribute('position');
@@ -1473,7 +1609,23 @@ function applyEditCommand(cmd){
       );
     }
   }else if(cmd.type==='axisDimension'){
-    if(cmd.mode==='move-end-plane' && Array.isArray(cmd.moves) && cmd.moves.length){
+    if(cmd.mode==='cut-stretch' && Array.isArray(cmd.cuts) && cmd.cuts.length){
+      const original=new Float64Array(attr.count);
+      for(let i=0;i<attr.count;i++) original[i]=axisCoord(attr,i,cmd.axis);
+
+      for(let i=0;i<attr.count;i++){
+        let d=0;
+        const v=original[i];
+        for(const cut of cmd.cuts){
+          if(cut.side==='max' && v>cut.q+1e-9) d+=Number(cut.deltaLocal)||0;
+          if(cut.side==='min' && v<cut.q-1e-9) d+=Number(cut.deltaLocal)||0;
+        }
+        const nv=v+d;
+        if(cmd.axis==='x') attr.setX(i,nv);
+        else if(cmd.axis==='y') attr.setY(i,nv);
+        else attr.setZ(i,nv);
+      }
+    }else if(cmd.mode==='move-end-plane' && Array.isArray(cmd.moves) && cmd.moves.length){
       for(const move of cmd.moves){
         const delta=Number(move.deltaLocalMm)||0;
         const ids=Array.from(move.vertexIndices||[]);
@@ -1550,7 +1702,7 @@ function editDescription(cmd){
     return '面を '+sign+Number(cmd.deltaMm.toFixed(3))+' mm 移動';
   }
   if(cmd.type==='axisDimension'){
-    const prefix=cmd.mode==='move-end-plane'?'端面移動 ':(cmd.mode==='move-face'?'面移動 ':'');
+    const prefix=cmd.mode==='cut-stretch'?'断面ストレッチ ':(cmd.mode==='move-end-plane'?'端面移動 ':(cmd.mode==='move-face'?'面移動 ':''));
     return prefix+cmd.axis.toUpperCase()+'寸法 '+Number(cmd.fromDimensionMm.toFixed(3))+' → '+Number(cmd.toDimensionMm.toFixed(3))+' mm';
   }
   if(cmd.type==='holeDiameter'){
@@ -1693,12 +1845,13 @@ function updateAxisPanel(){
   $('anchorMaxBtn').disabled=false;
 
   let moveText='';
-  if(axisAnchor==='min') moveText='＋'+axisLabel+'端だけ動かします';
-  else if(axisAnchor==='max') moveText='−'+axisLabel+'端だけ動かします';
-  else moveText='両端を半分ずつ動かします';
+  if(axisAnchor==='min') moveText='−'+axisLabel+'側を固定して、＋側の形を丸ごと移動';
+  else if(axisAnchor==='max') moveText='＋'+axisLabel+'側を固定して、−側の形を丸ごと移動';
+  else moveText='中心を保って左右の形を丸ごと移動';
 
   $('axisEditHelp').textContent=
-    resolved.part.name+' の '+axisLabel+'寸法 '+formatRawMm(dim)+' mm。'+moveText+'。詳細面の選択は不要です。';
+    resolved.part.name+' の '+axisLabel+'寸法 '+formatRawMm(dim)+' mm。'+moveText+
+    'し、穴・R・段差を避けた途中断面だけを伸ばします。';
 
   const others=['x','y','z'].filter(a=>a!==selectedAxis);
   $('matchAxis1Btn').textContent=others[0].toUpperCase()+'を'+axisLabel+'に合わせる';
@@ -1720,49 +1873,37 @@ function commitAxisDimension(axis,target){
   const part=resolved.part;
   const current=partWorldSize(part)[axis];
   const to=Number(target);
-  if(!Number.isFinite(to)||to<=0){setStatus('目標寸法を確認してください','error');return;}
-  if(Math.abs(to-current)<0.0001){setStatus('現在と同じ寸法です','error');return;}
+  if(!Number.isFinite(to)||to<=0){
+    setStatus('目標寸法を確認してください','error'); return;
+  }
+  if(Math.abs(to-current)<0.0001){
+    setStatus('現在と同じ寸法です','error'); return;
+  }
 
   const deltaWorld=to-current;
-  const scale=worldAxisScale(part,axis);
-  const moves=[];
-
-  if(axisAnchor==='min'){
-    const ids=extremePlaneVertexIndices(part,axis,'max');
-    if(!ids.length){setStatus('＋'+axis.toUpperCase()+'端を取得できません','error');return;}
-    moves.push({side:'max',vertexIndices:ids,deltaLocalMm:deltaWorld/scale});
-  }else if(axisAnchor==='max'){
-    const ids=extremePlaneVertexIndices(part,axis,'min');
-    if(!ids.length){setStatus('−'+axis.toUpperCase()+'端を取得できません','error');return;}
-    moves.push({side:'min',vertexIndices:ids,deltaLocalMm:-deltaWorld/scale});
-  }else{
-    const minIds=extremePlaneVertexIndices(part,axis,'min');
-    const maxIds=extremePlaneVertexIndices(part,axis,'max');
-    if(!minIds.length||!maxIds.length){setStatus('両端を取得できません','error');return;}
-    moves.push({side:'min',vertexIndices:minIds,deltaLocalMm:-(deltaWorld/2)/scale});
-    moves.push({side:'max',vertexIndices:maxIds,deltaLocalMm:(deltaWorld/2)/scale});
+  const plan=planCutStretch(part,axis,axisAnchor,deltaWorld);
+  if(!plan){
+    setStatus('穴・R・段差を避けた安全な伸縮断面が見つかりません','error');
+    return;
   }
 
-  const movedCount=moves.reduce((n,m)=>n+m.vertexIndices.length,0);
-  const totalVertices=part.mesh.geometry.getAttribute('position')?.count||0;
-  if(!movedCount){
-    setStatus('端面の検出結果が不正です','error'); return;
-  }
-  if(moves.length===2){
-    const a=new Set(moves[0].vertexIndices);
-    const overlap=moves[1].vertexIndices.filter(i=>a.has(i)).length;
-    if(overlap){
-      setStatus('両端の頂点判定が重なっています','error'); return;
-    }
+  const preview=simulateCutStretch(part,axis,plan.cuts);
+  if(!preview){
+    setStatus('この変更量では面が潰れる可能性があります。変更量を小さくしてください','error');
+    return;
   }
 
   const cmd={
     type:'axisDimension',
-    mode:'move-end-plane',
+    mode:'cut-stretch',
     partIndex:resolved.index,
     axis,
     anchor:axisAnchor,
-    moves,
+    cuts:plan.cuts.map(c=>({
+      side:c.side,
+      q:c.q,
+      deltaLocal:c.deltaLocal
+    })),
     deltaWorldMm:deltaWorld,
     fromDimensionMm:current,
     toDimensionMm:to,
@@ -1771,11 +1912,16 @@ function commitAxisDimension(axis,target){
       partPath:part.path||part.name,
       axis,
       anchor:axisAnchor,
-      editMode:'move-end-plane',
-      movedVertexCount:movedCount,
-      totalVertexCount:totalVertices
+      editMode:'cut-stretch',
+      cuts:plan.cuts.map(c=>({
+        side:c.side,
+        cutMm:Number(c.q.toFixed(6)),
+        deltaMm:Number(c.deltaLocal.toFixed(6)),
+        crossTriangles:c.quality?.crossCount||0,
+        maxAxisNormal:Number((c.quality?.maxAxisNormal||0).toFixed(6))
+      }))
     },
-    inputMethod:'axis-card-end-plane'
+    inputMethod:'axis-card-cut-stretch'
   };
 
   commitEdit(cmd);
@@ -1887,6 +2033,9 @@ function serializableCommand(cmd){
   if(Array.isArray(cmd.moves)){
     out.moves=cmd.moves.map(m=>({...m,vertexIndices:Array.from(m.vertexIndices||[])}));
   }
+  if(Array.isArray(cmd.cuts)){
+    out.cuts=cmd.cuts.map(c=>({...c}));
+  }
   return out;
 }
 
@@ -1898,7 +2047,7 @@ async function exportNightPackage(){
   const payload={
     format:'OKA-CAD-EDIT',
     version:1,
-    app:'岡重機 STEP Editor V5.5.6 END PLANE',
+    app:'岡重機 STEP Editor V5.5.8 CUT STRETCH',
     createdAt:new Date().toISOString(),
     sourceFile:originalStepName,
     unit:'mm',
@@ -2539,6 +2688,9 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
             side:m.side,
             deltaLocalMm:m.deltaLocalMm,
             vertexCount:Array.from(m.vertexIndices||[]).length
+          })):[],
+          cuts:Array.isArray(cmd.cuts)?cmd.cuts.map(c=>({
+            side:c.side,q:c.q,deltaLocal:c.deltaLocal
           })):[]
         }:null
       };
