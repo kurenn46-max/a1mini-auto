@@ -64,7 +64,7 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
 </header>
 
 <div id="viewerWrap">
-  <div id="empty"><div class="box"><div class="big">📐</div><b>STEPを開く</b><div class="hint" style="margin-top:7px">部品ごとの表示・外形寸法・2点測定<br>ファイルは端末内だけで処理します</div><label for="fileInput" id="bigOpenBtn" style="display:block;cursor:pointer;pointer-events:auto;margin-top:16px;border:0;border-radius:14px;background:#f59e0b;color:#111827;font-weight:800;font-size:16px;padding:13px 18px;width:100%">📥 ダウンロードしたSTEPを開く</label></div></div>
+  <div id="empty"><div class="box"><div class="big">📐</div><b>STEPを開く</b><div class="hint" style="margin-top:7px">部品ごとの表示・外形寸法・2点測定<br>ファイルは端末内だけで処理します</div><div id="bigOpenWrap" style="position:relative;margin-top:16px;border-radius:14px;background:#f59e0b;color:#111827;font-weight:800;font-size:16px;padding:13px 18px;width:100%;overflow:hidden">📥 ダウンロードしたSTEPを開く<input id="bigFileInput" type="file" style="position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;z-index:99"></div></div></div>
   <div id="loading"><div><div class="spinner"></div><div style="margin-top:12px">3Dデータを読み込み中…</div></div></div>
   <div id="toast"></div>
   <div id="info">
@@ -295,7 +295,7 @@ async function openFile(file){
     empty.style.display="flex";
     overallDims.textContent="X — × Y — × Z —";
     flash("読み込み失敗: "+(e.message||e));
-  }finally{loading.classList.remove("show");fileInput.value="";}
+  }finally{loading.classList.remove("show");fileInput.value=""; if(bigFileInput) bigFileInput.value="";}
 }
 function buildPartList(){
   partsEl.innerHTML="";
@@ -400,6 +400,7 @@ renderer.domElement.addEventListener("pointerup",e=>{
 
 document.getElementById("openBtn").onclick=()=>fileInput.click();
 fileInput.onchange=()=>openFile(fileInput.files[0]);
+const bigFileInput=document.getElementById("bigFileInput"); if(bigFileInput) bigFileInput.onchange=()=>openFile(bigFileInput.files[0]);
 document.getElementById("partsBtn").onclick=()=>drawer.classList.add("open");
 document.getElementById("closeDrawer").onclick=()=>drawer.classList.remove("open");
 document.getElementById("fitBtn").onclick=()=>fitCamera();
