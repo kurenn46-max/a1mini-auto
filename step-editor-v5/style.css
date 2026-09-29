@@ -217,3 +217,16 @@ main{max-width:980px;margin:0 auto;padding:14px 14px 40px}
   border:1px solid #f0b84c;color:#fff;font-size:13px;font-weight:900;white-space:nowrap;
   pointer-events:none
 }
+
+.confirmEditRow{display:grid;grid-template-columns:1.35fr 1fr;gap:8px;margin-top:10px}
+.confirmEditRow button{min-height:50px;border-radius:12px;font-weight:900;font-size:13px}
+.confirmFaceBtn{border:1px solid #4bd69a;background:#155b42;color:#fff}
+.dragAssistBtn{border:1px solid #35506a;background:#122338;color:#a8bbcd}
+.dragAssistBtn.active{border-color:#f0b84c;background:#4d3910;color:#fff}
+.editLocked{opacity:.48;filter:saturate(.65)}
+.quickNudge button{min-height:48px;font-size:13px}
+.editInputRow input{font-size:18px;min-height:48px}
+.editInputRow .editPrimary{min-height:48px}
+@media(max-width:520px){
+  .confirmEditRow{grid-template-columns:1fr}
+}
