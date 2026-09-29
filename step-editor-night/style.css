@@ -266,3 +266,34 @@ main{max-width:980px;margin:0 auto;padding:14px 14px 40px}
 }
 .axisSignLabel.minus{border:1px solid #ff8585}
 .axisSignLabel.plus{border:1px solid #67cfff}
+
+
+/* ===== Night prompt / Base 3 extension ===== */
+.nightPromptPanel{border-color:#356f5b;background:linear-gradient(180deg,#0b1d1a,#0a1721)}
+.nightLocalPill{border-color:#3ca77d!important;color:#8ee0ba!important}
+.nightPromptHint{margin-top:10px;color:#a9c7bb;font-size:11px;line-height:1.55}
+.nightPromptInput{
+  width:100%;box-sizing:border-box;margin-top:10px;resize:vertical;min-height:78px;
+  padding:12px;border:1px solid #376956;border-radius:12px;background:#06120f;
+  color:#eefaf5;font:inherit;font-size:16px;line-height:1.5;outline:none
+}
+.nightPromptInput:focus{border-color:#55d09a;box-shadow:0 0 0 2px rgba(85,208,154,.15)}
+.nightPromptActions{display:grid;grid-template-columns:1.6fr .7fr;gap:8px;margin-top:9px}
+.nightPromptActions button,.nightExamples button{
+  min-height:46px;border:1px solid #315247;border-radius:11px;background:#122a25;
+  color:#edf8f4;font-weight:900
+}
+.nightPromptActions .nightRunBtn{background:#166b4d;border-color:#51c894}
+.nightExamples{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px}
+.nightExamples button{min-height:38px;padding:6px 4px;font-size:10px}
+.nightReply{
+  margin-top:10px;padding:10px 11px;border-radius:11px;border:1px solid #2b4b42;
+  background:#07130f;color:#bcd3ca;font-size:12px;line-height:1.55
+}
+.nightReply.ok{border-color:#3c9d73;background:#0b2a20;color:#d9fff0}
+.nightReply.error{border-color:#a64b5f;background:#2b0d15;color:#ffdce3}
+.nightReply.idle{color:#a4b9b1}
+@media(max-width:520px){
+  .nightExamples{grid-template-columns:1fr 1fr}
+  .nightPromptActions{grid-template-columns:1fr .55fr}
+}
