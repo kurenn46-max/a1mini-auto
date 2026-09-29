@@ -6,13 +6,13 @@
   <meta name="theme-color" content="#091522">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
-  <title>岡重機 STEP Editor V5.6.1 END SHAPE</title>
-  <link rel="stylesheet" href="./style.css?v=5.6.1">
+  <title>岡重機 STEP Editor V5.6.2 AXIS DIR</title>
+  <link rel="stylesheet" href="./style.css?v=5.6.2">
 </head>
 <body>
 <header class="topbar">
   <div>
-    <h1>岡重機 STEP Editor <small>V5.6.1 END SHAPE</small></h1>
+    <h1>岡重機 STEP Editor <small>V5.6.2 AXIS DIR</small></h1>
     <p>X/Y/Zをタップして簡単寸法編集・測定・ナイト用データ書出し</p>
   </div>
   <button id="fitBtn" class="toolBtn" disabled>全体表示</button>
@@ -79,9 +79,9 @@
   </section>
 
   <section class="statsGrid">
-    <button id="axisXCard" class="stat axisStat" type="button" data-axis="x" disabled><span>X</span><strong id="sizeX">—</strong><small id="unitX">mm</small></button>
-    <button id="axisYCard" class="stat axisStat" type="button" data-axis="y" disabled><span>Y</span><strong id="sizeY">—</strong><small id="unitY">mm</small></button>
-    <button id="axisZCard" class="stat axisStat" type="button" data-axis="z" disabled><span>Z</span><strong id="sizeZ">—</strong><small id="unitZ">mm</small></button>
+    <button id="axisXCard" class="stat axisStat" type="button" data-axis="x" disabled><span>X・左右</span><strong id="sizeX">—</strong><small id="unitX">mm</small></button>
+    <button id="axisYCard" class="stat axisStat" type="button" data-axis="y" disabled><span>Y・前後</span><strong id="sizeY">—</strong><small id="unitY">mm</small></button>
+    <button id="axisZCard" class="stat axisStat" type="button" data-axis="z" disabled><span>Z・上下</span><strong id="sizeZ">—</strong><small id="unitZ">mm</small></button>
     <div class="stat"><span>部品</span><strong id="partCount">—</strong><small>個</small></div>
   </section>
 
@@ -320,6 +320,6 @@
   "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
 }}
 </script>
-<script type="module" src="./app.js?v=5.6.1"></script>
+<script type="module" src="./app.js?v=5.6.2"></script>
 </body>
 </html>
