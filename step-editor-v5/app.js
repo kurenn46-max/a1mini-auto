@@ -1118,7 +1118,7 @@ function renderFacesList(part, partIndex) {
     small.textContent=
       'X '+formatLengthValue(item.stats.size.x)+' / Y '+formatLengthValue(item.stats.size.y)+
       ' / Z '+formatLengthValue(item.stats.size.z)+' '+unitName()+
-      ' ・ 面積 '+formatLengthValue(item.stats.area)+(unitMode==='m'?' m²':' mm²');
+      ' ・ 面積 '+formatArea(item.stats.area);
     info.append(strong,small);
 
     const btn=document.createElement('button');
