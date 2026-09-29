@@ -1745,8 +1745,15 @@ function commitAxisDimension(axis,target){
 
   const movedCount=moves.reduce((n,m)=>n+m.vertexIndices.length,0);
   const totalVertices=part.mesh.geometry.getAttribute('position')?.count||0;
-  if(!movedCount || movedCount>=totalVertices){
+  if(!movedCount){
     setStatus('端面の検出結果が不正です','error'); return;
+  }
+  if(moves.length===2){
+    const a=new Set(moves[0].vertexIndices);
+    const overlap=moves[1].vertexIndices.filter(i=>a.has(i)).length;
+    if(overlap){
+      setStatus('両端の頂点判定が重なっています','error'); return;
+    }
   }
 
   const cmd={
