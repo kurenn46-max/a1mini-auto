@@ -158,6 +158,15 @@ function formatLength(mm) {
   return formatLengthValue(mm) + ' ' + unitName();
 }
 
+function formatArea(mm2) {
+  if (!Number.isFinite(mm2)) return '—';
+  if (unitMode === 'm') {
+    const m2 = mm2 / 1000000;
+    return (Math.abs(m2) >= 10 ? m2.toFixed(3) : m2.toFixed(5)) + ' m²';
+  }
+  return (Math.abs(mm2) >= 1000 ? mm2.toFixed(1) : mm2.toFixed(2)) + ' mm²';
+}
+
 function formatBytes(n) {
   if (!Number.isFinite(n)) return '';
   if (n < 1024) return n + ' B';
@@ -1009,11 +1018,11 @@ function updateFaceReadout(part, patchIndex, stats) {
     'Y '+formatLength(stats.size.y)+'<br>'+
     'Z '+formatLength(stats.size.z);
   $('tapPoint').innerHTML =
-    stats.type+' ・ 面積 '+formatLengthValue(stats.area)+(unitMode==='m'?' m²':' mm²')+
+    stats.type+' ・ 面積 '+formatArea(stats.area)+
     ' ・ '+stats.triangles+' triangles';
   $('faceInfo').innerHTML =
     '<strong>詳細面 '+(patchIndex+1)+'</strong>　'+stats.type+
-    '　面積 '+formatLengthValue(stats.area)+(unitMode==='m'?' m²':' mm²')+
+    '　面積 '+formatArea(stats.area)+
     '<br>X '+formatLength(stats.size.x)+' / Y '+formatLength(stats.size.y)+' / Z '+formatLength(stats.size.z);
 }
 
