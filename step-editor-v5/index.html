@@ -6,13 +6,13 @@
   <meta name="theme-color" content="#091522">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
-  <title>岡重機 STEP Editor V5.6.3 X SAFE + AXIS OFF</title>
-  <link rel="stylesheet" href="./style.css?v=5.6.3">
+  <title>岡重機 STEP Editor V5.6.3.1 ANDROID READ FIX</title>
+  <link rel="stylesheet" href="./style.css?v=5.6.3.1">
 </head>
 <body>
 <header class="topbar">
   <div>
-    <h1>岡重機 STEP Editor <small>V5.6.3 X SAFE + AXIS OFF</small></h1>
+    <h1>岡重機 STEP Editor <small>V5.6.3.1 ANDROID READ FIX</small></h1>
     <p>X/Y/Zをタップして簡単寸法編集・測定・ナイト用データ書出し</p>
   </div>
   <button id="fitBtn" class="toolBtn" disabled>全体表示</button>
@@ -24,9 +24,9 @@
       <span class="openIcon">📂</span>
       <span>
         <strong>STEPファイルを選ぶ</strong>
-        <small>Androidの「Files」から .step / .stp を選択</small>
+        <small>Androidの「Files」からSTEPデータを選択（拡張子なしも中身で判定）</small>
       </span>
-      <input id="stepInput" type="file" accept=".step,.stp,model/step,application/step">
+      <input id="stepInput" type="file">
     </label>
     <div id="fileInfo" class="fileInfo">まだファイルを選んでいません</div>
     <div id="loadProgress" class="loadProgress hidden"><div id="loadProgressBar"></div></div>
@@ -320,6 +320,6 @@
   "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
 }}
 </script>
-<script type="module" src="./app.js?v=5.6.3"></script>
+<script type="module" src="./app.js?v=5.6.3.1"></script>
 </body>
 </html>
