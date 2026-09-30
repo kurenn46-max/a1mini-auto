@@ -141,8 +141,54 @@ const near=(a,b,e=1e-3)=>Math.abs(a-b)<=e;
   }
   r=await night('元に戻して');
 
+  // Round-bar dedicated edit: preserve circular diameter and edit length with fixed side.
+  await page.locator('.partRow[data-index="1"] .selectBtn').click();
+  let rb=await page.evaluate(()=>window.__okaTest.state());
+  if(!rb.roundBar || rb.roundBar.axis!=='z' || !near(rb.roundBar.diameter,20) || !near(rb.roundBar.length,20)){
+    throw new Error('CAD円柱を丸棒として認識できない: '+JSON.stringify(rb.roundBar));
+  }
+
+  r=await night('直径10mm、長さ60mm、下固定');
+  if(!r.state.roundBar || !near(r.state.roundBar.diameter,10,0.02) || !near(r.state.roundBar.length,60,0.02)){
+    throw new Error('丸棒 Ø10×60 が反映されない: '+JSON.stringify(r.state.roundBar));
+  }
+  if(!near(r.state.partSize.x,10,0.02)||!near(r.state.partSize.y,10,0.02)||!near(r.state.partSize.z,60,0.02)){
+    throw new Error('丸棒編集で真円外形を維持できない: '+JSON.stringify(r.state.partSize));
+  }
+  if(r.state.lastCommand?.type!=='roundBar' || r.state.lastCommand?.anchor!=='min'){
+    throw new Error('丸棒専用コマンド/固定側が記録されていない');
+  }
+
+  r=await night('元に戻して');
+  if(!r.state.roundBar || !near(r.state.roundBar.diameter,20,0.02)||!near(r.state.roundBar.length,20,0.02)){
+    throw new Error('丸棒編集Undoで元寸法へ戻らない');
+  }
+
+  r=await night('長さを10mm伸ばして、下固定');
+  if(!near(r.state.roundBar.length,30,0.02)||!near(r.state.roundBar.diameter,20,0.02)){
+    throw new Error('丸棒 長さ+10 が正しくない: '+JSON.stringify(r.state.roundBar));
+  }
+  r=await night('直径を2mm細く');
+  if(!near(r.state.roundBar.diameter,18,0.02)||!near(r.state.roundBar.length,30,0.02)){
+    throw new Error('丸棒 直径-2 が正しくない: '+JSON.stringify(r.state.roundBar));
+  }
+
+  // Unmarked imported-like cylinder: shape detector must recognize a straight round bar.
+  await page.evaluate(()=>window.__okaTest.addUnmarkedCylinder(12,36));
+  rb=await page.evaluate(()=>window.__okaTest.state());
+  if(!rb.roundBar || rb.roundBar.confidence!=='high' || rb.roundBar.axis!=='z'){
+    throw new Error('形状由来の丸棒自動認識に失敗: '+JSON.stringify(rb.roundBar));
+  }
+  r=await night('直径16mm、長さ48mm、中心固定');
+  if(!r.state.roundBar || !near(r.state.roundBar.diameter,16,0.03)||!near(r.state.roundBar.length,48,0.03)){
+    throw new Error('自動認識丸棒の編集に失敗: '+JSON.stringify(r.state.roundBar));
+  }
+  if(!near(r.state.partSize.x,16,0.03)||!near(r.state.partSize.y,16,0.03)||!near(r.state.partSize.z,48,0.03)){
+    throw new Error('自動認識丸棒が真円/長さを維持していない: '+JSON.stringify(r.state.partSize));
+  }
+
   if(errors.length) throw new Error(errors.join('\n'));
-  console.log('AI_V2_PASS: prompt resize / delete / undo / dimension clarity');
+  console.log('AI_V2_PASS: base edits / delete / dimensions / round-bar diameter / length / undo / auto-detect');
   await browser.close();
 })().catch(err=>{
   console.error(err);
