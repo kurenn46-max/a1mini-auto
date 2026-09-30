@@ -263,7 +263,7 @@
         </label>
         <button id="applyPushPullBtn" class="editPrimary" disabled>この面を変更</button>
       </div>
-      <p class="editNote">基本は数値編集です。＋は面の法線方向、−は反対方向。端面なら部品の長さ変更として使えます。</p>
+      <p class="editNote">平面専用。＋は面の法線方向、−は反対方向。穴やRなどの曲面は誤変形防止のため押し引きできません。</p>
     </div>
 
     <div class="editBlock">
@@ -281,7 +281,7 @@
         </label>
         <button id="applyHoleBtn" class="editPrimary" disabled>穴径を変更</button>
       </div>
-      <p class="editNote">ここでは形状プレビューを変更し、正確な再構築用の指示データも同時に記録します。</p>
+      <p class="editNote">真円の円筒面だけを穴として認識。段付き穴の位置移動は同軸部をまとめて扱います。</p>
     </div>
 
     <div class="exportGrid">
