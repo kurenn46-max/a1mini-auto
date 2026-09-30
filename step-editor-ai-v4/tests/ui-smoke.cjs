@@ -232,8 +232,60 @@ const near=(a,b,e=1e-3)=>Math.abs(a-b)<=e;
   if(r.state.editCursor!==holeCursor2) throw new Error('外周を越える穴移動を実行してしまった');
   if(!r.reply.includes('外周')) throw new Error('外周安全拒否が不明: '+r.reply);
 
+  // Finger/pointer drag: selected through-hole should move in-plane, keep diameter, and record holeMove.
+  await page.click('#confirmEditFaceBtn');
+  await page.click('#touchDragToggleBtn');
+  const beforeDrag=await page.evaluate(()=>window.__okaTest.selectedHoleState());
+  const dragGesture=await page.evaluate(()=>window.__okaTest.holeDragGesture({x:2,y:0,z:0}));
+  if(!dragGesture) throw new Error('指ドラッグ開始点を穴内周上に作れない');
+
+  await page.evaluate((g)=>{
+    const canvas=document.querySelector('#viewer canvas');
+    const fire=(type,p,buttons)=>canvas.dispatchEvent(new PointerEvent(type,{
+      pointerId:77,
+      pointerType:'touch',
+      isPrimary:true,
+      bubbles:true,
+      cancelable:true,
+      clientX:p.x,
+      clientY:p.y,
+      button:0,
+      buttons
+    }));
+    fire('pointerdown',g.start,1);
+    fire('pointermove',g.end,1);
+    fire('pointerup',g.end,0);
+  },dragGesture);
+  await page.waitForTimeout(220);
+
+  const afterDrag=await page.evaluate(()=>({
+    hole:window.__okaTest.selectedHoleState(),
+    state:window.__okaTest.state(),
+    status:document.querySelector('#status')?.textContent||''
+  }));
+  if(!afterDrag.hole) throw new Error('指ドラッグ後に穴を再認識できない');
+  if(!near(afterDrag.hole.center.x,beforeDrag.center.x+2,0.12) ||
+     !near(afterDrag.hole.center.y,beforeDrag.center.y,0.12)){
+    throw new Error('指ドラッグで穴中心が意図位置へ動いていない: '+JSON.stringify({beforeDrag,afterDrag:afterDrag.hole}));
+  }
+  if(!near(afterDrag.hole.diameter,beforeDrag.diameter,0.08)){
+    throw new Error('指ドラッグで穴径が変化した: '+JSON.stringify({before:beforeDrag.diameter,after:afterDrag.hole.diameter}));
+  }
+  if(afterDrag.state.lastCommand?.type!=='holeMove'){
+    throw new Error('指ドラッグがholeMoveとして記録されていない: '+JSON.stringify(afterDrag.state.lastCommand));
+  }
+  if(!afterDrag.status.includes('指ドラッグで穴を移動')){
+    throw new Error('指ドラッグ完了表示が出ていない: '+afterDrag.status);
+  }
+
+  r=await night('元に戻して');
+  hs=await page.evaluate(()=>window.__okaTest.selectedHoleState());
+  if(!hs || !near(hs.center.x,beforeDrag.center.x,0.08) || !near(hs.center.y,beforeDrag.center.y,0.08)){
+    throw new Error('指ドラッグ穴移動をUndoできない: '+JSON.stringify(hs));
+  }
+
   if(errors.length) throw new Error(errors.join('\n'));
-  console.log('AI_V4_PASS: base / round-bar / hole move relative+absolute / undo / axis reject / clearance reject');
+  console.log('AI_V4_PASS: base / round-bar / hole command move / touch-pointer hole drag / diameter keep / undo / safety');
   await browser.close();
 })().catch(err=>{
   console.error(err);
