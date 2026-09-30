@@ -96,6 +96,7 @@ let originalStepName = '';
 let editHistory = [];
 let editCursor = 0;
 let faceDrag = null;
+let holeDrag = null;
 let touchDragEnabled = false;
 let editTargetConfirmed = false;
 let confirmedPatchKey = '';
@@ -1275,6 +1276,7 @@ function renderFacesList(part, partIndex) {
 
 function setSelectionMode(mode) {
   if(faceDrag){ controls.enabled=true; faceDrag=null; $('dragHud').classList.add('hidden'); }
+  if(holeDrag){ controls.enabled=true; holeDrag=null; $('dragHud').classList.add('hidden'); }
   resetEditConfirmation();
   selectionMode=mode==='face'?'face':'part';
   $('partModeBtn').classList.toggle('active',selectionMode==='part');
@@ -1811,8 +1813,13 @@ function ensureConfirmedEditTarget(){
 function toggleTouchDragAssist(){
   touchDragEnabled=!touchDragEnabled;
   $('touchDragToggleBtn').classList.toggle('active',touchDragEnabled);
-  $('touchDragToggleBtn').textContent=touchDragEnabled?'指ドラッグ補助 ON':'指ドラッグ補助 OFF';
-  setStatus(touchDragEnabled?'指ドラッグ補助をONにしました':'数値編集を基本に戻しました','ok');
+  $('touchDragToggleBtn').textContent=touchDragEnabled?'指ドラッグ編集 ON':'指ドラッグ編集 OFF';
+  setStatus(
+    touchDragEnabled
+      ? '指ドラッグ編集ON：穴は位置移動、通常面は押し引き'
+      : '数値編集を基本に戻しました',
+    'ok'
+  );
 }
 
 function updateEditTarget(part,patchIndex,stats){
@@ -2797,6 +2804,183 @@ function currentSelectedPatchHit(hit){
   return part.triToPatch[tri]===selectedPatch.patchIndex;
 }
 
+
+function pointerWorldOnPlane(clientX,clientY,plane){
+  const rect=renderer.domElement.getBoundingClientRect();
+  pointer.x=((clientX-rect.left)/rect.width)*2-1;
+  pointer.y=-((clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(pointer,camera);
+  return raycaster.ray.intersectPlane(plane,new THREE.Vector3());
+}
+
+function holeAxisWorldNormal(part,axis){
+  const local=axis==='x'
+    ? new THREE.Vector3(1,0,0)
+    : axis==='y'
+      ? new THREE.Vector3(0,1,0)
+      : new THREE.Vector3(0,0,1);
+  part.mesh.updateMatrixWorld(true);
+  const normalMatrix=new THREE.Matrix3().getNormalMatrix(part.mesh.matrixWorld);
+  return local.applyMatrix3(normalMatrix).normalize();
+}
+
+function beginHoleDragCandidate(e,hit){
+  if(!touchDragEnabled || !editTargetConfirmed || selectionMode!=='face' || measureMode || !selectedPatch || !currentSelectedPatchHit(hit)) return false;
+
+  const part=parts[selectedPatch.partIndex];
+  const patch=part?.patches?.[selectedPatch.patchIndex];
+  const hole=part&&patch?analyzeMovableHole(part,patch):null;
+  if(!part||!patch||!hole) return false;
+
+  const normalWorld=holeAxisWorldNormal(part,hole.axis);
+  const plane=new THREE.Plane().setFromNormalAndCoplanarPoint(normalWorld,hole.worldCenter);
+  const startPlanePoint=pointerWorldOnPlane(e.clientX,e.clientY,plane);
+  if(!startPlanePoint) return false;
+
+  const ids=Array.from(hole.vertexIndices||[]);
+  const attr=part.mesh.geometry.getAttribute('position');
+  const startPositions=new Float32Array(ids.length*3);
+  ids.forEach((vi,k)=>{
+    startPositions[k*3]=attr.getX(vi);
+    startPositions[k*3+1]=attr.getY(vi);
+    startPositions[k*3+2]=attr.getZ(vi);
+  });
+
+  holeDrag={
+    pointerId:e.pointerId,
+    startX:e.clientX,startY:e.clientY,
+    partIndex:selectedPatch.partIndex,
+    patchIndex:selectedPatch.patchIndex,
+    vertexIndices:ids,
+    startPositions,
+    hole,
+    plane,
+    startPlanePoint,
+    startWorldCenter:hole.worldCenter.clone(),
+    targetWorld:hole.worldCenter.clone(),
+    valid:true,
+    active:false,
+    deltaWorld:new THREE.Vector3()
+  };
+
+  controls.enabled=false;
+  $('dragHud').textContent='穴位置ドラッグ：そのまま移動';
+  $('dragHud').classList.remove('hidden');
+  setStatus('穴を指で移動中','ok');
+  try{renderer.domElement.setPointerCapture(e.pointerId);}catch(_){}
+  return true;
+}
+
+function restoreHoleDragPreview(d){
+  const part=parts[d.partIndex];
+  const attr=part?.mesh?.geometry?.getAttribute('position');
+  if(!part||!attr) return;
+  d.vertexIndices.forEach((vi,k)=>{
+    attr.setXYZ(vi,d.startPositions[k*3],d.startPositions[k*3+1],d.startPositions[k*3+2]);
+  });
+  attr.needsUpdate=true;
+  part.mesh.geometry.computeVertexNormals();
+  part.mesh.geometry.computeBoundingBox();
+  part.mesh.geometry.computeBoundingSphere();
+}
+
+function updateHoleDrag(e){
+  if(!holeDrag || holeDrag.pointerId!==e.pointerId) return false;
+  const d=holeDrag;
+  const part=parts[d.partIndex];
+  if(!part) return true;
+
+  const p=pointerWorldOnPlane(e.clientX,e.clientY,d.plane);
+  if(!p) return true;
+
+  const travel=Math.hypot(e.clientX-d.startX,e.clientY-d.startY);
+  if(!d.active && travel<4) return true;
+  d.active=true;
+
+  const worldDelta=p.clone().sub(d.startPlanePoint);
+  const targetWorld=d.startWorldCenter.clone().add(worldDelta);
+  const targetLocal=part.mesh.worldToLocal(targetWorld.clone());
+  const safety=holeMoveSafety(part,d.hole,targetLocal);
+
+  restoreHoleDragPreview(d);
+
+  if(!safety.ok){
+    d.valid=false;
+    d.targetWorld=d.startWorldCenter.clone();
+    d.deltaWorld.set(0,0,0);
+    $('dragHud').textContent='穴移動不可：'+safety.reason;
+    $('dragHud').classList.remove('hidden');
+    setStatus('穴移動を中止：'+safety.reason,'error');
+    return true;
+  }
+
+  const deltaLocal=targetLocal.clone().sub(d.hole.center);
+  const attr=part.mesh.geometry.getAttribute('position');
+  d.vertexIndices.forEach((vi,k)=>{
+    attr.setXYZ(
+      vi,
+      d.startPositions[k*3]+deltaLocal.x,
+      d.startPositions[k*3+1]+deltaLocal.y,
+      d.startPositions[k*3+2]+deltaLocal.z
+    );
+  });
+  attr.needsUpdate=true;
+  part.mesh.geometry.computeVertexNormals();
+  part.mesh.geometry.computeBoundingBox();
+  part.mesh.geometry.computeBoundingSphere();
+
+  d.valid=true;
+  d.targetWorld.copy(targetWorld);
+  d.deltaWorld.copy(worldDelta);
+
+  clearGroup(faceHighlightGroup);
+  const patch=part.patches?.[d.patchIndex];
+  if(patch) highlightPatch(part,patch);
+
+  $('dragHud').textContent=
+    '穴移動 ΔX '+(worldDelta.x>=0?'+':'')+formatRawMm(worldDelta.x)+
+    ' / ΔY '+(worldDelta.y>=0?'+':'')+formatRawMm(worldDelta.y)+
+    ' / ΔZ '+(worldDelta.z>=0?'+':'')+formatRawMm(worldDelta.z)+' mm';
+  $('dragHud').classList.remove('hidden');
+  setStatus('穴位置をドラッグ中','ok');
+  return true;
+}
+
+function endHoleDrag(e,cancel=false){
+  if(!holeDrag || holeDrag.pointerId!==e.pointerId) return false;
+  const d=holeDrag;
+
+  $('dragHud').classList.add('hidden');
+  controls.enabled=true;
+  try{renderer.domElement.releasePointerCapture(e.pointerId);}catch(_){}
+
+  restoreHoleDragPreview(d);
+
+  const shouldCommit=d.active && d.valid && !cancel && d.deltaWorld.length()>0.001;
+  const target=d.targetWorld.clone();
+  holeDrag=null;
+
+  if(!shouldCommit){
+    refreshEditSelection();
+    if(cancel) setStatus('穴ドラッグを取り消しました','idle');
+    return false;
+  }
+
+  const result=commitHoleMove(target);
+  if(result.ok){
+    setStatus(
+      '指ドラッグで穴を移動：ΔX '+formatRawMm(result.to.x-result.from.x)+
+      ' / ΔY '+formatRawMm(result.to.y-result.from.y)+
+      ' / ΔZ '+formatRawMm(result.to.z-result.from.z)+' mm',
+      'ok'
+    );
+    return true;
+  }
+
+  refreshEditSelection();
+  return false;
+}
+
 function beginFaceDragCandidate(e, hit){
   if(!touchDragEnabled || !editTargetConfirmed || selectionMode!=='face' || measureMode || !selectedPatch || !currentSelectedPatchHit(hit)) return false;
   const part=parts[selectedPatch.partIndex];
@@ -2964,7 +3148,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
   pointerDown = { x: e.clientX, y: e.clientY, id: e.pointerId };
   if(touchDragEnabled && selectionMode==='face' && selectedPatch && !measureMode){
     const hits=pickAt(e.clientX,e.clientY);
-    if(hits.length && beginFaceDragCandidate(e,hits[0])){
+    if(hits.length && (beginHoleDragCandidate(e,hits[0]) || beginFaceDragCandidate(e,hits[0]))){
       e.preventDefault();
       e.stopImmediatePropagation();
     }
@@ -2972,6 +3156,12 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
 }, true);
 
 renderer.domElement.addEventListener('pointermove', (e) => {
+  if(holeDrag && holeDrag.pointerId===e.pointerId){
+    updateHoleDrag(e);
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    return;
+  }
   if(faceDrag && faceDrag.pointerId===e.pointerId){
     updateFaceDrag(e);
     e.preventDefault();
@@ -2980,7 +3170,10 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 }, true);
 
 renderer.domElement.addEventListener('pointercancel', (e) => {
-  if(faceDrag && faceDrag.pointerId===e.pointerId){
+  if(holeDrag && holeDrag.pointerId===e.pointerId){
+    e.stopImmediatePropagation();
+    endHoleDrag(e,true);
+  }else if(faceDrag && faceDrag.pointerId===e.pointerId){
     e.stopImmediatePropagation();
     endFaceDrag(e,true);
   }
@@ -2988,6 +3181,18 @@ renderer.domElement.addEventListener('pointercancel', (e) => {
 }, true);
 
 renderer.domElement.addEventListener('pointerup', (e) => {
+  const hadHoleDrag=!!(holeDrag && holeDrag.pointerId===e.pointerId);
+  if(hadHoleDrag){
+    e.stopImmediatePropagation();
+    const wasActive=holeDrag.active;
+    const committed=endHoleDrag(e,false);
+    if(committed || wasActive){
+      pointerDown=null;
+      e.preventDefault();
+      return;
+    }
+  }
+
   const hadDrag=!!(faceDrag && faceDrag.pointerId===e.pointerId);
   if(hadDrag) e.stopImmediatePropagation();
   const wasActive=hadDrag && faceDrag.active;
@@ -3957,6 +4162,36 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
         center:{x:r.hole.worldCenter.x,y:r.hole.worldCenter.y,z:r.hole.worldCenter.z},
         partIndex:r.partIndex,patchIndex:r.patchIndex
       };
+    },
+    holeDragGesture(delta={x:2,y:0,z:0}){
+      const r=selectedMovableHole();
+      if(!r) return null;
+      const part=r.part, hole=r.hole;
+      const [u,v]=roundBarAxisTransverse(hole.axis);
+      const radius=hole.diameter/2;
+      const rect=renderer.domElement.getBoundingClientRect();
+
+      for(let step=0;step<32;step++){
+        const a=(step/32)*Math.PI*2;
+        const pLocal=hole.center.clone();
+        pLocal[u]+=Math.cos(a)*radius;
+        pLocal[v]+=Math.sin(a)*radius;
+        const pWorld=part.mesh.localToWorld(pLocal.clone());
+        const sp=screenPointForWorld(pWorld,rect);
+        const sx=rect.left+sp.x, sy=rect.top+sp.y;
+        const hits=pickAt(sx,sy);
+        if(!hits.length || !currentSelectedPatchHit(hits[0])) continue;
+
+        const targetWorld=pWorld.clone().add(new THREE.Vector3(
+          Number(delta.x)||0,Number(delta.y)||0,Number(delta.z)||0
+        ));
+        const ep=screenPointForWorld(targetWorld,rect);
+        return {
+          start:{x:sx,y:sy},
+          end:{x:rect.left+ep.x,y:rect.top+ep.y}
+        };
+      }
+      return null;
     },
     firstMovableHolePatch(partIndex){
       const part=parts[partIndex];
