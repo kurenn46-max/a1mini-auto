@@ -95,11 +95,11 @@
     </div>
 
     <div class="nightPromptHint">
-      例：「直径10mm、長さ60mm」「長さを10mm伸ばして、下固定」「このパーツを消して」「元に戻して」
+      例：「この穴を右へ2mm」「穴中心をX=15mm、Y=8mmに」「直径10mm、長さ60mm」「元に戻して」
     </div>
 
     <textarea id="nightPrompt" class="nightPromptInput" rows="3"
-      placeholder="例：直径10mm、長さ60mm、下固定"></textarea>
+      placeholder="例：この穴を右へ2mm / 直径10mm、長さ60mm"></textarea>
 
     <div class="nightPromptActions">
       <button id="nightRunBtn" class="nightRunBtn" type="button">▶ ナイト実行</button>
@@ -107,6 +107,7 @@
     </div>
 
     <div class="nightExamples">
+      <button type="button" data-night-example="この穴を右へ2mm">穴 →右 2mm</button>
       <button type="button" data-night-example="直径10mm、長さ60mm、下固定">丸棒 Ø10 × 60</button>
       <button type="button" data-night-example="Xを80mm、左固定">X80 左固定</button>
       <button type="button" data-night-example="Zを50mm、下固定">Z50 下固定</button>
