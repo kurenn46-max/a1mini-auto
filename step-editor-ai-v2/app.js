@@ -558,10 +558,14 @@ function updateSelectedInfo(part) {
   const size = box.getSize(new THREE.Vector3());
   $('selectedName').textContent = part.name;
   $('selectedPath').textContent = part.path && part.path !== part.name ? part.path : '';
+  const round=analyzeRoundBar(part);
   $('selectedDims').innerHTML =
     'X ' + formatLength(size.x) + '<br>' +
     'Y ' + formatLength(size.y) + '<br>' +
-    'Z ' + formatLength(size.z);
+    'Z ' + formatLength(size.z) +
+    (round
+      ? '<br><strong>丸棒 Ø'+formatRawMm(round.diameter)+' / 長さ '+formatRawMm(round.length)+' mm</strong>'
+      : '');
 
   if (lastTapPoint) {
     $('tapPoint').textContent =
@@ -1797,6 +1801,22 @@ function applyEditCommand(cmd){
         attr.setXYZ(i,x,y,z);
       }
     }
+  }else if(cmd.type==='roundBar'){
+    const axis=cmd.axis;
+    const [u,v]=roundBarAxisTransverse(axis);
+    const ds=Number(cmd.diameterScale)||1;
+    const ls=Number(cmd.lengthScale)||1;
+    const cu=Number(cmd.centerU)||0;
+    const cv=Number(cmd.centerV)||0;
+    const fixed=Number(cmd.fixedAxis)||0;
+
+    for(let i=0;i<attr.count;i++){
+      const p={x:attr.getX(i),y:attr.getY(i),z:attr.getZ(i)};
+      p[u]=cu+(p[u]-cu)*ds;
+      p[v]=cv+(p[v]-cv)*ds;
+      p[axis]=fixed+(p[axis]-fixed)*ls;
+      attr.setXYZ(i,p.x,p.y,p.z);
+    }
   }else if(cmd.type==='holeDiameter'){
     const c=new THREE.Vector3(cmd.center[0],cmd.center[1],cmd.center[2]);
     const scale=cmd.scale;
@@ -1857,6 +1877,10 @@ function editDescription(cmd){
   if(cmd.type==='holeDiameter'){
     return '穴径 Ø'+Number(cmd.fromDiameterMm.toFixed(3))+' → Ø'+Number(cmd.toDiameterMm.toFixed(3))+' mm';
   }
+  if(cmd.type==='roundBar'){
+    return '丸棒 Ø'+Number(cmd.fromDiameterMm.toFixed(3))+'→'+Number(cmd.toDiameterMm.toFixed(3))+
+      ' / 長さ '+Number(cmd.fromLengthMm.toFixed(3))+'→'+Number(cmd.toLengthMm.toFixed(3))+' mm';
+  }
   if(cmd.type==='deletePart'){
     return '部品を削除：'+(cmd.feature?.partName||('Part '+(cmd.partIndex+1)));
   }
@@ -1913,6 +1937,188 @@ function getAxisPart(){
     return active[0];
   }
   return null;
+}
+
+
+function partLocalBox(part){
+  const g=part?.mesh?.geometry;
+  if(!g) return null;
+  g.computeBoundingBox();
+  return g.boundingBox?.clone()||null;
+}
+
+function roundBarAxisTransverse(axis){
+  if(axis==='x') return ['y','z'];
+  if(axis==='y') return ['x','z'];
+  return ['x','y'];
+}
+
+function analyzeRoundBar(part){
+  if(!part || part.deleted || !part.mesh?.geometry) return null;
+  const g=part.mesh.geometry;
+  const attr=g.getAttribute('position');
+  const box=partLocalBox(part);
+  if(!attr || !box || box.isEmpty()) return null;
+
+  const size=box.getSize(new THREE.Vector3());
+  const axes=['x','y','z'];
+  const declared=(part.kind==='cylinder' && part.roundAxis)?part.roundAxis:(part.roundAxis||null);
+  const candidates=[];
+
+  for(const axis of axes){
+    const [u,v]=roundBarAxisTransverse(axis);
+    const du=Math.abs(size[u]), dv=Math.abs(size[v]), len=Math.abs(size[axis]);
+    const dia=Math.max(du,dv);
+    if(!(dia>1e-6 && len>1e-6)) continue;
+
+    const crossError=Math.abs(du-dv)/dia;
+    if(axis!==declared && crossError>0.035) continue;
+
+    const centerU=(box.min[u]+box.max[u])/2;
+    const centerV=(box.min[v]+box.max[v])/2;
+    const radius=(du+dv)/4;
+    const endTol=Math.max(len*0.025,1e-5);
+    let outer=0, ends=0, usable=0;
+
+    for(let i=0;i<attr.count;i++){
+      const p={x:attr.getX(i),y:attr.getY(i),z:attr.getZ(i)};
+      const r=Math.hypot(p[u]-centerU,p[v]-centerV);
+      if(radius>1e-9){
+        usable++;
+        if(Math.abs(r-radius)<=radius*0.08) outer++;
+      }
+      if(Math.abs(p[axis]-box.min[axis])<=endTol || Math.abs(p[axis]-box.max[axis])<=endTol) ends++;
+    }
+
+    const outerRatio=usable?outer/usable:0;
+    const endpointRatio=attr.count?ends/attr.count:0;
+    const declaredBoost=axis===declared?2:0;
+    const score=declaredBoost + outerRatio*1.6 + endpointRatio*1.2 - crossError*4;
+
+    if(axis===declared || (outerRatio>=0.30 && endpointRatio>=0.28)){
+      candidates.push({
+        axis,u,v,box,size,centerU,centerV,
+        diameter:(du+dv)/2,
+        length:len,
+        crossError,outerRatio,endpointRatio,score,
+        confidence:axis===declared?'known':(score>=1.45?'high':'medium')
+      });
+    }
+  }
+
+  candidates.sort((a,b)=>b.score-a.score);
+  const best=candidates[0];
+  if(!best) return null;
+
+  if(!declared){
+    const second=candidates[1];
+    if(best.confidence!=='high') return null;
+    if(second && Math.abs(best.score-second.score)<0.14) return null;
+  }
+
+  return best;
+}
+
+function roundBarPartFromSelection(){
+  if(selectedIndex>=0 && parts[selectedIndex] && !parts[selectedIndex].deleted){
+    const analysis=analyzeRoundBar(parts[selectedIndex]);
+    if(analysis) return {part:parts[selectedIndex],index:selectedIndex,analysis};
+  }
+  const active=parts
+    .map((part,index)=>({part,index}))
+    .filter(x=>!x.part.deleted);
+  if(active.length===1){
+    const analysis=analyzeRoundBar(active[0].part);
+    if(analysis){
+      selectPart(active[0].index,false);
+      return {...active[0],analysis};
+    }
+  }
+  return null;
+}
+
+function roundBarAnchorLabel(axis,anchor){
+  const d=axisDirectionNames(axis);
+  if(anchor==='min') return d.minusFixed;
+  if(anchor==='max') return d.plusFixed;
+  return '中心固定';
+}
+
+function commitRoundBarEdit(targetDiameter,targetLength,anchor=axisAnchor){
+  const resolved=roundBarPartFromSelection();
+  if(!resolved){
+    setStatus('丸棒として認識できる部品を選んでください','error');
+    return {ok:false,reason:'not-round'};
+  }
+
+  const {part,index,analysis}=resolved;
+  const currentD=analysis.diameter;
+  const currentL=analysis.length;
+  const toD=targetDiameter==null?currentD:Number(targetDiameter);
+  const toL=targetLength==null?currentL:Number(targetLength);
+
+  if(!Number.isFinite(toD)||toD<=0||!Number.isFinite(toL)||toL<=0){
+    setStatus('丸棒の直径・長さを確認してください','error');
+    return {ok:false,reason:'bad-size'};
+  }
+  if(Math.abs(toD-currentD)<1e-5 && Math.abs(toL-currentL)<1e-5){
+    setStatus('現在と同じ丸棒寸法です','error');
+    return {ok:false,reason:'same-size'};
+  }
+
+  const box=analysis.box;
+  const fixed=anchor==='max'
+    ? box.max[analysis.axis]
+    : (anchor==='center'?(box.min[analysis.axis]+box.max[analysis.axis])/2:box.min[analysis.axis]);
+
+  const cmd={
+    type:'roundBar',
+    partIndex:index,
+    axis:analysis.axis,
+    anchor,
+    centerU:analysis.centerU,
+    centerV:analysis.centerV,
+    diameterScale:toD/currentD,
+    lengthScale:toL/currentL,
+    fixedAxis:fixed,
+    fromDiameterMm:currentD,
+    toDiameterMm:toD,
+    fromLengthMm:currentL,
+    toLengthMm:toL,
+    feature:{
+      partName:part.name,
+      partPath:part.path||part.name,
+      roundAxis:analysis.axis,
+      confidence:analysis.confidence
+    },
+    inputMethod:'night-round-bar'
+  };
+
+  const beforeCursor=editCursor;
+  commitEdit(cmd);
+  if(editCursor<=beforeCursor) return {ok:false,reason:'commit-failed'};
+
+  const after=analyzeRoundBar(part);
+  const tol=0.03;
+  if(!after || Math.abs(after.diameter-toD)>tol || Math.abs(after.length-toL)>tol){
+    editHistory.splice(editCursor-1,1);
+    editCursor=Math.max(0,editCursor-1);
+    replayEdits();
+    setStatus('丸棒編集の確認に失敗したため元に戻しました','error');
+    return {ok:false,reason:'postcheck'};
+  }
+
+  selectedAxis=analysis.axis;
+  axisAnchor=anchor;
+  updateAxisPanel();
+  if(selectedDimsOn) showBoxDimensions(new THREE.Box3().setFromObject(part.mesh),'part');
+  updateSelectedInfo(part);
+  setStatus('丸棒 Ø'+formatRawMm(toD)+' / 長さ '+formatRawMm(toL)+'mm に変更しました','ok');
+  return {
+    ok:true,action:'round-bar',axis:analysis.axis,anchor,
+    fromDiameter:currentD,toDiameter:toD,
+    fromLength:currentL,toLength:toL
+  };
 }
 
 function partWorldSize(part){
@@ -3028,6 +3234,90 @@ function commitNightPartDelete(index){
   return {ok:true,action:'delete-part',partIndex:index,partName:part.name};
 }
 
+
+function nightRoundBarTarget(text){
+  const named=findNightPartTarget(text);
+  if(named){
+    const analysis=analyzeRoundBar(named.part);
+    if(analysis) return {...named,analysis};
+  }
+  return roundBarPartFromSelection();
+}
+
+function parseRoundBarValue(text,labelPattern){
+  const re=new RegExp('(?:'+labelPattern+')\\s*(?:を)?\\s*([+\\-]?\\d+(?:\\.\\d+)?)\\s*(?:mm)?','i');
+  const m=text.match(re);
+  return m?{raw:m[1],value:Number(m[1]),index:m.index??0}:null;
+}
+
+function runNightRoundBarCommand(text,resolved){
+  const analysis=resolved.analysis;
+  const dMatch=parseRoundBarValue(text,'直径|外径|径|[ØφΦ]');
+  const lMatch=parseRoundBarValue(text,'長さ|全長');
+
+  if(!dMatch && !lMatch){
+    setNightReply(
+      '丸棒を認識したで。現在 Ø'+formatRawMm(analysis.diameter)+' / 長さ '+formatRawMm(analysis.length)+
+      'mm。例：直径10mm、長さ60mm',
+      'ok'
+    );
+    return {ok:true,action:'round-info',diameter:analysis.diameter,length:analysis.length,axis:analysis.axis};
+  }
+
+  let targetD=analysis.diameter;
+  let targetL=analysis.length;
+
+  if(dMatch){
+    const near=text.slice(dMatch.index,Math.min(text.length,dMatch.index+28));
+    const relative=/太く|増や|広げ/.test(near)||/^[+\-]/.test(dMatch.raw)||/細く|減ら|縮め/.test(near);
+    if(relative){
+      let delta=Math.abs(dMatch.value);
+      if(/細く|減ら|縮め/.test(near)||dMatch.value<0) delta=-delta;
+      targetD=analysis.diameter+delta;
+    }else targetD=dMatch.value;
+  }
+
+  if(lMatch){
+    const near=text.slice(lMatch.index,Math.min(text.length,lMatch.index+28));
+    const relative=/伸ば|長く|増や/.test(near)||/^[+\-]/.test(lMatch.raw)||/短く|縮め|減ら/.test(near);
+    if(relative){
+      let delta=Math.abs(lMatch.value);
+      if(/短く|縮め|減ら/.test(near)||lMatch.value<0) delta=-delta;
+      targetL=analysis.length+delta;
+    }else targetL=lMatch.value;
+  }
+
+  if(!(targetD>0) || !(targetL>0)){
+    setNightReply('変更後の直径か長さが0mm以下になるから実行せえへんで。','error');
+    return {ok:false,action:'round-invalid'};
+  }
+
+  const anchorInfo=nightAnchorFromText(text);
+  if(anchorInfo?.axis && anchorInfo.axis!==analysis.axis){
+    const d=axisDirectionNames(analysis.axis);
+    setNightReply(
+      'この丸棒の長さ方向は '+analysis.axis.toUpperCase()+'軸や。固定側は '+
+      d.minusFixed+' / '+d.plusFixed+' / 中心固定 で指定してな。',
+      'error'
+    );
+    return {ok:false,action:'round-anchor-conflict'};
+  }
+  const anchor=anchorInfo?.anchor||axisAnchor||'min';
+
+  if(selectedIndex!==resolved.index) selectPart(resolved.index,false);
+  const result=commitRoundBarEdit(targetD,targetL,anchor);
+  if(result.ok){
+    setNightReply(
+      '了解。丸棒を Ø'+formatRawMm(analysis.diameter)+'→'+formatRawMm(targetD)+'mm、長さ '+
+      formatRawMm(analysis.length)+'→'+formatRawMm(targetL)+'mm、'+roundBarAnchorLabel(analysis.axis,anchor)+' で変更したで。',
+      'ok'
+    );
+  }else{
+    setNightReply('丸棒を変更できへんかった：'+$('status').textContent,'error');
+  }
+  return result;
+}
+
 function runNightCommand(raw){
   const text=normalizeNightCommand(raw);
   if(!text){
@@ -3050,6 +3340,11 @@ function runNightCommand(raw){
       return {ok:false,action:'delete-part-no-target'};
     }
     return commitNightPartDelete(target.index);
+  }
+
+  const roundResolved=nightRoundBarTarget(text);
+  if(roundResolved && /直径|外径|丸棒|円柱|[ØφΦ]|長さ|全長/.test(text)){
+    return runNightRoundBarCommand(text,roundResolved);
   }
 
   if(/軸(?:を)?解除|軸なし|軸未選択|軸選択(?:を)?解除/.test(text)){
@@ -3244,6 +3539,7 @@ function addCadPart(kind) {
     const triangles=geometry.index?Math.floor(geometry.index.count/3):Math.floor(geometry.getAttribute('position').count/3);
     parts.push({
       mesh,name,path:name,localBox,localSize,triangles,source:'cad',kind,baseOffsetZ,
+      roundAxis:kind==='cylinder'?'z':null,
       brepFaces:[], patches:null, triToPatch:null, patchMode:null, patchAngle:null,
       basePosition:new Float32Array(geometry.getAttribute('position').array)
     });
@@ -3377,6 +3673,10 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
         activePartCount:parts.filter(p=>!p.deleted).length,
         activePartNames:parts.filter(p=>!p.deleted).map(p=>p.name),
         deletedPartNames:parts.filter(p=>p.deleted).map(p=>p.name),
+        roundBar:part?(()=>{
+          const r=analyzeRoundBar(part);
+          return r?{axis:r.axis,diameter:r.diameter,length:r.length,confidence:r.confidence}:null;
+        })():null,
         partSize:part?{x:partWorldSize(part).x,y:partWorldSize(part).y,z:partWorldSize(part).z}:null,
         bounds,totalVertices,
         lastCommand:cmd?{
