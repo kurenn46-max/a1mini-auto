@@ -2843,11 +2843,37 @@ function cancelHoleDragPreview(){
   refreshEditSelection();
 }
 
+function worldToClientPoint(world){
+  const rect=renderer.domElement.getBoundingClientRect();
+  const p=world.clone().project(camera);
+  return {
+    x:rect.left+(p.x*0.5+0.5)*rect.width,
+    y:rect.top+(-p.y*0.5+0.5)*rect.height
+  };
+}
+
+function pointerNearSelectedHole(clientX,clientY,resolved){
+  const {part,hole}=resolved;
+  const center=worldToClientPoint(hole.worldCenter);
+
+  const [u]=roundBarAxisTransverse(hole.axis);
+  const rimLocal=hole.center.clone();
+  rimLocal[u]+=hole.diameter/2;
+  part.mesh.updateMatrixWorld(true);
+  const rimWorld=part.mesh.localToWorld(rimLocal);
+  const rim=worldToClientPoint(rimWorld);
+  const radiusPx=Math.max(Math.hypot(rim.x-center.x,rim.y-center.y),10);
+  const hitRadius=Math.max(radiusPx*1.9,28);
+
+  return Math.hypot(clientX-center.x,clientY-center.y)<=hitRadius;
+}
+
 function beginHoleDragCandidate(e,hit){
-  if(!touchDragEnabled || selectionMode!=='face' || measureMode || !selectedPatch || !currentSelectedPatchHit(hit)) return false;
+  if(!touchDragEnabled || selectionMode!=='face' || measureMode || !selectedPatch) return false;
 
   const resolved=selectedMovableHole();
   if(!resolved) return false;
+  if(!pointerNearSelectedHole(e.clientX,e.clientY,resolved)) return false;
 
   const {part,hole,partIndex,patchIndex}=resolved;
   const attr=part.mesh.geometry.getAttribute('position');
@@ -3170,11 +3196,9 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
   pointerDown = { x: e.clientX, y: e.clientY, id: e.pointerId };
   if(touchDragEnabled && selectionMode==='face' && selectedPatch && !measureMode){
     const hits=pickAt(e.clientX,e.clientY);
-    if(hits.length){
-      if(beginHoleDragCandidate(e,hits[0]) || beginFaceDragCandidate(e,hits[0])){
-        e.preventDefault();
-        e.stopImmediatePropagation();
-      }
+    if(beginHoleDragCandidate(e,hits[0]||null) || (hits.length && beginFaceDragCandidate(e,hits[0]))){
+      e.preventDefault();
+      e.stopImmediatePropagation();
     }
   }
 }, true);
