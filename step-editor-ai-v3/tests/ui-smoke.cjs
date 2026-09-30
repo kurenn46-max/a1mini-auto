@@ -187,8 +187,53 @@ const near=(a,b,e=1e-3)=>Math.abs(a-b)<=e;
     throw new Error('自動認識丸棒が真円/長さを維持していない: '+JSON.stringify(r.state.partSize));
   }
 
+  // Hole move: select a simple Z-axis through-hole and move center while keeping diameter.
+  const holePart=await page.evaluate(()=>window.__okaTest.addHolePlateFixture());
+  const holePatch=await page.evaluate(i=>window.__okaTest.firstMovableHolePatch(i),holePart);
+  if(holePatch===null) throw new Error('移動可能な貫通穴を検出できない');
+  await page.evaluate(([pi,fi])=>window.__okaTest.selectPatch(pi,fi),[holePart,holePatch]);
+  await page.waitForTimeout(100);
+
+  let hs=await page.evaluate(()=>window.__okaTest.selectedHoleState());
+  if(!hs || hs.axis!=='z' || !near(hs.diameter,6,0.08) || !near(hs.center.x,0,0.05) || !near(hs.center.y,0,0.05)){
+    throw new Error('穴初期状態が不正: '+JSON.stringify(hs));
+  }
+
+  r=await night('この穴を右へ4mm');
+  hs=await page.evaluate(()=>window.__okaTest.selectedHoleState());
+  if(!r.state.lastCommand || r.state.lastCommand.type!=='holeMove'){
+    throw new Error('穴移動が専用コマンドで記録されていない');
+  }
+  if(!hs || !near(hs.center.x,4,0.05) || !near(hs.center.y,0,0.05) || !near(hs.diameter,6,0.08)){
+    throw new Error('穴右4mm移動または穴径維持に失敗: '+JSON.stringify(hs));
+  }
+
+  r=await night('元に戻して');
+  hs=await page.evaluate(()=>window.__okaTest.selectedHoleState());
+  if(!hs || !near(hs.center.x,0,0.05) || !near(hs.center.y,0,0.05) || !near(hs.diameter,6,0.08)){
+    throw new Error('穴移動Undoで元位置へ戻らない: '+JSON.stringify(hs));
+  }
+
+  r=await night('穴中心をX=5mm、Y=-3mmに');
+  hs=await page.evaluate(()=>window.__okaTest.selectedHoleState());
+  if(!hs || !near(hs.center.x,5,0.05) || !near(hs.center.y,-3,0.05) || !near(hs.diameter,6,0.08)){
+    throw new Error('穴中心絶対座標指定が不正: '+JSON.stringify(hs));
+  }
+
+  // Hole-axis movement must be rejected.
+  const holeCursor=r.state.editCursor;
+  r=await night('この穴を上へ2mm');
+  if(r.state.editCursor!==holeCursor) throw new Error('穴軸方向Zへ移動してしまった');
+  if(!r.reply.includes('軸方向')) throw new Error('穴軸方向拒否理由が不明: '+r.reply);
+
+  // Moving outside the part must be rejected.
+  const holeCursor2=r.state.editCursor;
+  r=await night('この穴を右へ100mm');
+  if(r.state.editCursor!==holeCursor2) throw new Error('外周を越える穴移動を実行してしまった');
+  if(!r.reply.includes('外周')) throw new Error('外周安全拒否が不明: '+r.reply);
+
   if(errors.length) throw new Error(errors.join('\n'));
-  console.log('AI_V3_PASS: base edits / delete / dimensions / round-bar diameter / length / undo / auto-detect');
+  console.log('AI_V3_PASS: base / round-bar / hole move relative+absolute / undo / axis reject / clearance reject');
   await browser.close();
 })().catch(err=>{
   console.error(err);
