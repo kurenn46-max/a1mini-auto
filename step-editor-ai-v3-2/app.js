@@ -1594,7 +1594,7 @@ function holeWorldCenter(part,hole){
   return part.mesh.localToWorld(hole.center.clone());
 }
 
-function analyzeMovableHole(part,patch){
+function validateHoleSurface(part,patch){
   if(!part||!patch) return null;
   const stats=computePatchStats(part,patch);
   if(stats.type!=='曲面') return null;
@@ -1602,32 +1602,109 @@ function analyzeMovableHole(part,patch){
   const hole=estimateHole(part,patch);
   if(!hole||!(hole.diameter>0)) return null;
 
+  const attr=part.mesh.geometry.getAttribute('position');
+  const [u,v]=roundBarAxisTransverse(hole.axis);
+  const radii=[];
+  const angles=[];
+  for(const i of hole.vertexIndices||[]){
+    const du=(u==='x'?attr.getX(i):(u==='y'?attr.getY(i):attr.getZ(i)))-hole.center[u];
+    const dv=(v==='x'?attr.getX(i):(v==='y'?attr.getY(i):attr.getZ(i)))-hole.center[v];
+    const r=Math.hypot(du,dv);
+    if(r>1e-9){
+      radii.push(r);
+      let a=Math.atan2(dv,du);
+      if(a<0) a+=Math.PI*2;
+      angles.push(a);
+    }
+  }
+  if(radii.length<12||angles.length<12) return null;
+
+  const mean=radii.reduce((a,b)=>a+b,0)/radii.length;
+  const variance=radii.reduce((a,b)=>a+(b-mean)*(b-mean),0)/radii.length;
+  const radialCv=Math.sqrt(variance)/Math.max(mean,1e-9);
+
+  const uniq=Array.from(new Set(angles.map(a=>Math.round(a*1e5)/1e5))).sort((a,b)=>a-b);
+  if(uniq.length<8) return null;
+  let maxGap=0;
+  for(let i=0;i<uniq.length;i++){
+    const next=i===uniq.length-1?uniq[0]+Math.PI*2:uniq[i+1];
+    maxGap=Math.max(maxGap,next-uniq[i]);
+  }
+
+  // 穴径編集対象は「ほぼ真円で一周している円筒面」に限定。
+  if(radialCv>0.06 || maxGap>THREE.MathUtils.degToRad(24)) return null;
+
+  return {...hole,stats,radialCv,maxAngularGap:maxGap};
+}
+
+function analyzeMovableHole(part,patch){
+  if(!part||!patch) return null;
+  const base=validateHoleSurface(part,patch);
+  if(!base) return null;
+
   const geometry=part.mesh.geometry;
   geometry.computeBoundingBox();
   const box=geometry.boundingBox?.clone();
   if(!box||box.isEmpty()) return null;
 
-  const attr=geometry.getAttribute('position');
-  const axis=hole.axis;
-  const coords=hole.vertexIndices.map(i=>axis==='x'?attr.getX(i):(axis==='y'?attr.getY(i):attr.getZ(i)));
-  if(!coords.length) return null;
-  const hmin=Math.min(...coords), hmax=Math.max(...coords);
-  const span=Math.max(box.max[axis]-box.min[axis],1e-9);
-  const tol=Math.max(span*0.02,0.08);
+  ensureDetailPatches(part);
+  const axis=base.axis;
+  const [u,v]=roundBarAxisTransverse(axis);
+  const centerTol=Math.max(0.28,base.diameter*0.045);
+  const linked=[];
 
-  // 第3版は安全側：部品厚みを端から端まで抜ける単純な丸穴だけを対象にする。
-  const through=Math.abs(hmin-box.min[axis])<=tol && Math.abs(hmax-box.max[axis])<=tol;
-  if(!through) return null;
+  for(let i=0;i<(part.patches?.length||0);i++){
+    const p=part.patches[i];
+    const h=validateHoleSurface(part,p);
+    if(!h||h.axis!==axis) continue;
 
-  const worldCenter=holeWorldCenter(part,hole);
-  return {...hole,stats,box,through,worldCenter};
+    const centerDist=Math.hypot(h.center[u]-base.center[u],h.center[v]-base.center[v]);
+    const ratio=h.diameter/base.diameter;
+    if(centerDist<=centerTol && ratio>=0.28 && ratio<=4.0){
+      linked.push({patchIndex:i,hole:h,stats:h.stats});
+    }
+  }
+
+  if(!linked.length){
+    linked.push({patchIndex:part.patches.indexOf(patch),hole:base,stats:base.stats});
+  }
+
+  const vertexSet=new Set();
+  let envelopeDiameter=base.diameter;
+  for(const item of linked){
+    envelopeDiameter=Math.max(envelopeDiameter,item.hole.diameter);
+    for(const vi of item.hole.vertexIndices||[]) vertexSet.add(vi);
+  }
+  const vertexIndices=Array.from(vertexSet);
+  if(vertexIndices.length<3) return null;
+
+  const center=base.center.clone();
+  const currentClearance=Math.max(0.2,(envelopeDiameter/2)*0.04);
+  for(const a of [u,v]){
+    const lo=box.min[a]+envelopeDiameter/2+currentClearance;
+    const hi=box.max[a]-envelopeDiameter/2-currentClearance;
+    if(center[a]<lo-1e-6 || center[a]>hi+1e-6) return null;
+  }
+
+  const worldCenter=holeWorldCenter(part,{...base,center});
+  return {
+    ...base,
+    center,
+    box,
+    worldCenter,
+    vertexIndices,
+    envelopeDiameter,
+    linkedPatchCount:linked.length,
+    linkedPatchIndices:linked.map(x=>x.patchIndex),
+    holeKind:linked.length>1?'段付き穴':'丸穴'
+  };
 }
 
 function holeMoveSafety(part,hole,targetLocal){
   const box=hole.box||partLocalBox(part);
   if(!box||box.isEmpty()) return {ok:false,reason:'部品外形を確認できません'};
 
-  const radius=hole.diameter/2;
+  const radius=(hole.envelopeDiameter||hole.diameter)/2;
   const [u,v]=roundBarAxisTransverse(hole.axis);
   const clearance=Math.max(0.2,radius*0.04);
 
@@ -1654,7 +1731,7 @@ function commitHoleMove(targetWorld){
   const patch=part?.patches?.[selectedPatch.patchIndex];
   const hole=analyzeMovableHole(part,patch);
   if(!part||!patch||!hole){
-    setStatus('第3版では単純な丸い貫通穴を選んでください','error');
+    setStatus('丸い穴か段付き穴の内周を選んでください','error');
     return {ok:false,reason:'not-simple-through-hole'};
   }
 
@@ -1789,8 +1866,11 @@ function confirmSelectedFaceForEdit(){
   const patch=part?.patches?.[selectedPatch.patchIndex];
   if(part&&patch){
     const stats=computePatchStats(part,patch);
-    const hole=estimateHole(part,patch);
-    $('applyHoleBtn').disabled=!(stats.type==='曲面' && hole && hole.diameter>0);
+    const hole=validateHoleSurface(part,patch);
+    const planar=stats.type==='平面';
+    document.querySelectorAll('[data-push]').forEach(btn=>btn.disabled=!planar);
+    $('applyPushPullBtn').disabled=!planar;
+    $('applyHoleBtn').disabled=!hole;
     focusSelected();
     $('editTargetInfo').innerHTML=
       '<strong>編集面を確定しました</strong><br>'+part.name+' / 詳細面 '+(selectedPatch.patchIndex+1)+
@@ -1830,16 +1910,22 @@ function updateEditTarget(part,patchIndex,stats){
     stats.type+' ・ X '+formatLength(stats.size.x)+' / Y '+formatLength(stats.size.y)+' / Z '+formatLength(stats.size.z)+
     '<br><span style="color:#8fd6b3">境界も一緒に動かして部品形状を伸縮します</span>';
 
-  const hole=estimateHole(part,patch);
-  const holeOkay=stats.type==='曲面' && hole && hole.diameter>0;
+  const hole=validateHoleSurface(part,patch);
+  const holeOkay=!!hole;
   $('applyHoleBtn').disabled=!(editTargetConfirmed && holeOkay);
+  if(editTargetConfirmed){
+    const planar=stats.type==='平面';
+    document.querySelectorAll('[data-push]').forEach(btn=>btn.disabled=!planar);
+    $('applyPushPullBtn').disabled=!planar;
+  }
   if(holeOkay){
     const movable=analyzeMovableHole(part,patch);
     $('holeCurrentDia').textContent='Ø'+formatRawMm(hole.diameter)+' mm';
-    $('holeAxis').textContent=hole.axis.toUpperCase()+'軸（推定）'+
+    $('holeAxis').textContent=hole.axis.toUpperCase()+'軸'+
       (movable
-        ? ' ・ 中心 X'+formatRawMm(movable.worldCenter.x)+' Y'+formatRawMm(movable.worldCenter.y)+' Z'+formatRawMm(movable.worldCenter.z)
-        : ' ・ 位置移動は単純な貫通穴のみ');
+        ? ' ・ '+movable.holeKind+' '+movable.linkedPatchCount+'面 ・ 最大Ø'+formatRawMm(movable.envelopeDiameter)+
+          ' ・ 中心 X'+formatRawMm(movable.worldCenter.x)+' Y'+formatRawMm(movable.worldCenter.y)+' Z'+formatRawMm(movable.worldCenter.z)
+        : ' ・ 円筒面');
     $('holeTargetDia').value=Number(hole.diameter.toFixed(3));
   }else{
     $('holeCurrentDia').textContent='曲面を選択';
@@ -2643,6 +2729,10 @@ function applyPushPullValue(value){
   const patch=part?.patches?.[selectedPatch.patchIndex];
   if(!part||!patch) return;
   const stats=computePatchStats(part,patch);
+  if(stats.type!=='平面'){
+    setStatus('曲面は「面を伸ばす/縮める」で編集しません。穴は穴径変更かナイトの穴位置移動を使ってください','error');
+    return;
+  }
   const normal=averagePatchNormalLocal(part,patch);
   const cmd={
     type:'pushPull',
@@ -2666,7 +2756,7 @@ function applyHoleDiameter(){
   const patch=part?.patches?.[selectedPatch.patchIndex];
   if(!part||!patch) return;
   const stats=computePatchStats(part,patch);
-  const hole=estimateHole(part,patch);
+  const hole=validateHoleSurface(part,patch);
   const target=Number($('holeTargetDia').value);
   if(stats.type!=='曲面'||!hole||!Number.isFinite(target)||target<=0){
     setStatus('穴の曲面と変更後の径を確認してください','error');return;
@@ -2802,6 +2892,8 @@ function beginFaceDragCandidate(e, hit){
   const part=parts[selectedPatch.partIndex];
   const patch=part?.patches?.[selectedPatch.patchIndex];
   if(!part||!patch) return false;
+  const dragStats=computePatchStats(part,patch);
+  if(dragStats.type!=='平面') return false;
 
   const ids=uniquePatchVertexIndices(part,patch);
   const attr=part.mesh.geometry.getAttribute('position');
@@ -3955,7 +4047,10 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
         axis:r.hole.axis,
         diameter:r.hole.diameter,
         center:{x:r.hole.worldCenter.x,y:r.hole.worldCenter.y,z:r.hole.worldCenter.z},
-        partIndex:r.partIndex,patchIndex:r.patchIndex
+        partIndex:r.partIndex,patchIndex:r.patchIndex,
+        linkedPatchCount:r.hole.linkedPatchCount||1,
+        envelopeDiameter:r.hole.envelopeDiameter||r.hole.diameter,
+        holeKind:r.hole.holeKind||'丸穴'
       };
     },
     firstMovableHolePatch(partIndex){
@@ -4139,6 +4234,60 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
     sniffStepText(text){
       const bytes=new TextEncoder().encode(String(text||''));
       return looksLikeStepBytes(bytes);
+    },
+    tryPushPull(value=1){
+      const before=editCursor;
+      applyPushPullValue(Number(value));
+      return {before,after:editCursor,status:$('status').textContent};
+    },
+    confirmSelectedFace(){ confirmSelectedFaceForEdit(); },
+    addSteppedHoleStackFixture(){
+      const geoms=[];
+      const box=new THREE.BoxGeometry(40,30,8);
+      geoms.push(box.index?box.toNonIndexed():box);
+
+      const inner=new THREE.CylinderGeometry(3,3,8,64,1,true);
+      inner.rotateX(Math.PI/2);
+      geoms.push(inner.index?inner.toNonIndexed():inner);
+
+      const counter=new THREE.CylinderGeometry(6,6,2,64,1,true);
+      counter.rotateX(Math.PI/2);
+      counter.translate(0,0,3);
+      geoms.push(counter.index?counter.toNonIndexed():counter);
+
+      const values=[];
+      for(const g of geoms){
+        const a=g.getAttribute('position').array;
+        for(let i=0;i<a.length;i++) values.push(a[i]);
+      }
+
+      const geometry=new THREE.BufferGeometry();
+      geometry.setAttribute('position',new THREE.Float32BufferAttribute(values,3));
+      geometry.computeVertexNormals();
+      geometry.computeBoundingBox();
+      geometry.computeBoundingSphere();
+
+      const material=new THREE.MeshStandardMaterial({
+        color:0x69b7e8,roughness:.65,metalness:.04,side:THREE.DoubleSide
+      });
+      const mesh=new THREE.Mesh(geometry,material);
+      const name='Stepped Hole Stack Fixture';
+      mesh.name=name;
+      mesh.userData.baseColor=material.color.getHex();
+      modelGroup.add(mesh);
+
+      const localBox=geometry.boundingBox.clone();
+      const localSize=localBox.getSize(new THREE.Vector3());
+      const triangles=triangleCountFor(geometry);
+      parts.push({
+        mesh,name,path:name,localBox,localSize,triangles,source:'cad',kind:'test',baseOffsetZ:0,
+        brepFaces:[],patches:null,triToPatch:null,patchMode:null,patchAngle:null,
+        basePosition:new Float32Array(geometry.getAttribute('position').array)
+      });
+      renderPartsList();
+      recomputeModelStats(true);
+      selectPart(parts.length-1,false);
+      return parts.length-1;
     },
     addHolePlateFixture(){
       const shape=new THREE.Shape();
