@@ -4211,6 +4211,11 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
         partIndex:r.partIndex,patchIndex:r.patchIndex
       };
     },
+    selectedHoleScreenCenter(){
+      const r=selectedMovableHole();
+      if(!r) return null;
+      return worldToClientPoint(r.hole.worldCenter);
+    },
     toggleTouchDrag(){ toggleTouchDragAssist(); return touchDragEnabled; },
     selectedPatchScreenPoint(){
       if(!selectedPatch) return null;
