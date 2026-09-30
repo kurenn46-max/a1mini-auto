@@ -1275,8 +1275,8 @@ function renderFacesList(part, partIndex) {
 }
 
 function setSelectionMode(mode) {
+  if(holeDrag) cancelHoleDragPreview();
   if(faceDrag){ controls.enabled=true; faceDrag=null; $('dragHud').classList.add('hidden'); }
-  if(holeDrag){ controls.enabled=true; holeDrag=null; $('dragHud').classList.add('hidden'); }
   resetEditConfirmation();
   selectionMode=mode==='face'?'face':'part';
   $('partModeBtn').classList.toggle('active',selectionMode==='part');
@@ -1601,35 +1601,73 @@ function analyzeMovableHole(part,patch){
   const stats=computePatchStats(part,patch);
   if(stats.type!=='曲面') return null;
 
-  const hole=estimateHole(part,patch);
-  if(!hole||!(hole.diameter>0)) return null;
+  const base=estimateHole(part,patch);
+  if(!base||!(base.diameter>0)) return null;
 
   const geometry=part.mesh.geometry;
   geometry.computeBoundingBox();
   const box=geometry.boundingBox?.clone();
   if(!box||box.isEmpty()) return null;
 
-  const attr=geometry.getAttribute('position');
-  const axis=hole.axis;
-  const coords=hole.vertexIndices.map(i=>axis==='x'?attr.getX(i):(axis==='y'?attr.getY(i):attr.getZ(i)));
-  if(!coords.length) return null;
-  const hmin=Math.min(...coords), hmax=Math.max(...coords);
-  const span=Math.max(box.max[axis]-box.min[axis],1e-9);
-  const tol=Math.max(span*0.02,0.08);
+  ensureDetailPatches(part);
+  const axis=base.axis;
+  const [u,v]=roundBarAxisTransverse(axis);
+  const centerTol=Math.max(0.28,base.diameter*0.045);
+  const linked=[];
 
-  // 第3版は安全側：部品厚みを端から端まで抜ける単純な丸穴だけを対象にする。
-  const through=Math.abs(hmin-box.min[axis])<=tol && Math.abs(hmax-box.max[axis])<=tol;
-  if(!through) return null;
+  for(let i=0;i<(part.patches?.length||0);i++){
+    const p=part.patches[i];
+    const st=computePatchStats(part,p);
+    if(st.type!=='曲面') continue;
+    const h=estimateHole(part,p);
+    if(!h||h.axis!==axis||!(h.diameter>0)) continue;
 
-  const worldCenter=holeWorldCenter(part,hole);
-  return {...hole,stats,box,through,worldCenter};
+    const centerDist=Math.hypot(h.center[u]-base.center[u],h.center[v]-base.center[v]);
+    const ratio=h.diameter/base.diameter;
+    if(centerDist<=centerTol && ratio>=0.28 && ratio<=4.0){
+      linked.push({patchIndex:i,hole:h,stats:st});
+    }
+  }
+
+  if(!linked.length) linked.push({patchIndex:part.patches.indexOf(patch),hole:base,stats});
+
+  const vertexSet=new Set();
+  let envelopeDiameter=base.diameter;
+  for(const item of linked){
+    envelopeDiameter=Math.max(envelopeDiameter,item.hole.diameter);
+    for(const vi of item.hole.vertexIndices||[]) vertexSet.add(vi);
+  }
+  const vertexIndices=Array.from(vertexSet);
+  if(vertexIndices.length<3) return null;
+
+  const center=base.center.clone();
+  const currentClearance=Math.max(0.2,(envelopeDiameter/2)*0.04);
+  for(const a of [u,v]){
+    const lo=box.min[a]+envelopeDiameter/2+currentClearance;
+    const hi=box.max[a]-envelopeDiameter/2-currentClearance;
+    if(center[a]<lo-1e-6 || center[a]>hi+1e-6) return null;
+  }
+
+  const worldCenter=holeWorldCenter(part,{...base,center});
+  return {
+    ...base,
+    center,
+    stats,
+    box,
+    worldCenter,
+    vertexIndices,
+    envelopeDiameter,
+    linkedPatchCount:linked.length,
+    linkedPatchIndices:linked.map(x=>x.patchIndex),
+    holeKind:linked.length>1?'段付き穴':'丸穴'
+  };
 }
 
 function holeMoveSafety(part,hole,targetLocal){
   const box=hole.box||partLocalBox(part);
   if(!box||box.isEmpty()) return {ok:false,reason:'部品外形を確認できません'};
 
-  const radius=hole.diameter/2;
+  const radius=(hole.envelopeDiameter||hole.diameter)/2;
   const [u,v]=roundBarAxisTransverse(hole.axis);
   const clearance=Math.max(0.2,radius*0.04);
 
@@ -1656,8 +1694,8 @@ function commitHoleMove(targetWorld){
   const patch=part?.patches?.[selectedPatch.patchIndex];
   const hole=analyzeMovableHole(part,patch);
   if(!part||!patch||!hole){
-    setStatus('第3版では単純な丸い貫通穴を選んでください','error');
-    return {ok:false,reason:'not-simple-through-hole'};
+    setStatus('丸い穴か段付き穴の内周を選んでください','error');
+    return {ok:false,reason:'not-movable-hole'};
   }
 
   part.mesh.updateMatrixWorld(true);
@@ -1812,14 +1850,20 @@ function ensureConfirmedEditTarget(){
 
 function toggleTouchDragAssist(){
   touchDragEnabled=!touchDragEnabled;
+  if(!touchDragEnabled && holeDrag) cancelHoleDragPreview();
   $('touchDragToggleBtn').classList.toggle('active',touchDragEnabled);
   $('touchDragToggleBtn').textContent=touchDragEnabled?'指ドラッグ編集 ON':'指ドラッグ編集 OFF';
-  setStatus(
-    touchDragEnabled
-      ? '指ドラッグ編集ON：穴は位置移動、通常面は押し引き'
-      : '数値編集を基本に戻しました',
-    'ok'
-  );
+  if(touchDragEnabled){
+    const h=selectedMovableHole();
+    setStatus(
+      h
+        ? '指ドラッグON：黄色の穴内周を押したまま、動かしたい方向へドラッグ'
+        : '指ドラッグON：詳細面で穴内周か編集面を選んでください',
+      'ok'
+    );
+  }else{
+    setStatus('数値編集を基本に戻しました','ok');
+  }
 }
 
 function updateEditTarget(part,patchIndex,stats){
@@ -2813,65 +2857,8 @@ function pointerWorldOnPlane(clientX,clientY,plane){
   return raycaster.ray.intersectPlane(plane,new THREE.Vector3());
 }
 
-function holeAxisWorldNormal(part,axis){
-  const local=axis==='x'
-    ? new THREE.Vector3(1,0,0)
-    : axis==='y'
-      ? new THREE.Vector3(0,1,0)
-      : new THREE.Vector3(0,0,1);
-  part.mesh.updateMatrixWorld(true);
-  const normalMatrix=new THREE.Matrix3().getNormalMatrix(part.mesh.matrixWorld);
-  return local.applyMatrix3(normalMatrix).normalize();
-}
-
-function beginHoleDragCandidate(e,hit){
-  if(!touchDragEnabled || !editTargetConfirmed || selectionMode!=='face' || measureMode || !selectedPatch || !currentSelectedPatchHit(hit)) return false;
-
-  const part=parts[selectedPatch.partIndex];
-  const patch=part?.patches?.[selectedPatch.patchIndex];
-  const hole=part&&patch?analyzeMovableHole(part,patch):null;
-  if(!part||!patch||!hole) return false;
-
-  const normalWorld=holeAxisWorldNormal(part,hole.axis);
-  const plane=new THREE.Plane().setFromNormalAndCoplanarPoint(normalWorld,hole.worldCenter);
-  const startPlanePoint=pointerWorldOnPlane(e.clientX,e.clientY,plane);
-  if(!startPlanePoint) return false;
-
-  const ids=Array.from(hole.vertexIndices||[]);
-  const attr=part.mesh.geometry.getAttribute('position');
-  const startPositions=new Float32Array(ids.length*3);
-  ids.forEach((vi,k)=>{
-    startPositions[k*3]=attr.getX(vi);
-    startPositions[k*3+1]=attr.getY(vi);
-    startPositions[k*3+2]=attr.getZ(vi);
-  });
-
-  holeDrag={
-    pointerId:e.pointerId,
-    startX:e.clientX,startY:e.clientY,
-    partIndex:selectedPatch.partIndex,
-    patchIndex:selectedPatch.patchIndex,
-    vertexIndices:ids,
-    startPositions,
-    hole,
-    plane,
-    startPlanePoint,
-    startWorldCenter:hole.worldCenter.clone(),
-    targetWorld:hole.worldCenter.clone(),
-    valid:true,
-    active:false,
-    deltaWorld:new THREE.Vector3()
-  };
-
-  controls.enabled=false;
-  $('dragHud').textContent='穴位置ドラッグ：そのまま移動';
-  $('dragHud').classList.remove('hidden');
-  setStatus('穴を指で移動中','ok');
-  try{renderer.domElement.setPointerCapture(e.pointerId);}catch(_){}
-  return true;
-}
-
-function restoreHoleDragPreview(d){
+function restoreHoleDragGeometry(d){
+  if(!d) return;
   const part=parts[d.partIndex];
   const attr=part?.mesh?.geometry?.getAttribute('position');
   if(!part||!attr) return;
@@ -2884,65 +2871,167 @@ function restoreHoleDragPreview(d){
   part.mesh.geometry.computeBoundingSphere();
 }
 
+function cancelHoleDragPreview(){
+  if(!holeDrag) return;
+  restoreHoleDragGeometry(holeDrag);
+  try{renderer.domElement.releasePointerCapture(holeDrag.pointerId);}catch(_){}
+  controls.enabled=true;
+  holeDrag=null;
+  $('dragHud').classList.add('hidden');
+  refreshEditSelection();
+}
+
+function worldToClientPoint(world){
+  const rect=renderer.domElement.getBoundingClientRect();
+  const p=world.clone().project(camera);
+  return {
+    x:rect.left+(p.x*0.5+0.5)*rect.width,
+    y:rect.top+(-p.y*0.5+0.5)*rect.height
+  };
+}
+
+function pointerNearSelectedHole(clientX,clientY,resolved){
+  const {part,hole}=resolved;
+  const center=worldToClientPoint(hole.worldCenter);
+
+  const [u]=roundBarAxisTransverse(hole.axis);
+  const rimLocal=hole.center.clone();
+  rimLocal[u]+=hole.diameter/2;
+  part.mesh.updateMatrixWorld(true);
+  const rimWorld=part.mesh.localToWorld(rimLocal);
+  const rim=worldToClientPoint(rimWorld);
+  const radiusPx=Math.max(Math.hypot(rim.x-center.x,rim.y-center.y),10);
+  const hitRadius=Math.max(radiusPx*1.9,28);
+
+  return Math.hypot(clientX-center.x,clientY-center.y)<=hitRadius;
+}
+
+function beginHoleDragCandidate(e,hit){
+  if(!touchDragEnabled || selectionMode!=='face' || measureMode || !selectedPatch) return false;
+
+  const resolved=selectedMovableHole();
+  if(!resolved) return false;
+  if(!pointerNearSelectedHole(e.clientX,e.clientY,resolved)) return false;
+
+  const {part,hole,partIndex,patchIndex}=resolved;
+  const attr=part.mesh.geometry.getAttribute('position');
+  const ids=Array.from(hole.vertexIndices||[]);
+  if(!attr||!ids.length) return false;
+
+  part.mesh.updateMatrixWorld(true);
+  const axisLocal=new THREE.Vector3(
+    hole.axis==='x'?1:0,
+    hole.axis==='y'?1:0,
+    hole.axis==='z'?1:0
+  );
+  const normalMatrix=new THREE.Matrix3().getNormalMatrix(part.mesh.matrixWorld);
+  const normalWorld=axisLocal.applyMatrix3(normalMatrix).normalize();
+  const plane=new THREE.Plane().setFromNormalAndCoplanarPoint(normalWorld,hole.worldCenter);
+
+  const startPlanePoint=pointerWorldOnPlane(e.clientX,e.clientY,plane);
+  if(!startPlanePoint) return false;
+
+  const startPositions=new Float32Array(ids.length*3);
+  ids.forEach((vi,k)=>{
+    startPositions[k*3]=attr.getX(vi);
+    startPositions[k*3+1]=attr.getY(vi);
+    startPositions[k*3+2]=attr.getZ(vi);
+  });
+
+  holeDrag={
+    pointerId:e.pointerId,
+    startX:e.clientX,startY:e.clientY,
+    partIndex,patchIndex,
+    vertexIndices:ids,
+    startPositions,
+    hole,
+    plane,
+    startPlanePoint:startPlanePoint.clone(),
+    startCenterWorld:hole.worldCenter.clone(),
+    targetWorld:hole.worldCenter.clone(),
+    deltaLocal:new THREE.Vector3(),
+    active:false,
+    valid:true,
+    invalidReason:''
+  };
+
+  controls.enabled=false;
+  try{renderer.domElement.setPointerCapture(e.pointerId);}catch(_){}
+  $('dragHud').textContent='穴ドラッグ 0.000 mm';
+  $('dragHud').classList.remove('hidden');
+  setStatus('穴をドラッグ中：指を離すと確定','ok');
+  return true;
+}
+
 function updateHoleDrag(e){
   if(!holeDrag || holeDrag.pointerId!==e.pointerId) return false;
   const d=holeDrag;
-  const part=parts[d.partIndex];
-  if(!part) return true;
-
-  const p=pointerWorldOnPlane(e.clientX,e.clientY,d.plane);
-  if(!p) return true;
-
   const travel=Math.hypot(e.clientX-d.startX,e.clientY-d.startY);
   if(!d.active && travel<4) return true;
   d.active=true;
 
-  const worldDelta=p.clone().sub(d.startPlanePoint);
-  const targetWorld=d.startWorldCenter.clone().add(worldDelta);
+  const worldPoint=pointerWorldOnPlane(e.clientX,e.clientY,d.plane);
+  if(!worldPoint) return true;
+
+  const deltaWorld=worldPoint.clone().sub(d.startPlanePoint);
+  const targetWorld=d.startCenterWorld.clone().add(deltaWorld);
+
+  const part=parts[d.partIndex];
+  if(!part) return true;
+  part.mesh.updateMatrixWorld(true);
   const targetLocal=part.mesh.worldToLocal(targetWorld.clone());
-  const safety=holeMoveSafety(part,d.hole,targetLocal);
 
-  restoreHoleDragPreview(d);
-
-  if(!safety.ok){
-    d.valid=false;
-    d.targetWorld=d.startWorldCenter.clone();
-    d.deltaWorld.set(0,0,0);
-    $('dragHud').textContent='穴移動不可：'+safety.reason;
-    $('dragHud').classList.remove('hidden');
-    setStatus('穴移動を中止：'+safety.reason,'error');
-    return true;
-  }
+  // 穴軸方向は元位置に固定。
+  targetLocal[d.hole.axis]=d.hole.center[d.hole.axis];
+  const safe=holeMoveSafety(part,d.hole,targetLocal);
+  d.valid=!!safe.ok;
+  d.invalidReason=safe.ok?'':safe.reason;
 
   const deltaLocal=targetLocal.clone().sub(d.hole.center);
+  d.deltaLocal.copy(deltaLocal);
+  d.targetWorld.copy(part.mesh.localToWorld(targetLocal.clone()));
+
   const attr=part.mesh.geometry.getAttribute('position');
-  d.vertexIndices.forEach((vi,k)=>{
-    attr.setXYZ(
-      vi,
-      d.startPositions[k*3]+deltaLocal.x,
-      d.startPositions[k*3+1]+deltaLocal.y,
-      d.startPositions[k*3+2]+deltaLocal.z
-    );
-  });
+  if(!attr) return true;
+
+  if(d.valid){
+    d.vertexIndices.forEach((vi,k)=>{
+      attr.setXYZ(
+        vi,
+        d.startPositions[k*3]+deltaLocal.x,
+        d.startPositions[k*3+1]+deltaLocal.y,
+        d.startPositions[k*3+2]+deltaLocal.z
+      );
+    });
+  }else{
+    d.vertexIndices.forEach((vi,k)=>{
+      attr.setXYZ(vi,d.startPositions[k*3],d.startPositions[k*3+1],d.startPositions[k*3+2]);
+    });
+  }
+
   attr.needsUpdate=true;
   part.mesh.geometry.computeVertexNormals();
   part.mesh.geometry.computeBoundingBox();
   part.mesh.geometry.computeBoundingSphere();
 
-  d.valid=true;
-  d.targetWorld.copy(targetWorld);
-  d.deltaWorld.copy(worldDelta);
-
   clearGroup(faceHighlightGroup);
+  clearPartDimensions();
   const patch=part.patches?.[d.patchIndex];
-  if(patch) highlightPatch(part,patch);
+  if(patch){
+    highlightPatch(part,patch);
+    showBoxDimensions(new THREE.Box3().setFromObject(part.mesh),'part');
+  }
 
-  $('dragHud').textContent=
-    '穴移動 ΔX '+(worldDelta.x>=0?'+':'')+formatRawMm(worldDelta.x)+
-    ' / ΔY '+(worldDelta.y>=0?'+':'')+formatRawMm(worldDelta.y)+
-    ' / ΔZ '+(worldDelta.z>=0?'+':'')+formatRawMm(worldDelta.z)+' mm';
-  $('dragHud').classList.remove('hidden');
-  setStatus('穴位置をドラッグ中','ok');
+  const moveMm=d.startCenterWorld.distanceTo(d.targetWorld);
+  $('dragHud').textContent=d.valid
+    ? '穴移動 '+formatRawMm(moveMm)+' mm'
+    : '移動不可：'+d.invalidReason;
+  setStatus(
+    d.valid
+      ? '穴中心 X'+formatRawMm(d.targetWorld.x)+' / Y'+formatRawMm(d.targetWorld.y)+' / Z'+formatRawMm(d.targetWorld.z)
+      : '穴移動を中止：'+d.invalidReason,
+    d.valid?'ok':'error'
+  );
   return true;
 }
 
@@ -2950,28 +3039,25 @@ function endHoleDrag(e,cancel=false){
   if(!holeDrag || holeDrag.pointerId!==e.pointerId) return false;
   const d=holeDrag;
 
-  $('dragHud').classList.add('hidden');
+  restoreHoleDragGeometry(d);
   controls.enabled=true;
+  $('dragHud').classList.add('hidden');
   try{renderer.domElement.releasePointerCapture(e.pointerId);}catch(_){}
 
-  restoreHoleDragPreview(d);
-
-  const shouldCommit=d.active && d.valid && !cancel && d.deltaWorld.length()>0.001;
-  const target=d.targetWorld.clone();
-  holeDrag=null;
-
-  if(!shouldCommit){
+  if(cancel || !d.active || !d.valid || d.startCenterWorld.distanceTo(d.targetWorld)<0.01){
+    holeDrag=null;
     refreshEditSelection();
-    if(cancel) setStatus('穴ドラッグを取り消しました','idle');
     return false;
   }
 
+  const target=d.targetWorld.clone();
+  holeDrag=null;
   const result=commitHoleMove(target);
   if(result.ok){
-    setStatus(
-      '指ドラッグで穴を移動：ΔX '+formatRawMm(result.to.x-result.from.x)+
-      ' / ΔY '+formatRawMm(result.to.y-result.from.y)+
-      ' / ΔZ '+formatRawMm(result.to.z-result.from.z)+' mm',
+    setStatus('穴位置を指ドラッグで確定しました','ok');
+    setNightReply(
+      '指ドラッグで穴中心を X'+formatRawMm(result.to.x)+' / Y'+formatRawMm(result.to.y)+
+      ' / Z'+formatRawMm(result.to.z)+' mm に移動したで。',
       'ok'
     );
     return true;
@@ -3148,7 +3234,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
   pointerDown = { x: e.clientX, y: e.clientY, id: e.pointerId };
   if(touchDragEnabled && selectionMode==='face' && selectedPatch && !measureMode){
     const hits=pickAt(e.clientX,e.clientY);
-    if(hits.length && (beginHoleDragCandidate(e,hits[0]) || beginFaceDragCandidate(e,hits[0]))){
+    if(beginHoleDragCandidate(e,hits[0]||null) || (hits.length && beginFaceDragCandidate(e,hits[0]))){
       e.preventDefault();
       e.stopImmediatePropagation();
     }
@@ -3183,8 +3269,8 @@ renderer.domElement.addEventListener('pointercancel', (e) => {
 renderer.domElement.addEventListener('pointerup', (e) => {
   const hadHoleDrag=!!(holeDrag && holeDrag.pointerId===e.pointerId);
   if(hadHoleDrag){
-    e.stopImmediatePropagation();
     const wasActive=holeDrag.active;
+    e.stopImmediatePropagation();
     const committed=endHoleDrag(e,false);
     if(committed || wasActive){
       pointerDown=null;
@@ -4160,62 +4246,33 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
         axis:r.hole.axis,
         diameter:r.hole.diameter,
         center:{x:r.hole.worldCenter.x,y:r.hole.worldCenter.y,z:r.hole.worldCenter.z},
-        partIndex:r.partIndex,patchIndex:r.patchIndex
+        partIndex:r.partIndex,patchIndex:r.patchIndex,
+        linkedPatchCount:r.hole.linkedPatchCount||1,
+        envelopeDiameter:r.hole.envelopeDiameter||r.hole.diameter,
+        holeKind:r.hole.holeKind||'丸穴'
       };
     },
-    holeDragGesture(delta={x:2,y:0,z:0}){
+    selectedHoleScreenCenter(){
       const r=selectedMovableHole();
       if(!r) return null;
-      const part=r.part, hole=r.hole;
+      return worldToClientPoint(r.hole.worldCenter);
+    },
+    toggleTouchDrag(){ toggleTouchDragAssist(); return touchDragEnabled; },
+    selectedPatchScreenPoint(){
+      if(!selectedPatch) return null;
+      const part=parts[selectedPatch.partIndex];
+      const patch=part?.patches?.[selectedPatch.patchIndex];
+      const tri=patch?.triangles?.[0];
+      if(!part||!patch||!Number.isInteger(tri)) return null;
+      const a=new THREE.Vector3(),b=new THREE.Vector3(),c=new THREE.Vector3();
+      trianglePoint(part.mesh.geometry,tri,0,a).applyMatrix4(part.mesh.matrixWorld);
+      trianglePoint(part.mesh.geometry,tri,1,b).applyMatrix4(part.mesh.matrixWorld);
+      trianglePoint(part.mesh.geometry,tri,2,c).applyMatrix4(part.mesh.matrixWorld);
+      const p=a.add(b).add(c).multiplyScalar(1/3).project(camera);
       const rect=renderer.domElement.getBoundingClientRect();
-      const centerScreen=screenPointForWorld(hole.worldCenter,rect);
-      const cx=rect.left+centerScreen.x, cy=rect.top+centerScreen.y;
-
-      // まず穴中心周辺を細かく走査。pickAt と currentSelectedPatchHit を
-      // そのまま使うので、実際の指タップと同じ当たり判定になる。
-      const maxR=Math.min(rect.width,rect.height)*0.16;
-      let startPoint=null;
-      for(let radius=4;radius<=maxR && !startPoint;radius+=3){
-        for(let deg=0;deg<360;deg+=10){
-          const rad=deg*Math.PI/180;
-          const x=cx+Math.cos(rad)*radius;
-          const y=cy+Math.sin(rad)*radius;
-          if(x<rect.left||x>rect.right||y<rect.top||y>rect.bottom) continue;
-          const hits=pickAt(x,y);
-          if(hits.length && currentSelectedPatchHit(hits[0])){
-            startPoint={x,y};
-            break;
-          }
-        }
-      }
-
-      // それでも見つからなければビュー全体を粗く走査。
-      if(!startPoint){
-        const step=10;
-        for(let y=rect.top+step;y<rect.bottom-step && !startPoint;y+=step){
-          for(let x=rect.left+step;x<rect.right-step;x+=step){
-            const hits=pickAt(x,y);
-            if(hits.length && currentSelectedPatchHit(hits[0])){
-              startPoint={x,y};
-              break;
-            }
-          }
-        }
-      }
-      if(!startPoint) return null;
-
-      // ドラッグ先は「穴平面上で指定したワールド移動量」になるよう投影。
-      const normalWorld=holeAxisWorldNormal(part,hole.axis);
-      const plane=new THREE.Plane().setFromNormalAndCoplanarPoint(normalWorld,hole.worldCenter);
-      const startWorld=pointerWorldOnPlane(startPoint.x,startPoint.y,plane);
-      if(!startWorld) return null;
-      const targetWorld=startWorld.clone().add(new THREE.Vector3(
-        Number(delta.x)||0,Number(delta.y)||0,Number(delta.z)||0
-      ));
-      const ep=screenPointForWorld(targetWorld,rect);
       return {
-        start:startPoint,
-        end:{x:rect.left+ep.x,y:rect.top+ep.y}
+        x:rect.left+(p.x*0.5+0.5)*rect.width,
+        y:rect.top+(-p.y*0.5+0.5)*rect.height
       };
     },
     firstMovableHolePatch(partIndex){
@@ -4253,7 +4310,7 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
         partSize:part?{x:partWorldSize(part).x,y:partWorldSize(part).y,z:partWorldSize(part).z}:null,
         bounds,totalVertices,
         lastCommand:cmd?{
-          type:cmd.type,mode:cmd.mode,axis:cmd.axis,side:cmd.side,anchor:cmd.anchor,
+          type:cmd.type,mode:cmd.mode,axis:cmd.axis,side:cmd.side,anchor:cmd.anchor,inputMethod:cmd.inputMethod,
           deltaWorldMm:cmd.deltaWorldMm,deltaLocalMm:cmd.deltaLocalMm,
           fromDimensionMm:cmd.fromDimensionMm,toDimensionMm:cmd.toDimensionMm,
           fromDiameterMm:cmd.fromDiameterMm,toDiameterMm:cmd.toDiameterMm,
@@ -4399,6 +4456,54 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
     sniffStepText(text){
       const bytes=new TextEncoder().encode(String(text||''));
       return looksLikeStepBytes(bytes);
+    },
+    addSteppedHoleStackFixture(){
+      const geoms=[];
+      const box=new THREE.BoxGeometry(40,30,8);
+      geoms.push(box.index?box.toNonIndexed():box);
+
+      const inner=new THREE.CylinderGeometry(3,3,8,64,1,true);
+      inner.rotateX(Math.PI/2);
+      geoms.push(inner.index?inner.toNonIndexed():inner);
+
+      const counter=new THREE.CylinderGeometry(6,6,2,64,1,true);
+      counter.rotateX(Math.PI/2);
+      counter.translate(0,0,3);
+      geoms.push(counter.index?counter.toNonIndexed():counter);
+
+      const values=[];
+      for(const g of geoms){
+        const a=g.getAttribute('position').array;
+        for(let i=0;i<a.length;i++) values.push(a[i]);
+      }
+
+      const geometry=new THREE.BufferGeometry();
+      geometry.setAttribute('position',new THREE.Float32BufferAttribute(values,3));
+      geometry.computeVertexNormals();
+      geometry.computeBoundingBox();
+      geometry.computeBoundingSphere();
+
+      const material=new THREE.MeshStandardMaterial({
+        color:0x69b7e8,roughness:.65,metalness:.04,side:THREE.DoubleSide
+      });
+      const mesh=new THREE.Mesh(geometry,material);
+      const name='Stepped Hole Stack Fixture';
+      mesh.name=name;
+      mesh.userData.baseColor=material.color.getHex();
+      modelGroup.add(mesh);
+
+      const localBox=geometry.boundingBox.clone();
+      const localSize=localBox.getSize(new THREE.Vector3());
+      const triangles=triangleCountFor(geometry);
+      parts.push({
+        mesh,name,path:name,localBox,localSize,triangles,source:'cad',kind:'test',baseOffsetZ:0,
+        brepFaces:[],patches:null,triToPatch:null,patchMode:null,patchAngle:null,
+        basePosition:new Float32Array(geometry.getAttribute('position').array)
+      });
+      renderPartsList();
+      recomputeModelStats(true);
+      selectPart(parts.length-1,false);
+      return parts.length-1;
     },
     addHolePlateFixture(){
       const shape=new THREE.Shape();
