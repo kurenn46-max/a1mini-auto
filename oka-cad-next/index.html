@@ -5,149 +5,153 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
   <meta name="theme-color" content="#07111d">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <title>岡重機 CAD NEXT 0.2 EASY</title>
-  <link rel="stylesheet" href="./style.css?v=0.2.0">
+  <title>岡重機 CAD NEXT 0.3 LOCK + DIM</title>
+  <link rel="stylesheet" href="./style.css?v=0.3.0">
 </head>
 <body>
-  <header class="topbar">
-    <div>
-      <div class="eyebrow">OKA JUKI CAD</div>
-      <h1>CAD NEXT <small>0.2 EASY</small></h1>
+<header class="topbar">
+  <div>
+    <div class="eyebrow">OKA JUKI CAD</div>
+    <h1>CAD NEXT <small>0.3 LOCK + DIM</small></h1>
+  </div>
+  <div class="topActions">
+    <button id="undoBtn" disabled>↶ 戻る</button>
+    <button id="redoBtn" disabled>↷</button>
+  </div>
+</header>
+
+<main>
+  <section class="startGuide">
+    <strong>基本操作</strong>
+    <span>① 面を選ぶ</span><span>② 外へ / 内へ</span><span>③ この位置を固定</span>
+  </section>
+
+  <section class="openRow">
+    <label class="primaryBtn fileBtn" for="fileInput">📂 STEP / STLを開く</label>
+    <input id="fileInput" type="file" accept=".step,.stp,.stl" hidden>
+    <button id="demoBtn">デモで試す</button>
+    <button id="fitBtn" disabled>全体表示</button>
+  </section>
+
+  <section class="viewerCard">
+    <div id="viewer"></div>
+    <div id="loading" class="loading hidden"><div class="spinner"></div><span id="loadingText">読込中…</span></div>
+
+    <div class="modeBar">
+      <button id="faceModeBtn" class="active">面を選ぶ</button>
+      <button id="partModeBtn">部品を選ぶ</button>
     </div>
-    <div class="topActions">
-      <button id="undoBtn" disabled aria-label="戻る">↶ 戻る</button>
-      <button id="redoBtn" disabled aria-label="やり直す">↷</button>
+
+    <div id="directionBadge" class="directionBadge hidden">
+      <span>選択面の外方向</span>
+      <strong id="directionText">—</strong>
     </div>
-  </header>
 
-  <main>
-    <section class="startGuide">
-      <strong>使い方は3つだけ</strong>
-      <span>① 面をタップ</span><span>② 外へ / 内へ</span><span>③ 間違えたら「戻る」</span>
-    </section>
+    <div id="faceDimsHud" class="faceDimsHud hidden">
+      <div><span>左右 X</span><strong id="faceDimX">—</strong><small>mm</small></div>
+      <div><span>前後 Y</span><strong id="faceDimY">—</strong><small>mm</small></div>
+      <div><span>上下 Z</span><strong id="faceDimZ">—</strong><small>mm</small></div>
+    </div>
 
-    <section class="openRow">
-      <label class="primaryBtn fileBtn" for="fileInput">📂 STEP / STLを開く</label>
-      <input id="fileInput" type="file" accept=".step,.stp,.stl" hidden>
-      <button id="demoBtn">デモで試す</button>
-      <button id="fitBtn" disabled>全体表示</button>
-    </section>
+    <div class="axisGuide">
+      <span>左右 = X</span><span>前後 = Y</span><span>上下 = Z</span>
+    </div>
 
-    <section class="viewerCard">
-      <div id="viewer"></div>
-      <div id="loading" class="loading hidden"><div class="spinner"></div><span id="loadingText">読込中…</span></div>
+    <div id="status" class="status">STEP / STLを開くか「デモで試す」を押してください</div>
+  </section>
 
-      <div class="modeBar">
-        <button id="faceModeBtn" class="active">面を選ぶ</button>
-        <button id="partModeBtn">部品を選ぶ</button>
+  <section class="infoStrip">
+    <div><span>部品数</span><strong id="partCount">0</strong></div>
+    <div><span>いま選択</span><strong id="selectedKind">—</strong></div>
+    <div><span>面番号</span><strong id="selectedFace">—</strong></div>
+  </section>
+
+  <section class="panel">
+    <div class="panelHead">
+      <div>
+        <div class="eyebrow">SELECTED</div>
+        <h2 id="selectionTitle">まだ選んでいません</h2>
       </div>
+      <span id="faceType" class="pill">—</span>
+    </div>
+    <div id="selectionInfo" class="selectionInfo">3Dモデルの動かしたい面をタップしてください。</div>
+    <div class="lockRow">
+      <button id="selectionLockBtn" disabled>🔓 面選択を固定</button>
+      <button id="positionFixBtn" disabled>✓ この位置を固定</button>
+    </div>
+    <div id="lockInfo" class="lockInfo">面選択固定：OFF　／　位置固定：なし</div>
+  </section>
 
-      <div id="directionBadge" class="directionBadge hidden">
-        <span>選択面の外方向</span>
-        <strong id="directionText">—</strong>
+  <section class="panel editPanel">
+    <div class="panelHead">
+      <div>
+        <div class="eyebrow">EASY MOVE</div>
+        <h2>面を出す / 引っ込める</h2>
       </div>
+      <span class="pill">mm</span>
+    </div>
 
-      <div class="axisGuide">
-        <span>左右 = X</span>
-        <span>前後 = Y</span>
-        <span>上下 = Z</span>
+    <div id="easyHelp" class="easyHelp">まず3Dモデルの面をタップしてください。</div>
+
+    <div class="normalMoveGrid">
+      <button data-normal-delta="0.2" disabled>外へ<br><strong>+0.2</strong></button>
+      <button data-normal-delta="0.5" disabled>外へ<br><strong>+0.5</strong></button>
+      <button data-normal-delta="1" disabled>外へ<br><strong>+1.0</strong></button>
+      <button data-normal-delta="-0.2" disabled>内へ<br><strong>−0.2</strong></button>
+      <button data-normal-delta="-0.5" disabled>内へ<br><strong>−0.5</strong></button>
+      <button data-normal-delta="-1" disabled>内へ<br><strong>−1.0</strong></button>
+    </div>
+
+    <div class="customMove">
+      <label>好きな移動量
+        <input id="moveAmount" type="number" inputmode="decimal" min="0.01" step="0.1" value="2.0">
+        <span>mm</span>
+      </label>
+      <div>
+        <button id="customOutBtn" class="primaryBtn" disabled>外へ</button>
+        <button id="customInBtn" disabled>内へ</button>
       </div>
+    </div>
 
-      <div id="status" class="status">STEP / STLを開くか「デモで試す」を押してください</div>
-    </section>
+    <div class="previewReadout">
+      <span>この面の移動位置</span>
+      <strong id="previewValue">左右 0.00 / 前後 0.00 / 上下 0.00 mm</strong>
+    </div>
 
-    <section class="infoStrip">
-      <div><span>部品数</span><strong id="partCount">0</strong></div>
-      <div><span>いま選択</span><strong id="selectedKind">—</strong></div>
-      <div><span>面番号</span><strong id="selectedFace">—</strong></div>
-    </section>
+    <button id="resetPreviewBtn" class="wideBtn" disabled>固定位置まで戻す</button>
 
-    <section class="panel">
-      <div class="panelHead">
-        <div>
-          <div class="eyebrow">SELECTED</div>
-          <h2 id="selectionTitle">まだ選んでいません</h2>
-        </div>
-        <span id="faceType" class="pill">—</span>
+    <details class="advanced">
+      <summary>方向を指定して動かす（必要な時だけ）</summary>
+      <p>XYZを覚えなくても、方向名で動かせます。</p>
+      <div class="directionGrid">
+        <button data-dir-axis="x" data-dir-sign="-1" disabled>← 左<br><small>X−</small></button>
+        <button data-dir-axis="x" data-dir-sign="1" disabled>右 →<br><small>X＋</small></button>
+        <button data-dir-axis="y" data-dir-sign="-1" disabled>手前<br><small>Y−</small></button>
+        <button data-dir-axis="y" data-dir-sign="1" disabled>奥<br><small>Y＋</small></button>
+        <button data-dir-axis="z" data-dir-sign="1" disabled>↑ 上<br><small>Z＋</small></button>
+        <button data-dir-axis="z" data-dir-sign="-1" disabled>↓ 下<br><small>Z−</small></button>
       </div>
-      <div id="selectionInfo" class="selectionInfo">3Dモデルの動かしたい面をタップしてください。</div>
-    </section>
+    </details>
 
-    <section class="panel editPanel">
-      <div class="panelHead">
-        <div>
-          <div class="eyebrow">EASY MOVE</div>
-          <h2>面を出す / 引っ込める</h2>
-        </div>
-        <span class="pill">mm</span>
-      </div>
+    <p class="note">0.3の「位置固定」は編集プレビューをその面に保持する機能です。実STEP形状の再構築は次段階で行います。</p>
+  </section>
 
-      <div id="easyHelp" class="easyHelp">まず3Dモデルの面をタップしてください。</div>
+  <section class="panel">
+    <div class="panelHead">
+      <div><div class="eyebrow">HISTORY</div><h2>操作履歴</h2></div>
+      <span id="historyCount" class="pill">0</span>
+    </div>
+    <div id="historyList" class="historyList"><div class="empty">まだ操作していません</div></div>
+  </section>
+</main>
 
-      <div class="normalMoveGrid">
-        <button data-normal-delta="0.2" disabled>外へ<br><strong>+0.2</strong></button>
-        <button data-normal-delta="0.5" disabled>外へ<br><strong>+0.5</strong></button>
-        <button data-normal-delta="1" disabled>外へ<br><strong>+1.0</strong></button>
-        <button data-normal-delta="-0.2" disabled>内へ<br><strong>−0.2</strong></button>
-        <button data-normal-delta="-0.5" disabled>内へ<br><strong>−0.5</strong></button>
-        <button data-normal-delta="-1" disabled>内へ<br><strong>−1.0</strong></button>
-      </div>
-
-      <div class="customMove">
-        <label>好きな移動量
-          <input id="moveAmount" type="number" inputmode="decimal" min="0.01" step="0.1" value="2.0">
-          <span>mm</span>
-        </label>
-        <div>
-          <button id="customOutBtn" class="primaryBtn" disabled>外へ</button>
-          <button id="customInBtn" disabled>内へ</button>
-        </div>
-      </div>
-
-      <div class="previewReadout">
-        <span>いまの移動量</span>
-        <strong id="previewValue">左右 0.00 / 前後 0.00 / 上下 0.00 mm</strong>
-      </div>
-
-      <button id="resetPreviewBtn" class="wideBtn" disabled>移動を全部0に戻す</button>
-
-      <details class="advanced">
-        <summary>方向を指定して動かす（必要な時だけ）</summary>
-        <p>XYZを覚える必要はありません。ボタン名で方向を選べます。移動量は上の「好きな移動量」を使います。</p>
-        <div class="directionGrid">
-          <button data-dir-axis="x" data-dir-sign="-1" disabled>← 左<br><small>X−</small></button>
-          <button data-dir-axis="x" data-dir-sign="1" disabled>右 →<br><small>X＋</small></button>
-          <button data-dir-axis="y" data-dir-sign="-1" disabled>手前<br><small>Y−</small></button>
-          <button data-dir-axis="y" data-dir-sign="1" disabled>奥<br><small>Y＋</small></button>
-          <button data-dir-axis="z" data-dir-sign="1" disabled>↑ 上<br><small>Z＋</small></button>
-          <button data-dir-axis="z" data-dir-sign="-1" disabled>↓ 下<br><small>Z−</small></button>
-        </div>
-      </details>
-
-      <p class="note">
-        0.2では黄色の選択面だけを安全にプレビュー移動します。元のSTEP/STL形状はまだ書き換えません。
-      </p>
-    </section>
-
-    <section class="panel">
-      <div class="panelHead">
-        <div>
-          <div class="eyebrow">HISTORY</div>
-          <h2>操作履歴</h2>
-        </div>
-        <span id="historyCount" class="pill">0</span>
-      </div>
-      <div id="historyList" class="historyList"><div class="empty">まだ操作していません</div></div>
-    </section>
-  </main>
-
-  <script src="https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.js"></script>
-  <script type="importmap">
-  {"imports":{
-    "three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
-    "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
-  }}
-  </script>
-  <script type="module" src="./app.js?v=0.2.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.js"></script>
+<script type="importmap">
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+}}
+</script>
+<script type="module" src="./app.js?v=0.3.0"></script>
 </body>
 </html>
