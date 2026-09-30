@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
   <meta name="theme-color" content="#07111d">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <title>岡重機 CAD NEXT 0.4 BODY MOVE</title>
-  <link rel="stylesheet" href="./style.css?v=0.4.0">
+  <title>岡重機 CAD NEXT 0.5 GROUP MOVE</title>
+  <link rel="stylesheet" href="./style.css?v=0.5.0">
 </head>
 <body>
 <header class="topbar">
   <div>
     <div class="eyebrow">OKA JUKI CAD</div>
-    <h1>CAD NEXT <small>0.4 BODY MOVE</small></h1>
+    <h1>CAD NEXT <small>0.5 GROUP MOVE</small></h1>
   </div>
   <div class="topActions">
     <button id="undoBtn" disabled>↶ 戻る</button>
@@ -38,8 +38,9 @@
     <div id="loading" class="loading hidden"><div class="spinner"></div><span id="loadingText">読込中…</span></div>
 
     <div class="modeBar">
-      <button id="faceModeBtn" class="active">面を選ぶ</button>
-      <button id="partModeBtn">部品を選ぶ</button>
+      <button id="faceModeBtn" class="active">面</button>
+      <button id="partModeBtn">部品</button>
+      <button id="groupModeBtn">複数部品</button>
     </div>
 
     <div id="directionBadge" class="directionBadge hidden">
@@ -80,6 +81,48 @@
       <button id="positionFixBtn" disabled>✓ この位置を固定</button>
     </div>
     <div id="lockInfo" class="lockInfo">面選択固定：OFF　／　位置固定：なし</div>
+  </section>
+
+  <section id="groupPanel" class="panel groupPanel hidden">
+    <div class="panelHead">
+      <div>
+        <div class="eyebrow">GROUP MOVE</div>
+        <h2>部品をまとめて動かす</h2>
+      </div>
+      <span id="groupCount" class="pill">0個</span>
+    </div>
+
+    <div id="groupHelp" class="easyHelp">動かしたい部品を2個以上タップしてください。</div>
+
+    <div class="groupActions">
+      <button id="makeGroupBtn" class="primaryBtn" disabled>🔗 この部品をまとめる</button>
+      <button id="clearGroupBtn" disabled>解除</button>
+    </div>
+
+    <div id="groupSize" class="selectionInfo">グループ寸法：—</div>
+
+    <div class="customMove">
+      <label>移動量
+        <input id="groupMoveAmount" type="number" inputmode="decimal" min="0.01" step="0.5" value="5.0">
+        <span>mm</span>
+      </label>
+    </div>
+
+    <div class="directionGrid groupMoveGrid">
+      <button data-group-axis="x" data-group-sign="-1" disabled>← 左</button>
+      <button data-group-axis="x" data-group-sign="1" disabled>右 →</button>
+      <button data-group-axis="y" data-group-sign="-1" disabled>手前</button>
+      <button data-group-axis="y" data-group-sign="1" disabled>奥</button>
+      <button data-group-axis="z" data-group-sign="1" disabled>↑ 上</button>
+      <button data-group-axis="z" data-group-sign="-1" disabled>↓ 下</button>
+    </div>
+
+    <div class="groupActions">
+      <button id="groupUndoBtn" disabled>↶ グループ移動を戻す</button>
+      <button id="groupResetBtn" disabled>元の位置へ</button>
+    </div>
+
+    <p class="note">「まとめる」は形状の溶接ではなく、複数部品の位置関係を保ったまま一緒に移動する機能です。</p>
   </section>
 
   <section class="panel editPanel">
@@ -133,7 +176,7 @@
       </div>
     </details>
 
-    <p class="note">0.4は平面を動かすと本体メッシュも一緒に伸び縮みします。曲面の本体編集は安全のためまだ無効です。</p>
+    <p class="note">0.5は平面の本体変形に加え、複数部品をグループ化して一緒に移動できます。曲面の本体変形はまだ無効です。</p>
   </section>
 
   <section class="panel">
@@ -152,6 +195,6 @@
   "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
 }}
 </script>
-<script type="module" src="./app.js?v=0.4.0"></script>
+<script type="module" src="./app.js?v=0.5.0"></script>
 </body>
 </html>
