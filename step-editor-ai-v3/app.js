@@ -4140,6 +4140,42 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
       const bytes=new TextEncoder().encode(String(text||''));
       return looksLikeStepBytes(bytes);
     },
+    addHolePlateFixture(){
+      const shape=new THREE.Shape();
+      shape.moveTo(-20,-15);
+      shape.lineTo(20,-15);
+      shape.lineTo(20,15);
+      shape.lineTo(-20,15);
+      shape.closePath();
+      const hole=new THREE.Path();
+      hole.absellipse(0,0,3,3,0,Math.PI*2,false,0);
+      shape.holes.push(hole);
+      const geometry=new THREE.ExtrudeGeometry(shape,{depth:8,steps:1,bevelEnabled:false,curveSegments:64});
+      geometry.translate(0,0,-4);
+      geometry.computeVertexNormals();
+      geometry.computeBoundingBox();
+      geometry.computeBoundingSphere();
+      const material=new THREE.MeshStandardMaterial({
+        color:0x69b7e8,roughness:.65,metalness:.04,side:THREE.DoubleSide
+      });
+      const mesh=new THREE.Mesh(geometry,material);
+      const name='Hole Move Plate Fixture';
+      mesh.name=name;
+      mesh.userData.baseColor=material.color.getHex();
+      modelGroup.add(mesh);
+      const localBox=geometry.boundingBox.clone();
+      const localSize=localBox.getSize(new THREE.Vector3());
+      const triangles=triangleCountFor(geometry);
+      parts.push({
+        mesh,name,path:name,localBox,localSize,triangles,source:'cad',kind:'test',baseOffsetZ:0,
+        brepFaces:[],patches:null,triToPatch:null,patchMode:null,patchAngle:null,
+        basePosition:new Float32Array(geometry.getAttribute('position').array)
+      });
+      renderPartsList();
+      recomputeModelStats(true);
+      selectPart(parts.length-1,false);
+      return parts.length-1;
+    },
     addSteppedPart(){
       const shape=new THREE.Shape();
       shape.moveTo(-30,-10);
