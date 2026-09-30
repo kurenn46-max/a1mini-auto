@@ -233,6 +233,23 @@ const near=(a,b,e=1e-3)=>Math.abs(a-b)<=e;
   if(!r.reply.includes('外周')) throw new Error('外周安全拒否が不明: '+r.reply);
 
 
+  // Stepped/counterbored hole must be treated as one movable hole group.
+  const steppedPart=await page.evaluate(()=>window.__okaTest.addSteppedHoleStackFixture());
+  const steppedPatch=await page.evaluate(i=>window.__okaTest.firstMovableHolePatch(i),steppedPart);
+  if(steppedPatch===null) throw new Error('段付き穴を検出できない');
+  await page.evaluate(([pi,fi])=>window.__okaTest.selectPatch(pi,fi),[steppedPart,steppedPatch]);
+  await page.waitForTimeout(100);
+  let stepped=await page.evaluate(()=>window.__okaTest.selectedHoleState());
+  if(!stepped || stepped.linkedPatchCount<2 || !near(stepped.envelopeDiameter,12,0.12)){
+    throw new Error('段付き穴の同軸グループ認識に失敗: '+JSON.stringify(stepped));
+  }
+  r=await night('この穴を右へ3mm');
+  stepped=await page.evaluate(()=>window.__okaTest.selectedHoleState());
+  if(!stepped || !near(stepped.center.x,3,0.08) || stepped.linkedPatchCount<2){
+    throw new Error('段付き穴グループの移動に失敗: '+JSON.stringify(stepped));
+  }
+  r=await night('元に戻して');
+
   // Real pointer drag test for hole movement.
   const dragPart=await page.evaluate(()=>window.__okaTest.addHolePlateFixture());
   const dragPatch=await page.evaluate(i=>window.__okaTest.firstMovableHolePatch(i),dragPart);
@@ -278,7 +295,7 @@ const near=(a,b,e=1e-3)=>Math.abs(a-b)<=e;
   }
 
   if(errors.length) throw new Error(errors.join('\n'));
-  console.log('AI_V3_1_PASS: base / round-bar / hole move / real touch pointer drag / undo / safety');
+  console.log('AI_V3_1_PASS: base / round-bar / simple+stepped hole move / real touch pointer drag / undo / safety');
   await browser.close();
 })().catch(err=>{
   console.error(err);
