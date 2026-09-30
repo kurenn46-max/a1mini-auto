@@ -232,8 +232,59 @@ const near=(a,b,e=1e-3)=>Math.abs(a-b)<=e;
   if(r.state.editCursor!==holeCursor2) throw new Error('外周を越える穴移動を実行してしまった');
   if(!r.reply.includes('外周')) throw new Error('外周安全拒否が不明: '+r.reply);
 
+  // V3.2 EDIT FIX: stepped/local hole must be one movable feature.
+  const steppedPart=await page.evaluate(()=>window.__okaTest.addSteppedHoleStackFixture());
+  const steppedPatch=await page.evaluate(i=>window.__okaTest.firstMovableHolePatch(i),steppedPart);
+  if(steppedPatch===null) throw new Error('段付き穴を検出できない');
+  await page.evaluate(([pi,fi])=>window.__okaTest.selectPatch(pi,fi),[steppedPart,steppedPatch]);
+  await page.waitForTimeout(100);
+
+  let stepped=await page.evaluate(()=>window.__okaTest.selectedHoleState());
+  if(!stepped || stepped.linkedPatchCount<2 || !near(stepped.envelopeDiameter,12,0.12)){
+    throw new Error('段付き穴を一体認識できない: '+JSON.stringify(stepped));
+  }
+
+  // Curved hole surface must never go through generic face push/pull.
+  await page.evaluate(()=>window.__okaTest.confirmSelectedFace());
+  const pushGuard=await page.evaluate(()=>window.__okaTest.tryPushPull(1));
+  if(pushGuard.after!==pushGuard.before){
+    throw new Error('曲面に面押し引きが実行されてしまった');
+  }
+  if(!pushGuard.status.includes('曲面')){
+    throw new Error('曲面押し引き拒否理由が不明: '+pushGuard.status);
+  }
+
+  // Hole position move must translate the whole concentric stepped feature.
+  r=await night('この穴を右へ3mm');
+  stepped=await page.evaluate(()=>window.__okaTest.selectedHoleState());
+  if(!stepped || !near(stepped.center.x,3,0.08) || stepped.linkedPatchCount<2){
+    throw new Error('段付き穴グループの移動に失敗: '+JSON.stringify(stepped));
+  }
+  if(!near(stepped.envelopeDiameter,12,0.12)){
+    throw new Error('段付き穴移動で外径グループが崩れた: '+JSON.stringify(stepped));
+  }
+
+  r=await night('元に戻して');
+  stepped=await page.evaluate(()=>window.__okaTest.selectedHoleState());
+  if(!stepped || !near(stepped.center.x,0,0.08)){
+    throw new Error('段付き穴移動Undoに失敗: '+JSON.stringify(stepped));
+  }
+
+  // Planar push/pull remains available: edit fix must not break normal face editing.
+  await page.click('#addBoxBtn');
+  const boxStateBefore=await page.evaluate(()=>window.__okaTest.state());
+  const topPatch=await page.evaluate(()=>window.__okaTest.extremePatch('z','max'));
+  if(topPatch===null) throw new Error('平面押し引きテストの上面がない');
+  const boxPartIndex=boxStateBefore.selectedIndex;
+  await page.evaluate(([pi,fi])=>window.__okaTest.selectPatch(pi,fi),[boxPartIndex,topPatch]);
+  await page.evaluate(()=>window.__okaTest.confirmSelectedFace());
+  const flatPush=await page.evaluate(()=>window.__okaTest.tryPushPull(0.5));
+  if(flatPush.after!==flatPush.before+1){
+    throw new Error('平面の押し引きまで禁止されている: '+JSON.stringify(flatPush));
+  }
+
   if(errors.length) throw new Error(errors.join('\n'));
-  console.log('AI_V3_2_PASS: base / round-bar / hole move relative+absolute / undo / axis reject / clearance reject');
+  console.log('AI_V3_2_PASS: base / round-bar / simple+stepped hole move / curved pushpull blocked / planar pushpull kept / undo / safety');
   await browser.close();
 })().catch(err=>{
   console.error(err);
