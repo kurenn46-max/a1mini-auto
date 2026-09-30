@@ -241,7 +241,7 @@ const near=(a,b,e=1e-3)=>Math.abs(a-b)<=e;
   await page.evaluate(([pi,fi])=>window.__okaTest.selectPatch(pi,fi),[dragPart,dragPatch]);
   await page.waitForTimeout(120);
   const dragBefore=await page.evaluate(()=>window.__okaTest.selectedHoleState());
-  const pt=await page.evaluate(()=>window.__okaTest.selectedPatchScreenPoint());
+  const pt=await page.evaluate(()=>window.__okaTest.selectedHoleScreenCenter());
   if(!pt) throw new Error('指ドラッグ開始点を取得できない');
   const enabled=await page.evaluate(()=>window.__okaTest.toggleTouchDrag());
   if(!enabled) throw new Error('指ドラッグ補助をONにできない');
