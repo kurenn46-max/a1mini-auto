@@ -191,6 +191,7 @@ $("groupUndoBtn").disabled=groupCursor<=0;
 $("groupResetBtn").disabled=activeGroup.size<2||groupOffset.lengthSq()<1e-12;
 updateGroupReadout();
 renderHistory()
+}
 function fitView(){if(!parts.length)return;const box=new THREE.Box3().setFromObject(modelGroup);if(box.isEmpty())return;const center=box.getCenter(new THREE.Vector3()),size=box.getSize(new THREE.Vector3()),span=Math.max(size.x,size.y,size.z,1);controls.target.copy(center);camera.position.set(center.x+span*1.35,center.y-span*1.35,center.z+span*1.05);camera.near=Math.max(span/5000,.01);camera.far=Math.max(span*200,1000);camera.updateProjectionMatrix();controls.update()}
 
 $("fileInput").addEventListener("click",function(){this.value=""});$("fileInput").addEventListener("change",function(){loadFile(this.files?.[0])});$("demoBtn").addEventListener("click",loadDemo);$("fitBtn").addEventListener("click",fitView);$("partModeBtn").addEventListener("click",()=>setSelectionMode("part"));$("faceModeBtn").addEventListener("click",()=>setSelectionMode("face"));$("groupModeBtn").addEventListener("click",()=>setSelectionMode("group"));
