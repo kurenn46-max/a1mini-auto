@@ -1910,7 +1910,9 @@ function updateEditHistoryUI(){
     const small=document.createElement('small');
     small.textContent=cmd.type==='deletePart'
       ? (cmd.feature?.partName||'部品')+(i>=editCursor?' （やり直し待ち）':'')
-      : cmd.feature?.partName+' / 詳細面 '+((cmd.feature?.patchIndex??0)+1)+(i>=editCursor?' （やり直し待ち）':'');
+      : cmd.type==='roundBar'
+        ? (cmd.feature?.partName||'丸棒')+' / 丸棒 '+String(cmd.axis||'').toUpperCase()+'軸'+(i>=editCursor?' （やり直し待ち）':'')
+        : cmd.feature?.partName+' / 詳細面 '+((cmd.feature?.patchIndex??0)+1)+(i>=editCursor?' （やり直し待ち）':'');
     row.appendChild(small);
     list.appendChild(row);
   });
@@ -3683,6 +3685,8 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
           type:cmd.type,mode:cmd.mode,axis:cmd.axis,side:cmd.side,anchor:cmd.anchor,
           deltaWorldMm:cmd.deltaWorldMm,deltaLocalMm:cmd.deltaLocalMm,
           fromDimensionMm:cmd.fromDimensionMm,toDimensionMm:cmd.toDimensionMm,
+          fromDiameterMm:cmd.fromDiameterMm,toDiameterMm:cmd.toDiameterMm,
+          fromLengthMm:cmd.fromLengthMm,toLengthMm:cmd.toLengthMm,
           vertexCount:Array.from(cmd.vertexIndices||[]).length,
           moves:Array.isArray(cmd.moves)?cmd.moves.map(m=>({
             side:m.side,
@@ -3731,6 +3735,33 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
       const triangles=triangleCountFor(geometry);
       parts.push({
         mesh,name,path:name,localBox,localSize,triangles,source:'cad',kind:'fixture',baseOffsetZ:0,
+        brepFaces:[],patches:null,triToPatch:null,patchMode:null,patchAngle:null,
+        basePosition:new Float32Array(geometry.getAttribute('position').array)
+      });
+      renderPartsList();
+      recomputeModelStats(true);
+      selectPart(parts.length-1,false);
+      return parts.length-1;
+    },
+    addUnmarkedCylinder(d=12,h=36){
+      const geometry=new THREE.CylinderGeometry(d/2,d/2,h,64,1,false);
+      geometry.rotateX(Math.PI/2);
+      geometry.computeVertexNormals();
+      geometry.computeBoundingBox();
+      geometry.computeBoundingSphere();
+      const material=new THREE.MeshStandardMaterial({
+        color:0x69b7e8,roughness:.65,metalness:.04,side:THREE.DoubleSide
+      });
+      const mesh=new THREE.Mesh(geometry,material);
+      const name='Imported Round Bar Fixture';
+      mesh.name=name;
+      mesh.userData.baseColor=material.color.getHex();
+      modelGroup.add(mesh);
+      const localBox=geometry.boundingBox.clone();
+      const localSize=localBox.getSize(new THREE.Vector3());
+      const triangles=triangleCountFor(geometry);
+      parts.push({
+        mesh,name,path:name,localBox,localSize,triangles,source:'step',
         brepFaces:[],patches:null,triToPatch:null,patchMode:null,patchAngle:null,
         basePosition:new Float32Array(geometry.getAttribute('position').array)
       });
