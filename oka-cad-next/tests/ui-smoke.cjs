@@ -47,7 +47,7 @@ const { chromium } = require("playwright");
 
   await page.click("#selectionLockBtn");
   const beforeSel=await page.evaluate(()=>window.__OKACAD_NEXT_TEST__.getSelected());
-  const attempt=await page.evaluate(()=>window.__OKACAD_NEXT_TEST__.selectFace(0,face,false));
+  const attempt=await page.evaluate(faceIndex=>window.__OKACAD_NEXT_TEST__.selectFace(0,faceIndex,false),face);
   const afterSel=await page.evaluate(()=>window.__OKACAD_NEXT_TEST__.getSelected());
   if(attempt!==false||beforeSel.patchIndex!==afterSel.patchIndex)throw new Error("selection lock failed");
 
