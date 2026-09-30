@@ -3494,6 +3494,120 @@ function runNightRoundBarCommand(text,resolved){
   return result;
 }
 
+
+function selectedMovableHole(){
+  if(!selectedPatch) return null;
+  const part=parts[selectedPatch.partIndex];
+  const patch=part?.patches?.[selectedPatch.patchIndex];
+  if(!part||!patch) return null;
+  const hole=analyzeMovableHole(part,patch);
+  if(!hole) return null;
+  return {part,patch,hole,partIndex:selectedPatch.partIndex,patchIndex:selectedPatch.patchIndex};
+}
+
+function holeDirectionDelta(dir,amount){
+  const n=Math.abs(Number(amount)||0);
+  if(dir==='右') return new THREE.Vector3(n,0,0);
+  if(dir==='左') return new THREE.Vector3(-n,0,0);
+  if(dir==='奥') return new THREE.Vector3(0,n,0);
+  if(dir==='手前') return new THREE.Vector3(0,-n,0);
+  if(dir==='上') return new THREE.Vector3(0,0,n);
+  if(dir==='下') return new THREE.Vector3(0,0,-n);
+  return new THREE.Vector3();
+}
+
+function parseHoleMoveTarget(text,hole){
+  const current=hole.worldCenter.clone();
+  const target=current.clone();
+  let changed=false;
+  let mode='relative';
+
+  const absoluteContext=/穴(?:の)?中心|穴中心/.test(text) && /[XYZ]\s*(?:=|:|＝)/i.test(text);
+  if(absoluteContext){
+    mode='absolute';
+    for(const axis of ['x','y','z']){
+      const a=axis.toUpperCase();
+      const re=new RegExp(a+'\\s*(?:=|:|＝)\\s*([+\\-]?\\d+(?:\\.\\d+)?)\\s*(?:mm)?','i');
+      const m=text.match(re);
+      if(m){
+        target[axis]=Number(m[1]);
+        changed=true;
+      }
+    }
+  }
+
+  if(!absoluteContext){
+    const used=new Set();
+    const re1=/(右|左|手前|奥|上|下)(?:方向)?(?:へ|に)?\s*([+\-]?\d+(?:\.\d+)?)\s*(?:mm)?/g;
+    for(const m of text.matchAll(re1)){
+      const key=m.index+':'+m[1];
+      if(used.has(key)) continue;
+      used.add(key);
+      target.add(holeDirectionDelta(m[1],Number(m[2])));
+      changed=true;
+    }
+
+    const re2=/([+\-]?\d+(?:\.\d+)?)\s*(?:mm)?\s*(?:だけ)?(?:右|左|手前|奥|上|下)(?:方向)?(?:へ|に)?/g;
+    for(const m of text.matchAll(re2)){
+      const dir=(m[0].match(/右|左|手前|奥|上|下/)||[])[0];
+      if(!dir) continue;
+      target.add(holeDirectionDelta(dir,Number(m[1])));
+      changed=true;
+    }
+
+    // X+2 / Y-3 のような相対指定。
+    for(const axis of ['x','y','z']){
+      const a=axis.toUpperCase();
+      const re=new RegExp(a+'\\s*([+\\-]\\s*\\d+(?:\\.\\d+)?)\\s*(?:mm)?','i');
+      const m=text.match(re);
+      if(m){
+        const d=Number(m[1].replace(/\s+/g,''));
+        if(Number.isFinite(d)){
+          target[axis]+=d;
+          changed=true;
+        }
+      }
+    }
+  }
+
+  return {current,target,changed,mode};
+}
+
+function runNightHoleMoveCommand(text){
+  const resolved=selectedMovableHole();
+  if(!resolved){
+    setNightReply(
+      '先に「詳細面」で動かしたい丸い貫通穴の内周をタップして選んでな。第3版は単純な貫通穴から対応してる。',
+      'error'
+    );
+    return {ok:false,action:'hole-move-no-selection'};
+  }
+
+  const parsed=parseHoleMoveTarget(text,resolved.hole);
+  if(!parsed.changed){
+    setNightReply(
+      '現在の穴中心は X'+formatRawMm(parsed.current.x)+' / Y'+formatRawMm(parsed.current.y)+
+      ' / Z'+formatRawMm(parsed.current.z)+' mm。例：「この穴を右へ2mm」',
+      'ok'
+    );
+    return {ok:true,action:'hole-info'};
+  }
+
+  const result=commitHoleMove(parsed.target);
+  if(result.ok){
+    setNightReply(
+      '了解。穴径 Ø'+formatRawMm(result.diameter)+'mm はそのままで、穴中心を '+
+      'X'+formatRawMm(result.from.x)+'→'+formatRawMm(result.to.x)+' / '+
+      'Y'+formatRawMm(result.from.y)+'→'+formatRawMm(result.to.y)+' / '+
+      'Z'+formatRawMm(result.from.z)+'→'+formatRawMm(result.to.z)+' mm に移動したで。',
+      'ok'
+    );
+  }else{
+    setNightReply('穴を移動できへんかった：'+$('status').textContent,'error');
+  }
+  return result;
+}
+
 function runNightCommand(raw){
   const text=normalizeNightCommand(raw);
   if(!text){
@@ -3516,6 +3630,10 @@ function runNightCommand(raw){
       return {ok:false,action:'delete-part-no-target'};
     }
     return commitNightPartDelete(target.index);
+  }
+
+  if(/穴/.test(text) && /穴(?:の)?中心|移動|動か|ずら|右|左|手前|奥|上|下|[XYZ]\s*[+\-]|[XYZ]\s*(?:=|:|＝)/i.test(text)){
+    return runNightHoleMoveCommand(text);
   }
 
   const roundResolved=nightRoundBarTarget(text);
@@ -3830,6 +3948,25 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
       };
     },
     selectPatch(partIndex,patchIndex){ selectPatch(partIndex,patchIndex,false); },
+    selectedHoleState(){
+      const r=selectedMovableHole();
+      if(!r) return null;
+      return {
+        axis:r.hole.axis,
+        diameter:r.hole.diameter,
+        center:{x:r.hole.worldCenter.x,y:r.hole.worldCenter.y,z:r.hole.worldCenter.z},
+        partIndex:r.partIndex,patchIndex:r.patchIndex
+      };
+    },
+    firstMovableHolePatch(partIndex){
+      const part=parts[partIndex];
+      if(!part) return null;
+      ensureDetailPatches(part);
+      for(let i=0;i<(part.patches?.length||0);i++){
+        if(analyzeMovableHole(part,part.patches[i])) return i;
+      }
+      return null;
+    },
     state(){
       const part=(selectedIndex>=0&&parts[selectedIndex])?parts[selectedIndex]:null;
       let bounds=null,totalVertices=0;
