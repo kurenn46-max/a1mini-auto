@@ -21,6 +21,12 @@ let selectionLocked=false;
 let editSession=null;
 let positionCommitted=false;
 let selectedEditable=false;
+let groupSelection=new Set();
+let activeGroup=new Set();
+let groupBasePositions=new Map();
+let groupHistory=[new THREE.Vector3()];
+let groupCursor=0;
+let groupOffset=new THREE.Vector3();
 
 function patchKey(sel=selectedPatch){return sel?sel.partIndex+":"+sel.patchIndex:"";}
 function setStatus(t){$("status").textContent=t}
@@ -32,7 +38,7 @@ window.addEventListener("resize",resize);new ResizeObserver(resize).observe(view
 function disposeObject(obj){obj.traverse(c=>{c.geometry?.dispose?.();if(Array.isArray(c.material))c.material.forEach(m=>m?.dispose?.());else c.material?.dispose?.()})}
 function clearGroup(g){while(g.children.length){const o=g.children[g.children.length-1];g.remove(o);disposeObject(o)}}
 function resetHistory(base){previewOffset.copy(base||new THREE.Vector3());history=[{offset:previewOffset.clone(),label:"開始"}];historyCursor=0}
-function clearModel(){clearGroup(modelGroup);clearGroup(highlightGroup);clearGroup(gizmoGroup);parts=[];selectedPart=-1;selectedPatch=null;highlightMesh=null;selectedOutward.set(0,0,1);selectionLocked=false;editSession=null;positionCommitted=false;selectedEditable=false;resetHistory(new THREE.Vector3());updateUi()}
+function clearModel(){clearGroup(modelGroup);clearGroup(highlightGroup);clearGroup(gizmoGroup);parts=[];selectedPart=-1;selectedPatch=null;highlightMesh=null;selectedOutward.set(0,0,1);selectionLocked=false;editSession=null;positionCommitted=false;selectedEditable=false;groupSelection.clear();activeGroup.clear();groupBasePositions.clear();groupHistory=[new THREE.Vector3()];groupCursor=0;groupOffset.set(0,0,0);resetHistory(new THREE.Vector3());updateUi()}
 function flatArray(v){if(!v)return[];const a=ArrayBuffer.isView(v)?Array.from(v):v;if(Array.isArray(a)&&Array.isArray(a[0]))return a.flat();return Array.isArray(a)?a:Array.from(a)}
 function colorFromData(c){if(!Array.isArray(c)||c.length<3)return new THREE.Color(0xaebdca);let[r,g,b]=c.map(Number);if(Math.max(r,g,b)>1.001){r/=255;g/=255;b/=255}return new THREE.Color(Math.max(0,Math.min(1,r)),Math.max(0,Math.min(1,g)),Math.max(0,Math.min(1,b)))}
 function createGeometry(md){const pos=flatArray(md?.attributes?.position?.array);if(pos.length<9)return null;const g=new THREE.BufferGeometry();g.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));const n=flatArray(md?.attributes?.normal?.array);if(n.length===pos.length)g.setAttribute("normal",new THREE.Float32BufferAttribute(n,3));const idx=flatArray(md?.index?.array);if(idx.length>=3)g.setIndex(idx);if(!g.getAttribute("normal"))g.computeVertexNormals();g.computeBoundingBox();g.computeBoundingSphere();return g}
@@ -68,14 +74,102 @@ function captureCurrentAsBase(){if(!editSession)return;const part=parts[editSess
 function revertUncommitted(){if(!editSession)return;if(previewOffset.lengthSq()>1e-12){previewOffset.set(0,0,0);applyGeometryOffset(previewOffset)}editSession=null;positionCommitted=false}
 function buildGizmo(center,outward){clearGroup(gizmoGroup);gizmoBase.copy(center);const box=new THREE.Box3().setFromObject(modelGroup),size=box.getSize(new THREE.Vector3()),length=Math.max(size.length()*.1,12),origin=new THREE.Vector3(),dir=outward.clone().normalize();gizmoGroup.add(new THREE.ArrowHelper(dir,origin,length,0xffc247,length*.27,length*.14),new THREE.ArrowHelper(dir.clone().multiplyScalar(-1),origin,length*.58,0x768595,length*.22,length*.12));gizmoGroup.position.set(0,0,0)}
 
+function setPartGroupHighlight(index,on){
+  const part=parts[index];if(!part||!part.mesh?.material)return;
+  const m=part.mesh.material;
+  if(m.emissive){
+    if(on){m.emissive.setHex(0x0b587b);m.emissiveIntensity=.9}
+    else{m.emissive.setHex(0x000000);m.emissiveIntensity=0}
+    m.needsUpdate=true;
+  }
+}
+function refreshGroupHighlights(){
+  parts.forEach((_,i)=>setPartGroupHighlight(i,groupSelection.has(i)||activeGroup.has(i)));
+}
+function groupBounds(){
+  if(!activeGroup.size&&!groupSelection.size)return null;
+  const set=activeGroup.size?activeGroup:groupSelection;
+  const box=new THREE.Box3();
+  for(const i of set){const p=parts[i];if(p)box.expandByObject(p.mesh)}
+  return box.isEmpty()?null:box;
+}
+function updateGroupReadout(){
+  const set=activeGroup.size?activeGroup:groupSelection;
+  $("groupCount").textContent=set.size+"個";
+  const box=groupBounds();
+  if(box){
+    const s=box.getSize(new THREE.Vector3());
+    $("groupSize").textContent="グループ寸法：X "+s.x.toFixed(2)+" / Y "+s.y.toFixed(2)+" / Z "+s.z.toFixed(2)+" mm";
+  }else $("groupSize").textContent="グループ寸法：—";
+  if(activeGroup.size){
+    $("groupHelp").textContent=activeGroup.size+"個を結合移動中。位置関係を保ったまま一緒に動きます。";
+  }else if(groupSelection.size){
+    $("groupHelp").textContent=groupSelection.size+"個選択中。2個以上で「この部品をまとめる」を押してください。";
+  }else{
+    $("groupHelp").textContent="動かしたい部品を2個以上タップしてください。";
+  }
+}
+function toggleGroupPart(index){
+  if(activeGroup.size){setStatus("グループ移動中です。解除してから選び直してください。");return}
+  if(!parts[index])return;
+  if(groupSelection.has(index))groupSelection.delete(index);else groupSelection.add(index);
+  refreshGroupHighlights();updateUi();setStatus(groupSelection.size+"個の部品を選択中。");
+}
+function makeGroup(){
+  if(groupSelection.size<2)return;
+  activeGroup=new Set(groupSelection);
+  groupBasePositions.clear();
+  for(const i of activeGroup)groupBasePositions.set(i,parts[i].mesh.position.clone());
+  groupOffset.set(0,0,0);groupHistory=[new THREE.Vector3()];groupCursor=0;
+  refreshGroupHighlights();updateUi();setStatus(activeGroup.size+"個をまとめました。方向ボタンで一緒に移動できます。");
+}
+function applyGroupOffset(){
+  for(const i of activeGroup){
+    const base=groupBasePositions.get(i),part=parts[i];
+    if(base&&part)part.mesh.position.copy(base).add(groupOffset);
+  }
+  updateGroupReadout();
+}
+function moveGroup(axis,sign){
+  if(!activeGroup.size)return;
+  const amount=Math.abs(Number($("groupMoveAmount").value));
+  if(!Number.isFinite(amount)||amount<=0)return;
+  const v=new THREE.Vector3();v[axis]=sign*amount;groupOffset.add(v);
+  groupHistory=groupHistory.slice(0,groupCursor+1);groupHistory.push(groupOffset.clone());groupCursor=groupHistory.length-1;
+  applyGroupOffset();updateUi();
+  const names={"x-":"左","x+":"右","y-":"手前","y+":"奥","z+":"上","z-":"下"};
+  setStatus("グループを"+names[axis+(sign>0?"+":"-")]+"へ "+amount.toFixed(2)+" mm 移動。");
+}
+function undoGroup(){
+  if(groupCursor<=0)return;groupCursor--;groupOffset.copy(groupHistory[groupCursor]);applyGroupOffset();updateUi();
+}
+function resetGroupPosition(){
+  if(!activeGroup.size)return;groupOffset.set(0,0,0);groupHistory=[new THREE.Vector3()];groupCursor=0;applyGroupOffset();updateUi();setStatus("グループを元の位置へ戻しました。");
+}
+function clearGroupSelection(){
+  if(activeGroup.size){
+    for(const i of activeGroup){const base=groupBasePositions.get(i);if(base&&parts[i])base.copy(parts[i].mesh.position)}
+  }
+  groupSelection.clear();activeGroup.clear();groupBasePositions.clear();groupOffset.set(0,0,0);groupHistory=[new THREE.Vector3()];groupCursor=0;
+  refreshGroupHighlights();updateUi();setStatus("グループを解除しました。");
+}
 function selectPart(index){if(!parts[index])return;revertUncommitted();selectedPart=index;selectedPatch=null;selectionLocked=false;selectedEditable=false;clearGroup(highlightGroup);clearGroup(gizmoGroup);highlightMesh=null;resetHistory(new THREE.Vector3());updateUi();const size=new THREE.Box3().setFromObject(parts[index].mesh).getSize(new THREE.Vector3());$("selectionTitle").textContent=parts[index].name;$("selectionInfo").textContent="左右幅 "+size.x.toFixed(2)+" / 前後幅 "+size.y.toFixed(2)+" / 高さ "+size.z.toFixed(2)+" mm";setStatus("部品を選びました。面を動かすなら「面を選ぶ」にしてください。")}
 function updateSelectedReadout(){if(!selectedPatch)return;const part=parts[selectedPatch.partIndex],patch=part?.patches?.[selectedPatch.patchIndex];if(!part||!patch)return;const stats=patchStats(part,patch),partSize=new THREE.Box3().setFromObject(part.mesh).getSize(new THREE.Vector3());$("selectionTitle").textContent=part.name+" / 面 "+(selectedPatch.patchIndex+1);$("faceType").textContent=stats.type;$("selectionInfo").innerHTML="面：左右 X "+stats.size.x.toFixed(2)+" / 前後 Y "+stats.size.y.toFixed(2)+" / 上下 Z "+stats.size.z.toFixed(2)+" mm"+"<br><strong>部品全体：X "+partSize.x.toFixed(2)+" / Y "+partSize.y.toFixed(2)+" / Z "+partSize.z.toFixed(2)+" mm</strong>"+"<br>面積 "+stats.area.toFixed(2)+" mm² ・ 外方向 "+directionName(selectedOutward);$("faceDimX").textContent=stats.size.x.toFixed(2);$("faceDimY").textContent=stats.size.y.toFixed(2);$("faceDimZ").textContent=stats.size.z.toFixed(2)}
 function selectPatchByIndex(index,patchIndex,force=false){if(selectionLocked&&selectedPatch&&!force){setStatus("面選択を固定中です。固定解除してから別の面を選んでください。");return false}revertUncommitted();const part=parts[index];if(!part)return false;ensurePatches(part);const patch=part.patches?.[patchIndex];if(!patch)return false;selectedPart=index;selectedPatch={partIndex:index,patchIndex};resetHistory(new THREE.Vector3());const stats=patchStats(part,patch);selectedOutward.copy(stats.outward);selectedEditable=stats.type==="平面";highlightPatch(part,patch);buildGizmo(stats.center,selectedOutward);beginEditSession(part,patch);updateSelectedReadout();$("directionText").textContent=directionName(selectedOutward);$("easyHelp").innerHTML=selectedEditable?"黄色い面を <strong>外へ出す</strong> / <strong>内へ引っ込める</strong>。本体の側面も一緒に伸び縮みします。":"曲面は形が壊れやすいため、0.4では本体移動を無効にしています。";setStatus(selectedEditable?"本体変形モード。動かすと部品全体の寸法も変わります。":"曲面を選択中。平面を選んでください。");updateUi();return true}
 function selectPatchFromHit(hit){const index=hit.object.userData.partIndex,part=parts[index];if(!part)return;ensurePatches(part);const tri=Number(hit.faceIndex);if(!Number.isInteger(tri)||!part.triToPatch||tri<0||tri>=part.triToPatch.length){selectPart(index);return}const pi=part.triToPatch[tri];if(pi<0||!part.patches[pi]){selectPart(index);return}selectPatchByIndex(index,pi)}
-function setSelectionMode(mode){selectionMode=mode==="part"?"part":"face";$("partModeBtn").classList.toggle("active",selectionMode==="part");$("faceModeBtn").classList.toggle("active",selectionMode==="face");setStatus(selectionMode==="face"?"面を選ぶ：動かしたい面をタップ":"部品を選ぶ：部品全体をタップ")}
+function setSelectionMode(mode){
+  selectionMode=mode==="group"?"group":(mode==="part"?"part":"face");
+  $("partModeBtn").classList.toggle("active",selectionMode==="part");
+  $("faceModeBtn").classList.toggle("active",selectionMode==="face");
+  $("groupModeBtn").classList.toggle("active",selectionMode==="group");
+  $("groupPanel").classList.toggle("hidden",selectionMode!=="group");
+  if(selectionMode==="group"){revertUncommitted();selectedPatch=null;selectedPart=-1;clearGroup(highlightGroup);clearGroup(gizmoGroup);highlightMesh=null;setStatus("複数部品モード：一緒に動かす部品をタップ");}
+  else setStatus(selectionMode==="face"?"面を選ぶ：動かしたい面をタップ":"部品を選ぶ：部品全体をタップ");
+  updateUi();
+}
 function pickAt(x,y){const r=renderer.domElement.getBoundingClientRect();pointer.x=((x-r.left)/r.width)*2-1;pointer.y=-((y-r.top)/r.height)*2+1;raycaster.setFromCamera(pointer,camera);return raycaster.intersectObjects(parts.map(p=>p.mesh).filter(m=>m.visible),false)}
 renderer.domElement.addEventListener("pointerdown",e=>pointerDown={id:e.pointerId,x:e.clientX,y:e.clientY});
-renderer.domElement.addEventListener("pointerup",e=>{if(!pointerDown||pointerDown.id!==e.pointerId)return;const dx=e.clientX-pointerDown.x,dy=e.clientY-pointerDown.y;pointerDown=null;if(Math.hypot(dx,dy)>8)return;const hits=pickAt(e.clientX,e.clientY);if(!hits.length)return;if(selectionMode==="part")selectPart(hits[0].object.userData.partIndex);else selectPatchFromHit(hits[0])});
+renderer.domElement.addEventListener("pointerup",e=>{if(!pointerDown||pointerDown.id!==e.pointerId)return;const dx=e.clientX-pointerDown.x,dy=e.clientY-pointerDown.y;pointerDown=null;if(Math.hypot(dx,dy)>8)return;const hits=pickAt(e.clientX,e.clientY);if(!hits.length)return;if(selectionMode==="group")toggleGroupPart(hits[0].object.userData.partIndex);else if(selectionMode==="part")selectPart(hits[0].object.userData.partIndex);else selectPatchFromHit(hits[0])});
 
 function pushSnapshot(label){history=history.slice(0,historyCursor+1);history.push({offset:previewOffset.clone(),label});historyCursor=history.length-1;positionCommitted=false;updateUi()}
 function moveByVector(vector,amount,label){if(!selectedPatch||!selectedEditable||!Number.isFinite(amount)||amount===0)return;previewOffset.addScaledVector(vector,amount);pushSnapshot(label+" "+Math.abs(amount).toFixed(2)+" mm");applyPreviewTransform()}
@@ -89,10 +183,19 @@ function toggleSelectionLock(){if(!selectedPatch)return;selectionLocked=!selecti
 function togglePositionFix(){if(!selectedPatch||!selectedEditable||!editSession)return;captureCurrentAsBase();const part=parts[selectedPatch.partIndex],patch=part?.patches?.[selectedPatch.patchIndex];if(part&&patch){const stats=patchStats(part,patch);gizmoBase.copy(stats.center);gizmoGroup.position.set(0,0,0);highlightPatch(part,patch)}updateSelectedReadout();updateUi();setStatus("この位置を本体形状に固定しました。別の面を選んでも形は保持されます。")}
 
 function renderHistory(){const list=$("historyList"),visible=history.slice(1,historyCursor+1);$("historyCount").textContent=String(visible.length);if(!visible.length){list.innerHTML='<div class="empty">まだ操作していません</div>';return}list.innerHTML="";visible.forEach((item,i)=>{const row=document.createElement("div");row.className="historyItem";const strong=document.createElement("strong");strong.textContent=item.label;const small=document.createElement("small");small.textContent="#"+(i+1);row.append(strong,small);list.appendChild(row)})}
-function updateUi(){const has=!!selectedPatch,canEdit=has&&selectedEditable;$("partCount").textContent=String(parts.length);$("selectedKind").textContent=has?"面":(selectedPart>=0?"部品":"—");$("selectedFace").textContent=has?String(selectedPatch.patchIndex+1):"—";$("directionBadge").classList.toggle("hidden",!has);$("faceDimsHud").classList.toggle("hidden",!has);document.querySelectorAll("[data-normal-delta]").forEach(b=>b.disabled=!canEdit);document.querySelectorAll("[data-dir-axis]").forEach(b=>b.disabled=!canEdit);$("customOutBtn").disabled=!canEdit;$("customInBtn").disabled=!canEdit;$("resetPreviewBtn").disabled=!canEdit||previewOffset.lengthSq()<1e-12;$("undoBtn").disabled=historyCursor<=0;$("redoBtn").disabled=historyCursor>=history.length-1;$("selectionLockBtn").disabled=!has;$("positionFixBtn").disabled=!canEdit;$("selectionLockBtn").classList.toggle("active",selectionLocked);$("selectionLockBtn").textContent=selectionLocked?"🔒 面選択 固定中":"🔓 面選択を固定";$("positionFixBtn").classList.toggle("active",positionCommitted);$("positionFixBtn").textContent=positionCommitted?"✓ 本体に固定済み":"✓ この位置を固定";$("lockInfo").textContent="面選択固定："+(selectionLocked?"ON":"OFF")+"　／　本体位置："+(positionCommitted?"固定済み":"編集中");if(!has){$("faceType").textContent="—";$("directionText").textContent="—";$("easyHelp").textContent="まず3Dモデルの面をタップしてください。"}renderHistory()}
+function updateUi(){const has=!!selectedPatch,canEdit=has&&selectedEditable;$("partCount").textContent=String(parts.length);$("selectedKind").textContent=has?"面":(selectedPart>=0?"部品":"—");$("selectedFace").textContent=has?String(selectedPatch.patchIndex+1):"—";$("directionBadge").classList.toggle("hidden",!has);$("faceDimsHud").classList.toggle("hidden",!has);document.querySelectorAll("[data-normal-delta]").forEach(b=>b.disabled=!canEdit);document.querySelectorAll("[data-dir-axis]").forEach(b=>b.disabled=!canEdit);$("customOutBtn").disabled=!canEdit;$("customInBtn").disabled=!canEdit;$("resetPreviewBtn").disabled=!canEdit||previewOffset.lengthSq()<1e-12;$("undoBtn").disabled=historyCursor<=0;$("redoBtn").disabled=historyCursor>=history.length-1;$("selectionLockBtn").disabled=!has;$("positionFixBtn").disabled=!canEdit;$("selectionLockBtn").classList.toggle("active",selectionLocked);$("selectionLockBtn").textContent=selectionLocked?"🔒 面選択 固定中":"🔓 面選択を固定";$("positionFixBtn").classList.toggle("active",positionCommitted);$("positionFixBtn").textContent=positionCommitted?"✓ 本体に固定済み":"✓ この位置を固定";$("lockInfo").textContent="面選択固定："+(selectionLocked?"ON":"OFF")+"　／　本体位置："+(positionCommitted?"固定済み":"編集中");if(!has){$("faceType").textContent="—";$("directionText").textContent="—";$("easyHelp").textContent="まず3Dモデルの面をタップしてください。"}
+$("makeGroupBtn").disabled=groupSelection.size<2||activeGroup.size>0;
+$("clearGroupBtn").disabled=groupSelection.size===0&&activeGroup.size===0;
+document.querySelectorAll("[data-group-axis]").forEach(b=>b.disabled=activeGroup.size<2);
+$("groupUndoBtn").disabled=groupCursor<=0;
+$("groupResetBtn").disabled=activeGroup.size<2||groupOffset.lengthSq()<1e-12;
+updateGroupReadout();
+renderHistory()
 function fitView(){if(!parts.length)return;const box=new THREE.Box3().setFromObject(modelGroup);if(box.isEmpty())return;const center=box.getCenter(new THREE.Vector3()),size=box.getSize(new THREE.Vector3()),span=Math.max(size.x,size.y,size.z,1);controls.target.copy(center);camera.position.set(center.x+span*1.35,center.y-span*1.35,center.z+span*1.05);camera.near=Math.max(span/5000,.01);camera.far=Math.max(span*200,1000);camera.updateProjectionMatrix();controls.update()}
 
-$("fileInput").addEventListener("click",function(){this.value=""});$("fileInput").addEventListener("change",function(){loadFile(this.files?.[0])});$("demoBtn").addEventListener("click",loadDemo);$("fitBtn").addEventListener("click",fitView);$("partModeBtn").addEventListener("click",()=>setSelectionMode("part"));$("faceModeBtn").addEventListener("click",()=>setSelectionMode("face"));
+$("fileInput").addEventListener("click",function(){this.value=""});$("fileInput").addEventListener("change",function(){loadFile(this.files?.[0])});$("demoBtn").addEventListener("click",loadDemo);$("fitBtn").addEventListener("click",fitView);$("partModeBtn").addEventListener("click",()=>setSelectionMode("part"));$("faceModeBtn").addEventListener("click",()=>setSelectionMode("face"));$("groupModeBtn").addEventListener("click",()=>setSelectionMode("group"));
+$("makeGroupBtn").addEventListener("click",makeGroup);$("clearGroupBtn").addEventListener("click",clearGroupSelection);$("groupUndoBtn").addEventListener("click",undoGroup);$("groupResetBtn").addEventListener("click",resetGroupPosition);
+document.querySelectorAll("[data-group-axis]").forEach(b=>b.addEventListener("click",()=>moveGroup(b.dataset.groupAxis,Number(b.dataset.groupSign))));
 document.querySelectorAll("[data-normal-delta]").forEach(b=>b.addEventListener("click",()=>moveNormal(Number(b.dataset.normalDelta))));
 $("customOutBtn").addEventListener("click",()=>{const n=Math.abs(Number($("moveAmount").value));if(n>0)moveNormal(n)});$("customInBtn").addEventListener("click",()=>{const n=Math.abs(Number($("moveAmount").value));if(n>0)moveNormal(-n)});
 document.querySelectorAll("[data-dir-axis]").forEach(b=>b.addEventListener("click",()=>moveAxis(b.dataset.dirAxis,Number(b.dataset.dirSign))));
@@ -110,5 +213,13 @@ window.__OKACAD_NEXT_TEST__={
   isSelectionLocked:()=>selectionLocked,
   isFixed:()=>positionCommitted,
   isEditable:()=>selectedEditable,
-  getPartSize:(p=0)=>{const part=parts[p];if(!part)return null;const s=new THREE.Box3().setFromObject(part.mesh).getSize(new THREE.Vector3());return{x:s.x,y:s.y,z:s.z}}
+  getPartSize:(p=0)=>{const part=parts[p];if(!part)return null;const s=new THREE.Box3().setFromObject(part.mesh).getSize(new THREE.Vector3());return{x:s.x,y:s.y,z:s.z}},
+  setMode:setSelectionMode,
+  toggleGroupPart,
+  makeGroup,
+  moveGroup,
+  clearGroupSelection,
+  getPartPos:(p=0)=>{const part=parts[p];if(!part)return null;return{x:part.mesh.position.x,y:part.mesh.position.y,z:part.mesh.position.z}},
+  getGroupCount:()=>activeGroup.size,
+  getGroupOffset:()=>({x:groupOffset.x,y:groupOffset.y,z:groupOffset.z})
 };
