@@ -4166,17 +4166,18 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
     holeDragGesture(delta={x:2,y:0,z:0}){
       const r=selectedMovableHole();
       if(!r) return null;
-      const part=r.part, hole=r.hole;
-      const [u,v]=roundBarAxisTransverse(hole.axis);
-      const radius=hole.diameter/2;
+      const part=r.part, hole=r.hole, patch=r.patch;
       const rect=renderer.domElement.getBoundingClientRect();
+      const a=new THREE.Vector3(),b=new THREE.Vector3(),c=new THREE.Vector3();
 
-      for(let step=0;step<32;step++){
-        const a=(step/32)*Math.PI*2;
-        const pLocal=hole.center.clone();
-        pLocal[u]+=Math.cos(a)*radius;
-        pLocal[v]+=Math.sin(a)*radius;
-        const pWorld=part.mesh.localToWorld(pLocal.clone());
+      // 内周パッチの実三角形中心を順に投影し、
+      // raycastで本当に最前面として触れる点だけを開始点に使う。
+      for(const tri of patch.triangles||[]){
+        trianglePoint(part.mesh.geometry,tri,0,a);
+        trianglePoint(part.mesh.geometry,tri,1,b);
+        trianglePoint(part.mesh.geometry,tri,2,c);
+        const pLocal=a.clone().add(b).add(c).multiplyScalar(1/3);
+        const pWorld=part.mesh.localToWorld(pLocal);
         const sp=screenPointForWorld(pWorld,rect);
         const sx=rect.left+sp.x, sy=rect.top+sp.y;
         const hits=pickAt(sx,sy);
