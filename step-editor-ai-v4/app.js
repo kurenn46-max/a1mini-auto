@@ -4166,33 +4166,57 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
     holeDragGesture(delta={x:2,y:0,z:0}){
       const r=selectedMovableHole();
       if(!r) return null;
-      const part=r.part, hole=r.hole, patch=r.patch;
+      const part=r.part, hole=r.hole;
       const rect=renderer.domElement.getBoundingClientRect();
-      const a=new THREE.Vector3(),b=new THREE.Vector3(),c=new THREE.Vector3();
+      const centerScreen=screenPointForWorld(hole.worldCenter,rect);
+      const cx=rect.left+centerScreen.x, cy=rect.top+centerScreen.y;
 
-      // 内周パッチの実三角形中心を順に投影し、
-      // raycastで本当に最前面として触れる点だけを開始点に使う。
-      for(const tri of patch.triangles||[]){
-        trianglePoint(part.mesh.geometry,tri,0,a);
-        trianglePoint(part.mesh.geometry,tri,1,b);
-        trianglePoint(part.mesh.geometry,tri,2,c);
-        const pLocal=a.clone().add(b).add(c).multiplyScalar(1/3);
-        const pWorld=part.mesh.localToWorld(pLocal);
-        const sp=screenPointForWorld(pWorld,rect);
-        const sx=rect.left+sp.x, sy=rect.top+sp.y;
-        const hits=pickAt(sx,sy);
-        if(!hits.length || !currentSelectedPatchHit(hits[0])) continue;
-
-        const targetWorld=pWorld.clone().add(new THREE.Vector3(
-          Number(delta.x)||0,Number(delta.y)||0,Number(delta.z)||0
-        ));
-        const ep=screenPointForWorld(targetWorld,rect);
-        return {
-          start:{x:sx,y:sy},
-          end:{x:rect.left+ep.x,y:rect.top+ep.y}
-        };
+      // まず穴中心周辺を細かく走査。pickAt と currentSelectedPatchHit を
+      // そのまま使うので、実際の指タップと同じ当たり判定になる。
+      const maxR=Math.min(rect.width,rect.height)*0.16;
+      let startPoint=null;
+      for(let radius=4;radius<=maxR && !startPoint;radius+=3){
+        for(let deg=0;deg<360;deg+=10){
+          const rad=deg*Math.PI/180;
+          const x=cx+Math.cos(rad)*radius;
+          const y=cy+Math.sin(rad)*radius;
+          if(x<rect.left||x>rect.right||y<rect.top||y>rect.bottom) continue;
+          const hits=pickAt(x,y);
+          if(hits.length && currentSelectedPatchHit(hits[0])){
+            startPoint={x,y};
+            break;
+          }
+        }
       }
-      return null;
+
+      // それでも見つからなければビュー全体を粗く走査。
+      if(!startPoint){
+        const step=10;
+        for(let y=rect.top+step;y<rect.bottom-step && !startPoint;y+=step){
+          for(let x=rect.left+step;x<rect.right-step;x+=step){
+            const hits=pickAt(x,y);
+            if(hits.length && currentSelectedPatchHit(hits[0])){
+              startPoint={x,y};
+              break;
+            }
+          }
+        }
+      }
+      if(!startPoint) return null;
+
+      // ドラッグ先は「穴平面上で指定したワールド移動量」になるよう投影。
+      const normalWorld=holeAxisWorldNormal(part,hole.axis);
+      const plane=new THREE.Plane().setFromNormalAndCoplanarPoint(normalWorld,hole.worldCenter);
+      const startWorld=pointerWorldOnPlane(startPoint.x,startPoint.y,plane);
+      if(!startWorld) return null;
+      const targetWorld=startWorld.clone().add(new THREE.Vector3(
+        Number(delta.x)||0,Number(delta.y)||0,Number(delta.z)||0
+      ));
+      const ep=screenPointForWorld(targetWorld,rect);
+      return {
+        start:startPoint,
+        end:{x:rect.left+ep.x,y:rect.top+ep.y}
+      };
     },
     firstMovableHolePatch(partIndex){
       const part=parts[partIndex];
