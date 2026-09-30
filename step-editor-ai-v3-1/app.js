@@ -4457,6 +4457,54 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
       const bytes=new TextEncoder().encode(String(text||''));
       return looksLikeStepBytes(bytes);
     },
+    addSteppedHoleStackFixture(){
+      const geoms=[];
+      const box=new THREE.BoxGeometry(40,30,8);
+      geoms.push(box.index?box.toNonIndexed():box);
+
+      const inner=new THREE.CylinderGeometry(3,3,8,64,1,true);
+      inner.rotateX(Math.PI/2);
+      geoms.push(inner.index?inner.toNonIndexed():inner);
+
+      const counter=new THREE.CylinderGeometry(6,6,2,64,1,true);
+      counter.rotateX(Math.PI/2);
+      counter.translate(0,0,3);
+      geoms.push(counter.index?counter.toNonIndexed():counter);
+
+      const values=[];
+      for(const g of geoms){
+        const a=g.getAttribute('position').array;
+        for(let i=0;i<a.length;i++) values.push(a[i]);
+      }
+
+      const geometry=new THREE.BufferGeometry();
+      geometry.setAttribute('position',new THREE.Float32BufferAttribute(values,3));
+      geometry.computeVertexNormals();
+      geometry.computeBoundingBox();
+      geometry.computeBoundingSphere();
+
+      const material=new THREE.MeshStandardMaterial({
+        color:0x69b7e8,roughness:.65,metalness:.04,side:THREE.DoubleSide
+      });
+      const mesh=new THREE.Mesh(geometry,material);
+      const name='Stepped Hole Stack Fixture';
+      mesh.name=name;
+      mesh.userData.baseColor=material.color.getHex();
+      modelGroup.add(mesh);
+
+      const localBox=geometry.boundingBox.clone();
+      const localSize=localBox.getSize(new THREE.Vector3());
+      const triangles=triangleCountFor(geometry);
+      parts.push({
+        mesh,name,path:name,localBox,localSize,triangles,source:'cad',kind:'test',baseOffsetZ:0,
+        brepFaces:[],patches:null,triToPatch:null,patchMode:null,patchAngle:null,
+        basePosition:new Float32Array(geometry.getAttribute('position').array)
+      });
+      renderPartsList();
+      recomputeModelStats(true);
+      selectPart(parts.length-1,false);
+      return parts.length-1;
+    },
     addHolePlateFixture(){
       const shape=new THREE.Shape();
       shape.moveTo(-20,-15);
