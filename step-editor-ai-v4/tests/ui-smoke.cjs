@@ -232,60 +232,70 @@ const near=(a,b,e=1e-3)=>Math.abs(a-b)<=e;
   if(r.state.editCursor!==holeCursor2) throw new Error('外周を越える穴移動を実行してしまった');
   if(!r.reply.includes('外周')) throw new Error('外周安全拒否が不明: '+r.reply);
 
-  // Finger/pointer drag: selected through-hole should move in-plane, keep diameter, and record holeMove.
-  await page.click('#confirmEditFaceBtn');
-  await page.click('#touchDragToggleBtn');
-  const beforeDrag=await page.evaluate(()=>window.__okaTest.selectedHoleState());
-  const dragGesture=await page.evaluate(()=>window.__okaTest.holeDragGesture({x:2,y:0,z:0}));
-  if(!dragGesture) throw new Error('指ドラッグ開始点を穴内周上に作れない');
 
-  await page.evaluate((g)=>{
-    const canvas=document.querySelector('#viewer canvas');
-    const fire=(type,p,buttons)=>canvas.dispatchEvent(new PointerEvent(type,{
-      pointerId:77,
-      pointerType:'touch',
-      isPrimary:true,
-      bubbles:true,
-      cancelable:true,
-      clientX:p.x,
-      clientY:p.y,
-      button:0,
-      buttons
-    }));
-    fire('pointerdown',g.start,1);
-    fire('pointermove',g.end,1);
-    fire('pointerup',g.end,0);
-  },dragGesture);
-  await page.waitForTimeout(220);
-
-  const afterDrag=await page.evaluate(()=>({
-    hole:window.__okaTest.selectedHoleState(),
-    state:window.__okaTest.state(),
-    status:document.querySelector('#status')?.textContent||''
-  }));
-  if(!afterDrag.hole) throw new Error('指ドラッグ後に穴を再認識できない');
-  if(!near(afterDrag.hole.center.x,beforeDrag.center.x+2,0.12) ||
-     !near(afterDrag.hole.center.y,beforeDrag.center.y,0.12)){
-    throw new Error('指ドラッグで穴中心が意図位置へ動いていない: '+JSON.stringify({beforeDrag,afterDrag:afterDrag.hole}));
+  // Stepped/counterbored hole must be treated as one movable hole group.
+  const steppedPart=await page.evaluate(()=>window.__okaTest.addSteppedHoleStackFixture());
+  const steppedPatch=await page.evaluate(i=>window.__okaTest.firstMovableHolePatch(i),steppedPart);
+  if(steppedPatch===null) throw new Error('段付き穴を検出できない');
+  await page.evaluate(([pi,fi])=>window.__okaTest.selectPatch(pi,fi),[steppedPart,steppedPatch]);
+  await page.waitForTimeout(100);
+  let stepped=await page.evaluate(()=>window.__okaTest.selectedHoleState());
+  if(!stepped || stepped.linkedPatchCount<2 || !near(stepped.envelopeDiameter,12,0.12)){
+    throw new Error('段付き穴の同軸グループ認識に失敗: '+JSON.stringify(stepped));
   }
-  if(!near(afterDrag.hole.diameter,beforeDrag.diameter,0.08)){
-    throw new Error('指ドラッグで穴径が変化した: '+JSON.stringify({before:beforeDrag.diameter,after:afterDrag.hole.diameter}));
+  r=await night('この穴を右へ3mm');
+  stepped=await page.evaluate(()=>window.__okaTest.selectedHoleState());
+  if(!stepped || !near(stepped.center.x,3,0.08) || stepped.linkedPatchCount<2){
+    throw new Error('段付き穴グループの移動に失敗: '+JSON.stringify(stepped));
   }
-  if(afterDrag.state.lastCommand?.type!=='holeMove'){
-    throw new Error('指ドラッグがholeMoveとして記録されていない: '+JSON.stringify(afterDrag.state.lastCommand));
-  }
-  if(!afterDrag.status.includes('指ドラッグで穴を移動')){
-    throw new Error('指ドラッグ完了表示が出ていない: '+afterDrag.status);
-  }
-
   r=await night('元に戻して');
-  hs=await page.evaluate(()=>window.__okaTest.selectedHoleState());
-  if(!hs || !near(hs.center.x,beforeDrag.center.x,0.08) || !near(hs.center.y,beforeDrag.center.y,0.08)){
-    throw new Error('指ドラッグ穴移動をUndoできない: '+JSON.stringify(hs));
+
+  // Real pointer drag test for hole movement.
+  const dragPart=await page.evaluate(()=>window.__okaTest.addHolePlateFixture());
+  const dragPatch=await page.evaluate(i=>window.__okaTest.firstMovableHolePatch(i),dragPart);
+  if(dragPatch===null) throw new Error('指ドラッグ用の貫通穴を検出できない');
+  await page.click('#faceModeBtn');
+  await page.evaluate(([pi,fi])=>window.__okaTest.selectPatch(pi,fi),[dragPart,dragPatch]);
+  await page.waitForTimeout(120);
+  const dragBefore=await page.evaluate(()=>window.__okaTest.selectedHoleState());
+  const pt=await page.evaluate(()=>window.__okaTest.selectedHoleScreenCenter());
+  if(!pt) throw new Error('指ドラッグ開始点を取得できない');
+  const enabled=await page.evaluate(()=>window.__okaTest.toggleTouchDrag());
+  if(!enabled) throw new Error('指ドラッグ補助をONにできない');
+
+  const canvas=page.locator('#viewer canvas');
+  await canvas.dispatchEvent('pointerdown',{
+    pointerId:71,pointerType:'touch',isPrimary:true,buttons:1,button:0,
+    clientX:pt.x,clientY:pt.y
+  });
+  await canvas.dispatchEvent('pointermove',{
+    pointerId:71,pointerType:'touch',isPrimary:true,buttons:1,button:0,
+    clientX:pt.x+34,clientY:pt.y+12
+  });
+  await canvas.dispatchEvent('pointerup',{
+    pointerId:71,pointerType:'touch',isPrimary:true,buttons:0,button:0,
+    clientX:pt.x+34,clientY:pt.y+12
+  });
+  await page.waitForTimeout(250);
+
+  const dragAfter=await page.evaluate(()=>window.__okaTest.selectedHoleState());
+  const dragState=await page.evaluate(()=>window.__okaTest.state());
+  if(!dragAfter) throw new Error('ドラッグ後に穴を再認識できない');
+  const moved=Math.hypot(
+    dragAfter.center.x-dragBefore.center.x,
+    dragAfter.center.y-dragBefore.center.y,
+    dragAfter.center.z-dragBefore.center.z
+  );
+  if(moved<0.3) throw new Error('実ポインタードラッグで穴が移動していない: '+moved);
+  if(!near(dragAfter.diameter,dragBefore.diameter,0.08)){
+    throw new Error('指ドラッグで穴径が変わった');
+  }
+  if(dragState.lastCommand?.type!=='holeMove' || dragState.lastCommand?.inputMethod!=='night-hole-move'){
+    throw new Error('指ドラッグがholeMoveとして確定されていない: '+JSON.stringify(dragState.lastCommand));
   }
 
   if(errors.length) throw new Error(errors.join('\n'));
-  console.log('AI_V4_PASS: base / round-bar / hole command move / touch-pointer hole drag / diameter keep / undo / safety');
+  console.log('AI_V4_PASS: base / round-bar / simple+stepped hole move / real touch pointer drag / undo / safety');
   await browser.close();
 })().catch(err=>{
   console.error(err);
