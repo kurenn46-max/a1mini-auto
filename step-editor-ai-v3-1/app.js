@@ -1601,35 +1601,73 @@ function analyzeMovableHole(part,patch){
   const stats=computePatchStats(part,patch);
   if(stats.type!=='曲面') return null;
 
-  const hole=estimateHole(part,patch);
-  if(!hole||!(hole.diameter>0)) return null;
+  const base=estimateHole(part,patch);
+  if(!base||!(base.diameter>0)) return null;
 
   const geometry=part.mesh.geometry;
   geometry.computeBoundingBox();
   const box=geometry.boundingBox?.clone();
   if(!box||box.isEmpty()) return null;
 
-  const attr=geometry.getAttribute('position');
-  const axis=hole.axis;
-  const coords=hole.vertexIndices.map(i=>axis==='x'?attr.getX(i):(axis==='y'?attr.getY(i):attr.getZ(i)));
-  if(!coords.length) return null;
-  const hmin=Math.min(...coords), hmax=Math.max(...coords);
-  const span=Math.max(box.max[axis]-box.min[axis],1e-9);
-  const tol=Math.max(span*0.02,0.08);
+  ensureDetailPatches(part);
+  const axis=base.axis;
+  const [u,v]=roundBarAxisTransverse(axis);
+  const centerTol=Math.max(0.28,base.diameter*0.045);
+  const linked=[];
 
-  // 第3版は安全側：部品厚みを端から端まで抜ける単純な丸穴だけを対象にする。
-  const through=Math.abs(hmin-box.min[axis])<=tol && Math.abs(hmax-box.max[axis])<=tol;
-  if(!through) return null;
+  for(let i=0;i<(part.patches?.length||0);i++){
+    const p=part.patches[i];
+    const st=computePatchStats(part,p);
+    if(st.type!=='曲面') continue;
+    const h=estimateHole(part,p);
+    if(!h||h.axis!==axis||!(h.diameter>0)) continue;
 
-  const worldCenter=holeWorldCenter(part,hole);
-  return {...hole,stats,box,through,worldCenter};
+    const centerDist=Math.hypot(h.center[u]-base.center[u],h.center[v]-base.center[v]);
+    const ratio=h.diameter/base.diameter;
+    if(centerDist<=centerTol && ratio>=0.28 && ratio<=4.0){
+      linked.push({patchIndex:i,hole:h,stats:st});
+    }
+  }
+
+  if(!linked.length) linked.push({patchIndex:part.patches.indexOf(patch),hole:base,stats});
+
+  const vertexSet=new Set();
+  let envelopeDiameter=base.diameter;
+  for(const item of linked){
+    envelopeDiameter=Math.max(envelopeDiameter,item.hole.diameter);
+    for(const vi of item.hole.vertexIndices||[]) vertexSet.add(vi);
+  }
+  const vertexIndices=Array.from(vertexSet);
+  if(vertexIndices.length<3) return null;
+
+  const center=base.center.clone();
+  const currentClearance=Math.max(0.2,(envelopeDiameter/2)*0.04);
+  for(const a of [u,v]){
+    const lo=box.min[a]+envelopeDiameter/2+currentClearance;
+    const hi=box.max[a]-envelopeDiameter/2-currentClearance;
+    if(center[a]<lo-1e-6 || center[a]>hi+1e-6) return null;
+  }
+
+  const worldCenter=holeWorldCenter(part,{...base,center});
+  return {
+    ...base,
+    center,
+    stats,
+    box,
+    worldCenter,
+    vertexIndices,
+    envelopeDiameter,
+    linkedPatchCount:linked.length,
+    linkedPatchIndices:linked.map(x=>x.patchIndex),
+    holeKind:linked.length>1?'段付き穴':'丸穴'
+  };
 }
 
 function holeMoveSafety(part,hole,targetLocal){
   const box=hole.box||partLocalBox(part);
   if(!box||box.isEmpty()) return {ok:false,reason:'部品外形を確認できません'};
 
-  const radius=hole.diameter/2;
+  const radius=(hole.envelopeDiameter||hole.diameter)/2;
   const [u,v]=roundBarAxisTransverse(hole.axis);
   const clearance=Math.max(0.2,radius*0.04);
 
@@ -1656,8 +1694,8 @@ function commitHoleMove(targetWorld){
   const patch=part?.patches?.[selectedPatch.patchIndex];
   const hole=analyzeMovableHole(part,patch);
   if(!part||!patch||!hole){
-    setStatus('第3版では単純な丸い貫通穴を選んでください','error');
-    return {ok:false,reason:'not-simple-through-hole'};
+    setStatus('丸い穴か段付き穴の内周を選んでください','error');
+    return {ok:false,reason:'not-movable-hole'};
   }
 
   part.mesh.updateMatrixWorld(true);
@@ -4208,7 +4246,10 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
         axis:r.hole.axis,
         diameter:r.hole.diameter,
         center:{x:r.hole.worldCenter.x,y:r.hole.worldCenter.y,z:r.hole.worldCenter.z},
-        partIndex:r.partIndex,patchIndex:r.patchIndex
+        partIndex:r.partIndex,patchIndex:r.patchIndex,
+        linkedPatchCount:r.hole.linkedPatchCount||1,
+        envelopeDiameter:r.hole.envelopeDiameter||r.hole.diameter,
+        holeKind:r.hole.holeKind||'丸穴'
       };
     },
     selectedHoleScreenCenter(){
