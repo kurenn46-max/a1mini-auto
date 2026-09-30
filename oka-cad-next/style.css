@@ -41,3 +41,13 @@ main{max-width:900px;margin:auto;padding:8px 8px 34px}
 .directionGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}.directionGrid button{min-height:54px}.directionGrid small{color:#88a8bf}
 .note{font-size:10px;line-height:1.55;color:#8096a9;margin:9px 2px 0}.historyList{margin-top:9px;display:grid;gap:5px}.historyItem{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:8px 9px;background:#07121c;border:1px solid #1a3246;border-radius:9px}.historyItem strong{font-size:11px}.historyItem small{color:var(--muted);font-size:10px}.empty{color:#71879a;font-size:11px;padding:7px}
 @media(max-width:560px){main{padding-left:6px;padding-right:6px}.openRow{grid-template-columns:1fr 1fr}.openRow #fitBtn{grid-column:2}.viewerCard{height:54vh;min-height:410px}.customMove{grid-template-columns:1fr}.customMove>div{display:grid;grid-template-columns:1fr 1fr}.faceDimsHud{bottom:80px}.lockRow{grid-template-columns:1fr}}
+
+.groupPanel{border-color:#294d67}
+.groupActions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px}
+.groupMoveGrid{margin-top:8px}
+.groupMoveGrid button{font-size:14px}
+.groupSelected{outline:2px solid #42b7ff}
+@media(max-width:560px){
+  .modeBar button{padding:6px 8px}
+  .groupActions{grid-template-columns:1fr}
+}
