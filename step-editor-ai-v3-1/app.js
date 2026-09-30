@@ -4240,7 +4240,7 @@ if(new URLSearchParams(location.search).has('ui-smoke')){
         partSize:part?{x:partWorldSize(part).x,y:partWorldSize(part).y,z:partWorldSize(part).z}:null,
         bounds,totalVertices,
         lastCommand:cmd?{
-          type:cmd.type,mode:cmd.mode,axis:cmd.axis,side:cmd.side,anchor:cmd.anchor,
+          type:cmd.type,mode:cmd.mode,axis:cmd.axis,side:cmd.side,anchor:cmd.anchor,inputMethod:cmd.inputMethod,
           deltaWorldMm:cmd.deltaWorldMm,deltaLocalMm:cmd.deltaLocalMm,
           fromDimensionMm:cmd.fromDimensionMm,toDimensionMm:cmd.toDimensionMm,
           fromDiameterMm:cmd.fromDiameterMm,toDiameterMm:cmd.toDiameterMm,
