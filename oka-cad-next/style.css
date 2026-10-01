@@ -51,3 +51,28 @@ main{max-width:900px;margin:auto;padding:8px 8px 34px}
   .modeBar button{padding:6px 8px}
   .groupActions{grid-template-columns:1fr}
 }
+
+.touchHud{
+  position:absolute;left:8px;right:8px;top:54px;z-index:5;
+  background:rgba(5,14,23,.92);border:1px solid #315a76;border-radius:12px;padding:7px;
+  backdrop-filter:blur(8px)
+}
+.touchHudTop{display:flex;align-items:center;justify-content:space-between;gap:7px}
+.touchHudTop>div{min-width:0}.touchHudTop span{display:block;font-size:9px;color:#8fb0c7}
+.touchHudTop strong{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.touchHudTop button{min-height:38px;padding:6px 9px;font-size:11px}
+.touchPartPos{font-size:10px;color:#b8ccda;margin-top:5px}
+.touchHint{font-size:10px;color:#a8c8de;margin-top:5px}.touchHint strong{color:#ffd66d}
+.snapBar{display:grid;grid-template-columns:1fr auto auto auto;gap:5px;align-items:center;margin-top:6px;border-top:1px solid #29445a;padding-top:6px}
+.snapBar>span{font-size:10px;color:#ffd66d;min-width:0}
+.snapBar label{display:flex;align-items:center;gap:3px;font-size:9px;color:#a8c0d2}
+.snapBar input{width:58px;min-width:0;background:#0e2132;color:white;border:1px solid #31506a;border-radius:7px;padding:6px;font-size:16px;text-align:right}
+.snapBar button{min-height:36px;padding:5px 8px;font-size:10px}
+@media(max-width:560px){
+  .modeBar{right:8px;flex-wrap:wrap;max-width:calc(100% - 16px)}
+  .modeBar button{font-size:10px;padding:5px 7px}
+  .touchHud{top:88px}
+  .snapBar{grid-template-columns:1fr 1fr}
+  .snapBar>span{grid-column:1/-1}
+  .snapBar label{justify-content:flex-start}
+}
