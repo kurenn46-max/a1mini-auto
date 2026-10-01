@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
   <meta name="theme-color" content="#07111d">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <title>岡重機 CAD NEXT 0.5 GROUP MOVE</title>
-  <link rel="stylesheet" href="./style.css?v=0.5.0">
+  <title>岡重機 CAD NEXT 0.6 TOUCH + SNAP</title>
+  <link rel="stylesheet" href="./style.css?v=0.6.0">
 </head>
 <body>
 <header class="topbar">
   <div>
     <div class="eyebrow">OKA JUKI CAD</div>
-    <h1>CAD NEXT <small>0.5 GROUP MOVE</small></h1>
+    <h1>CAD NEXT <small>0.6 TOUCH + SNAP</small></h1>
   </div>
   <div class="topActions">
     <button id="undoBtn" disabled>↶ 戻る</button>
@@ -41,6 +41,7 @@
       <button id="faceModeBtn" class="active">面</button>
       <button id="partModeBtn">部品</button>
       <button id="groupModeBtn">複数部品</button>
+      <button id="touchModeBtn">長押し移動</button>
     </div>
 
     <div id="directionBadge" class="directionBadge hidden">
@@ -56,6 +57,27 @@
 
     <div class="axisGuide">
       <span>左右 = X</span><span>前後 = Y</span><span>上下 = Z</span>
+    </div>
+
+    <div id="touchHud" class="touchHud hidden">
+      <div class="touchHudTop">
+        <div>
+          <span>移動部品</span>
+          <strong id="touchPartName">—</strong>
+        </div>
+        <button id="snapModeBtn" disabled>◎ 面中心合わせ</button>
+      </div>
+      <div id="touchPartPos" class="touchPartPos">中心 X 0.00 / Y 0.00 / Z 0.00 mm</div>
+      <div id="snapBar" class="snapBar hidden">
+        <span id="snapTargetText">合わせたい面をタップ</span>
+        <label>面から
+          <input id="snapOffset" type="number" inputmode="decimal" step="0.5" value="0">
+          mm
+        </label>
+        <button id="applySnapBtn" disabled>合わせる</button>
+        <button id="cancelSnapBtn">取消</button>
+      </div>
+      <div class="touchHint">部品を<strong>長押し → そのまま指で移動</strong></div>
     </div>
 
     <div id="status" class="status">STEP / STLを開くか「デモで試す」を押してください</div>
@@ -176,7 +198,7 @@
       </div>
     </details>
 
-    <p class="note">0.5は平面の本体変形に加え、複数部品をグループ化して一緒に移動できます。曲面の本体変形はまだ無効です。</p>
+    <p class="note">0.6ではスマホ向けに、3D画面上で部品を長押しドラッグできます。面中心への位置合わせと、そこからのmmオフセットも追加しています。</p>
   </section>
 
   <section class="panel">
@@ -195,6 +217,6 @@
   "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
 }}
 </script>
-<script type="module" src="./app.js?v=0.5.0"></script>
+<script type="module" src="./app.js?v=0.6.0"></script>
 </body>
 </html>
