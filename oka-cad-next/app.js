@@ -28,6 +28,14 @@ let groupHistory=[new THREE.Vector3()];
 let groupCursor=0;
 let groupOffset=new THREE.Vector3();
 
+let touchPartIndex=-1;
+let touchHoldTimer=null;
+let touchDrag=null;
+let touchPointerStart=null;
+let snapTarget=null;
+let snapTargetMode=false;
+const TOUCH_HOLD_MS=380;
+
 function patchKey(sel=selectedPatch){return sel?sel.partIndex+":"+sel.patchIndex:"";}
 function setStatus(t){$("status").textContent=t}
 function setLoading(show,text){$("loading").classList.toggle("hidden",!show);if(text)$("loadingText").textContent=text}
@@ -38,7 +46,7 @@ window.addEventListener("resize",resize);new ResizeObserver(resize).observe(view
 function disposeObject(obj){obj.traverse(c=>{c.geometry?.dispose?.();if(Array.isArray(c.material))c.material.forEach(m=>m?.dispose?.());else c.material?.dispose?.()})}
 function clearGroup(g){while(g.children.length){const o=g.children[g.children.length-1];g.remove(o);disposeObject(o)}}
 function resetHistory(base){previewOffset.copy(base||new THREE.Vector3());history=[{offset:previewOffset.clone(),label:"開始"}];historyCursor=0}
-function clearModel(){clearGroup(modelGroup);clearGroup(highlightGroup);clearGroup(gizmoGroup);parts=[];selectedPart=-1;selectedPatch=null;highlightMesh=null;selectedOutward.set(0,0,1);selectionLocked=false;editSession=null;positionCommitted=false;selectedEditable=false;groupSelection.clear();activeGroup.clear();groupBasePositions.clear();groupHistory=[new THREE.Vector3()];groupCursor=0;groupOffset.set(0,0,0);resetHistory(new THREE.Vector3());updateUi()}
+function clearModel(){clearGroup(modelGroup);clearGroup(highlightGroup);clearGroup(gizmoGroup);parts=[];selectedPart=-1;selectedPatch=null;highlightMesh=null;selectedOutward.set(0,0,1);selectionLocked=false;editSession=null;positionCommitted=false;selectedEditable=false;groupSelection.clear();activeGroup.clear();groupBasePositions.clear();groupHistory=[new THREE.Vector3()];groupCursor=0;groupOffset.set(0,0,0);touchPartIndex=-1;touchDrag=null;touchPointerStart=null;snapTarget=null;snapTargetMode=false;if(touchHoldTimer){clearTimeout(touchHoldTimer);touchHoldTimer=null}resetHistory(new THREE.Vector3());updateUi()}
 function flatArray(v){if(!v)return[];const a=ArrayBuffer.isView(v)?Array.from(v):v;if(Array.isArray(a)&&Array.isArray(a[0]))return a.flat();return Array.isArray(a)?a:Array.from(a)}
 function colorFromData(c){if(!Array.isArray(c)||c.length<3)return new THREE.Color(0xaebdca);let[r,g,b]=c.map(Number);if(Math.max(r,g,b)>1.001){r/=255;g/=255;b/=255}return new THREE.Color(Math.max(0,Math.min(1,r)),Math.max(0,Math.min(1,g)),Math.max(0,Math.min(1,b)))}
 function createGeometry(md){const pos=flatArray(md?.attributes?.position?.array);if(pos.length<9)return null;const g=new THREE.BufferGeometry();g.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));const n=flatArray(md?.attributes?.normal?.array);if(n.length===pos.length)g.setAttribute("normal",new THREE.Float32BufferAttribute(n,3));const idx=flatArray(md?.index?.array);if(idx.length>=3)g.setIndex(idx);if(!g.getAttribute("normal"))g.computeVertexNormals();g.computeBoundingBox();g.computeBoundingSphere();return g}
@@ -74,6 +82,115 @@ function captureCurrentAsBase(){if(!editSession)return;const part=parts[editSess
 function revertUncommitted(){if(!editSession)return;if(previewOffset.lengthSq()>1e-12){previewOffset.set(0,0,0);applyGeometryOffset(previewOffset)}editSession=null;positionCommitted=false}
 function buildGizmo(center,outward){clearGroup(gizmoGroup);gizmoBase.copy(center);const box=new THREE.Box3().setFromObject(modelGroup),size=box.getSize(new THREE.Vector3()),length=Math.max(size.length()*.1,12),origin=new THREE.Vector3(),dir=outward.clone().normalize();gizmoGroup.add(new THREE.ArrowHelper(dir,origin,length,0xffc247,length*.27,length*.14),new THREE.ArrowHelper(dir.clone().multiplyScalar(-1),origin,length*.58,0x768595,length*.22,length*.12));gizmoGroup.position.set(0,0,0)}
 
+function partWorldCenter(index){
+  const part=parts[index];if(!part)return null;
+  return new THREE.Box3().setFromObject(part.mesh).getCenter(new THREE.Vector3());
+}
+function setTouchHighlight(index,on){
+  const part=parts[index];if(!part||!part.mesh?.material?.emissive)return;
+  const m=part.mesh.material;
+  if(on){m.emissive.setHex(0x6b5200);m.emissiveIntensity=.75}
+  else if(!groupSelection.has(index)&&!activeGroup.has(index)){m.emissive.setHex(0x000000);m.emissiveIntensity=0}
+  m.needsUpdate=true;
+}
+function selectTouchPart(index){
+  if(!parts[index])return false;
+  if(touchPartIndex>=0&&touchPartIndex!==index)setTouchHighlight(touchPartIndex,false);
+  touchPartIndex=index;setTouchHighlight(index,true);updateTouchHud();updateUi();
+  setStatus(parts[index].name+" を選択。長押ししてそのまま動かせます。");
+  return true;
+}
+function touchMoveSet(index){
+  if(activeGroup.has(index))return Array.from(activeGroup);
+  return [index];
+}
+function updateTouchHud(){
+  const has=touchPartIndex>=0&&!!parts[touchPartIndex];
+  $("touchHud").classList.toggle("hidden",selectionMode!=="touch");
+  $("snapModeBtn").disabled=!has;
+  if(!has){$("touchPartName").textContent="部品をタップ";$("touchPartPos").textContent="中心 X — / Y — / Z — mm";return}
+  const p=parts[touchPartIndex],c=partWorldCenter(touchPartIndex);
+  $("touchPartName").textContent=p.name;
+  $("touchPartPos").textContent="中心 X "+c.x.toFixed(2)+" / Y "+c.y.toFixed(2)+" / Z "+c.z.toFixed(2)+" mm";
+}
+function rayPlanePoint(clientX,clientY,plane){
+  const r=renderer.domElement.getBoundingClientRect();
+  pointer.x=((clientX-r.left)/r.width)*2-1;pointer.y=-((clientY-r.top)/r.height)*2+1;
+  raycaster.setFromCamera(pointer,camera);
+  return raycaster.ray.intersectPlane(plane,new THREE.Vector3());
+}
+function startTouchHold(e,index,hitPoint){
+  if(touchHoldTimer)clearTimeout(touchHoldTimer);
+  touchPointerStart={id:e.pointerId,x:e.clientX,y:e.clientY,index,hitPoint:hitPoint.clone()};
+  touchHoldTimer=setTimeout(()=>{
+    if(!touchPointerStart||touchPointerStart.id!==e.pointerId)return;
+    selectTouchPart(index);
+    const dir=new THREE.Vector3();camera.getWorldDirection(dir);
+    const plane=new THREE.Plane().setFromNormalAndCoplanarPoint(dir,hitPoint);
+    const start=rayPlanePoint(touchPointerStart.x,touchPointerStart.y,plane);
+    if(!start)return;
+    const indices=touchMoveSet(index),bases=new Map();
+    for(const i of indices)bases.set(i,parts[i].mesh.position.clone());
+    touchDrag={pointerId:e.pointerId,index,indices,bases,plane,start};
+    controls.enabled=false;
+    try{renderer.domElement.setPointerCapture(e.pointerId)}catch(_){}
+    setStatus("移動中：指を離すとこの位置で止まります。");
+  },TOUCH_HOLD_MS);
+}
+function cancelTouchHold(){
+  if(touchHoldTimer){clearTimeout(touchHoldTimer);touchHoldTimer=null}
+}
+function updateTouchDrag(e){
+  if(!touchDrag||touchDrag.pointerId!==e.pointerId)return false;
+  const p=rayPlanePoint(e.clientX,e.clientY,touchDrag.plane);if(!p)return true;
+  const d=p.clone().sub(touchDrag.start);
+  for(const i of touchDrag.indices){const b=touchDrag.bases.get(i);if(b&&parts[i])parts[i].mesh.position.copy(b).add(d)}
+  updateTouchHud();if(activeGroup.size)updateGroupReadout();return true;
+}
+function endTouchDrag(e){
+  cancelTouchHold();
+  if(!touchDrag||touchDrag.pointerId!==e.pointerId)return false;
+  touchDrag=null;controls.enabled=true;
+  try{renderer.domElement.releasePointerCapture(e.pointerId)}catch(_){}
+  updateTouchHud();setStatus("部品を移動しました。もう一度長押しで続けて動かせます。");return true;
+}
+function enterSnapMode(){
+  if(touchPartIndex<0)return;
+  snapTargetMode=true;snapTarget=null;$("snapBar").classList.remove("hidden");$("applySnapBtn").disabled=true;
+  $("snapTargetText").textContent="合わせたい面をタップ";
+  setStatus("位置合わせ：移動先にしたい面をタップしてください。");
+}
+function cancelSnapMode(){
+  snapTargetMode=false;snapTarget=null;$("snapBar").classList.add("hidden");$("applySnapBtn").disabled=true;setStatus("面中心合わせを取り消しました。");
+}
+function setSnapTargetFromHit(hit){
+  const index=hit.object.userData.partIndex,part=parts[index];if(!part)return false;
+  ensurePatches(part);const tri=Number(hit.faceIndex);
+  if(!Number.isInteger(tri)||!part.triToPatch||tri<0||tri>=part.triToPatch.length)return false;
+  const pi=part.triToPatch[tri],patch=part.patches?.[pi];if(!patch)return false;
+  const stats=patchStats(part,patch);
+  snapTarget={partIndex:index,patchIndex:pi,center:stats.center.clone(),normal:stats.outward.clone().normalize()};
+  $("snapTargetText").textContent=part.name+" / 面 "+(pi+1)+" の中心";
+  $("applySnapBtn").disabled=false;
+  setStatus("面中心を取得。オフセットmmを入れて「合わせる」。");
+  return true;
+}
+function applySnap(){
+  if(touchPartIndex<0||!snapTarget)return false;
+  const moving=parts[touchPartIndex];if(!moving)return false;
+  let off=Number($("snapOffset").value);if(!Number.isFinite(off))off=0;
+  off=Math.max(-100000,Math.min(100000,off));
+  $("snapOffset").value=String(off);
+  const current=partWorldCenter(touchPartIndex);
+  const desired=snapTarget.center.clone().addScaledVector(snapTarget.normal,off);
+  const delta=desired.sub(current);
+  const indices=touchMoveSet(touchPartIndex);
+  for(const i of indices)if(parts[i])parts[i].mesh.position.add(delta);
+  updateTouchHud();if(activeGroup.size)updateGroupReadout();
+  setStatus("部品中心を面中心＋ "+off.toFixed(2)+" mm に合わせました。");
+  snapTargetMode=false;snapTarget=null;$("snapBar").classList.add("hidden");$("applySnapBtn").disabled=true;
+  return true;
+}
 function setPartGroupHighlight(index,on){
   const part=parts[index];if(!part||!part.mesh?.material)return;
   const m=part.mesh.material;
@@ -158,18 +275,45 @@ function updateSelectedReadout(){if(!selectedPatch)return;const part=parts[selec
 function selectPatchByIndex(index,patchIndex,force=false){if(selectionLocked&&selectedPatch&&!force){setStatus("面選択を固定中です。固定解除してから別の面を選んでください。");return false}revertUncommitted();const part=parts[index];if(!part)return false;ensurePatches(part);const patch=part.patches?.[patchIndex];if(!patch)return false;selectedPart=index;selectedPatch={partIndex:index,patchIndex};resetHistory(new THREE.Vector3());const stats=patchStats(part,patch);selectedOutward.copy(stats.outward);selectedEditable=stats.type==="平面";highlightPatch(part,patch);buildGizmo(stats.center,selectedOutward);beginEditSession(part,patch);updateSelectedReadout();$("directionText").textContent=directionName(selectedOutward);$("easyHelp").innerHTML=selectedEditable?"黄色い面を <strong>外へ出す</strong> / <strong>内へ引っ込める</strong>。本体の側面も一緒に伸び縮みします。":"曲面は形が壊れやすいため、0.4では本体移動を無効にしています。";setStatus(selectedEditable?"本体変形モード。動かすと部品全体の寸法も変わります。":"曲面を選択中。平面を選んでください。");updateUi();return true}
 function selectPatchFromHit(hit){const index=hit.object.userData.partIndex,part=parts[index];if(!part)return;ensurePatches(part);const tri=Number(hit.faceIndex);if(!Number.isInteger(tri)||!part.triToPatch||tri<0||tri>=part.triToPatch.length){selectPart(index);return}const pi=part.triToPatch[tri];if(pi<0||!part.patches[pi]){selectPart(index);return}selectPatchByIndex(index,pi)}
 function setSelectionMode(mode){
-  selectionMode=mode==="group"?"group":(mode==="part"?"part":"face");
+  selectionMode=mode==="touch"?"touch":(mode==="group"?"group":(mode==="part"?"part":"face"));
   $("partModeBtn").classList.toggle("active",selectionMode==="part");
   $("faceModeBtn").classList.toggle("active",selectionMode==="face");
   $("groupModeBtn").classList.toggle("active",selectionMode==="group");
+  $("touchModeBtn").classList.toggle("active",selectionMode==="touch");
   $("groupPanel").classList.toggle("hidden",selectionMode!=="group");
+  $("touchHud").classList.toggle("hidden",selectionMode!=="touch");
   if(selectionMode==="group"){revertUncommitted();selectedPatch=null;selectedPart=-1;clearGroup(highlightGroup);clearGroup(gizmoGroup);highlightMesh=null;setStatus("複数部品モード：一緒に動かす部品をタップ");}
+  else if(selectionMode==="touch"){revertUncommitted();selectedPatch=null;selectedPart=-1;clearGroup(highlightGroup);clearGroup(gizmoGroup);highlightMesh=null;setStatus("長押し移動：部品を長押しして、そのまま指で動かす");updateTouchHud();}
   else setStatus(selectionMode==="face"?"面を選ぶ：動かしたい面をタップ":"部品を選ぶ：部品全体をタップ");
   updateUi();
 }
 function pickAt(x,y){const r=renderer.domElement.getBoundingClientRect();pointer.x=((x-r.left)/r.width)*2-1;pointer.y=-((y-r.top)/r.height)*2+1;raycaster.setFromCamera(pointer,camera);return raycaster.intersectObjects(parts.map(p=>p.mesh).filter(m=>m.visible),false)}
-renderer.domElement.addEventListener("pointerdown",e=>pointerDown={id:e.pointerId,x:e.clientX,y:e.clientY});
-renderer.domElement.addEventListener("pointerup",e=>{if(!pointerDown||pointerDown.id!==e.pointerId)return;const dx=e.clientX-pointerDown.x,dy=e.clientY-pointerDown.y;pointerDown=null;if(Math.hypot(dx,dy)>8)return;const hits=pickAt(e.clientX,e.clientY);if(!hits.length)return;if(selectionMode==="group")toggleGroupPart(hits[0].object.userData.partIndex);else if(selectionMode==="part")selectPart(hits[0].object.userData.partIndex);else selectPatchFromHit(hits[0])});
+renderer.domElement.addEventListener("pointerdown",e=>{
+  pointerDown={id:e.pointerId,x:e.clientX,y:e.clientY};
+  if(selectionMode==="touch"&&!snapTargetMode){
+    const hits=pickAt(e.clientX,e.clientY);
+    if(hits.length)startTouchHold(e,hits[0].object.userData.partIndex,hits[0].point);
+  }
+});
+renderer.domElement.addEventListener("pointermove",e=>{
+  if(updateTouchDrag(e)){e.preventDefault();return}
+  if(selectionMode==="touch"&&touchPointerStart&&touchPointerStart.id===e.pointerId){
+    if(Math.hypot(e.clientX-touchPointerStart.x,e.clientY-touchPointerStart.y)>8){cancelTouchHold();touchPointerStart=null}
+  }
+});
+renderer.domElement.addEventListener("pointercancel",e=>{cancelTouchHold();if(touchDrag&&touchDrag.pointerId===e.pointerId){touchDrag=null;controls.enabled=true}touchPointerStart=null});
+renderer.domElement.addEventListener("pointerup",e=>{
+  if(endTouchDrag(e)){pointerDown=null;touchPointerStart=null;return}
+  cancelTouchHold();touchPointerStart=null;
+  if(!pointerDown||pointerDown.id!==e.pointerId)return;
+  const dx=e.clientX-pointerDown.x,dy=e.clientY-pointerDown.y;pointerDown=null;if(Math.hypot(dx,dy)>8)return;
+  const hits=pickAt(e.clientX,e.clientY);if(!hits.length)return;
+  if(selectionMode==="touch"){
+    if(snapTargetMode)setSnapTargetFromHit(hits[0]);else selectTouchPart(hits[0].object.userData.partIndex);
+  }else if(selectionMode==="group")toggleGroupPart(hits[0].object.userData.partIndex);
+  else if(selectionMode==="part")selectPart(hits[0].object.userData.partIndex);
+  else selectPatchFromHit(hits[0]);
+});
 
 function pushSnapshot(label){history=history.slice(0,historyCursor+1);history.push({offset:previewOffset.clone(),label});historyCursor=history.length-1;positionCommitted=false;updateUi()}
 function moveByVector(vector,amount,label){if(!selectedPatch||!selectedEditable||!Number.isFinite(amount)||amount===0)return;previewOffset.addScaledVector(vector,amount);pushSnapshot(label+" "+Math.abs(amount).toFixed(2)+" mm");applyPreviewTransform()}
@@ -190,11 +334,13 @@ document.querySelectorAll("[data-group-axis]").forEach(b=>b.disabled=activeGroup
 $("groupUndoBtn").disabled=groupCursor<=0;
 $("groupResetBtn").disabled=activeGroup.size<2||groupOffset.lengthSq()<1e-12;
 updateGroupReadout();
+updateTouchHud();
 renderHistory()
 }
 function fitView(){if(!parts.length)return;const box=new THREE.Box3().setFromObject(modelGroup);if(box.isEmpty())return;const center=box.getCenter(new THREE.Vector3()),size=box.getSize(new THREE.Vector3()),span=Math.max(size.x,size.y,size.z,1);controls.target.copy(center);camera.position.set(center.x+span*1.35,center.y-span*1.35,center.z+span*1.05);camera.near=Math.max(span/5000,.01);camera.far=Math.max(span*200,1000);camera.updateProjectionMatrix();controls.update()}
 
-$("fileInput").addEventListener("click",function(){this.value=""});$("fileInput").addEventListener("change",function(){loadFile(this.files?.[0])});$("demoBtn").addEventListener("click",loadDemo);$("fitBtn").addEventListener("click",fitView);$("partModeBtn").addEventListener("click",()=>setSelectionMode("part"));$("faceModeBtn").addEventListener("click",()=>setSelectionMode("face"));$("groupModeBtn").addEventListener("click",()=>setSelectionMode("group"));
+$("fileInput").addEventListener("click",function(){this.value=""});$("fileInput").addEventListener("change",function(){loadFile(this.files?.[0])});$("demoBtn").addEventListener("click",loadDemo);$("fitBtn").addEventListener("click",fitView);$("partModeBtn").addEventListener("click",()=>setSelectionMode("part"));$("faceModeBtn").addEventListener("click",()=>setSelectionMode("face"));$("groupModeBtn").addEventListener("click",()=>setSelectionMode("group"));$("touchModeBtn").addEventListener("click",()=>setSelectionMode("touch"));
+$("snapModeBtn").addEventListener("click",enterSnapMode);$("cancelSnapBtn").addEventListener("click",cancelSnapMode);$("applySnapBtn").addEventListener("click",applySnap);
 $("makeGroupBtn").addEventListener("click",makeGroup);$("clearGroupBtn").addEventListener("click",clearGroupSelection);$("groupUndoBtn").addEventListener("click",undoGroup);$("groupResetBtn").addEventListener("click",resetGroupPosition);
 document.querySelectorAll("[data-group-axis]").forEach(b=>b.addEventListener("click",()=>moveGroup(b.dataset.groupAxis,Number(b.dataset.groupSign))));
 document.querySelectorAll("[data-normal-delta]").forEach(b=>b.addEventListener("click",()=>moveNormal(Number(b.dataset.normalDelta))));
@@ -222,5 +368,12 @@ window.__OKACAD_NEXT_TEST__={
   clearGroupSelection,
   getPartPos:(p=0)=>{const part=parts[p];if(!part)return null;return{x:part.mesh.position.x,y:part.mesh.position.y,z:part.mesh.position.z}},
   getGroupCount:()=>activeGroup.size,
-  getGroupOffset:()=>({x:groupOffset.x,y:groupOffset.y,z:groupOffset.z})
+  getGroupOffset:()=>({x:groupOffset.x,y:groupOffset.y,z:groupOffset.z}),
+  selectTouchPart,
+  applySnapToFace:(movingIndex,targetPart,targetPatch,offset=0)=>{
+    selectTouchPart(movingIndex);const part=parts[targetPart];if(!part)return false;ensurePatches(part);const patch=part.patches?.[targetPatch];if(!patch)return false;const stats=patchStats(part,patch);snapTarget={partIndex:targetPart,patchIndex:targetPatch,center:stats.center.clone(),normal:stats.outward.clone().normalize()};$("snapOffset").value=String(offset);return applySnap();
+  },
+  getPartCenter:(p=0)=>{const c=partWorldCenter(p);return c?{x:c.x,y:c.y,z:c.z}:null},
+  getFaceTarget:(p,f)=>{const part=parts[p];if(!part)return null;ensurePatches(part);const patch=part.patches?.[f];if(!patch)return null;const s=patchStats(part,patch);return{center:{x:s.center.x,y:s.center.y,z:s.center.z},normal:{x:s.outward.x,y:s.outward.y,z:s.outward.z},type:s.type}},
+  moveTouchPartBy:(p,dx,dy,dz)=>{if(!parts[p])return false;parts[p].mesh.position.add(new THREE.Vector3(dx,dy,dz));if(touchPartIndex===p)updateTouchHud();return true}
 };
