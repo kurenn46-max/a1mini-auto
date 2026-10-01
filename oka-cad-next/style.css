@@ -76,3 +76,56 @@ main{max-width:900px;margin:auto;padding:8px 8px 34px}
   .snapBar>span{grid-column:1/-1}
   .snapBar label{justify-content:flex-start}
 }
+
+/* 0.7 VIEW FIRST: keep CAD visible on phones */
+.viewerCard.touchMode .status,
+.viewerCard.touchMode .axisGuide{display:none}
+.viewerCard.touchMode .faceDimsHud{bottom:58px}
+.touchHud{
+  top:auto!important;
+  bottom:8px;
+  left:8px;
+  right:8px;
+  padding:5px 6px;
+  border-radius:10px;
+  background:rgba(5,14,23,.88);
+  max-height:118px;
+  overflow:hidden;
+}
+.touchHudTop{min-height:38px}
+.touchPartMini{display:flex;align-items:center;gap:6px;min-width:0;flex:1}
+.touchPartMini span{font-size:9px;color:#8fb0c7;flex:none}
+.touchPartMini strong{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.touchPartPos{font-size:9px;margin:0 4px;color:#a9c0d1;white-space:nowrap}
+.touchHint{font-size:9px;margin-top:2px;text-align:center;color:#8fa8ba}
+.touchHudTop button{min-height:34px;padding:5px 8px;font-size:10px;flex:none}
+.snapBar{
+  grid-template-columns:1fr auto auto auto;
+  gap:4px;
+  margin-top:4px;
+  padding-top:4px;
+}
+.snapBar>span{font-size:9px}
+.snapBar label{font-size:9px}
+.snapBar input{width:54px;padding:4px 5px;font-size:16px}
+.snapBar button{min-height:32px;padding:4px 7px;font-size:9px}
+.touchHud.dragging{
+  right:auto;
+  max-width:58%;
+  opacity:.72;
+  padding:3px 6px;
+}
+.touchHud.dragging .touchPartPos,
+.touchHud.dragging .touchHint,
+.touchHud.dragging .snapBar,
+.touchHud.dragging #snapModeBtn{display:none!important}
+.touchHud.dragging .touchHudTop{min-height:28px}
+.touchHud.dragging .touchPartMini strong{font-size:10px}
+@media(max-width:560px){
+  .touchHud{bottom:6px}
+  .snapBar{grid-template-columns:1fr auto auto}
+  .snapBar>span{grid-column:1/-1}
+  .snapBar label{grid-column:1/2}
+  .touchPartPos{display:none}
+  .touchHint{display:none}
+}
