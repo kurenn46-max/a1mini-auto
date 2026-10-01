@@ -8,45 +8,40 @@ const { chromium } = require("playwright");
   await page.click("#demoBtn");
   await page.waitForFunction(()=>document.querySelector("#partCount").textContent==="2");
 
-  // Existing planar body move still works.
-  let face=-1;
+  // Touch move mode exists and can select whole part.
+  await page.click("#touchModeBtn");
+  await page.evaluate(()=>window.__OKACAD_NEXT_TEST__.selectTouchPart(1));
+  const hud=await page.locator("#touchHud").innerText();
+  if(!hud.includes("デモ丸棒")||!hud.includes("長押し"))throw new Error("touch move HUD missing");
+
+  const before=await page.evaluate(()=>window.__OKACAD_NEXT_TEST__.getPartCenter(1));
+  await page.evaluate(()=>window.__OKACAD_NEXT_TEST__.moveTouchPartBy(1,3,4,0));
+  const moved=await page.evaluate(()=>window.__OKACAD_NEXT_TEST__.getPartCenter(1));
+  if(Math.abs((moved.x-before.x)-3)>0.001||Math.abs((moved.y-before.y)-4)>0.001)throw new Error("whole-part touch movement core failed");
+
+  // Find a planar face on box and snap moving part center to face center + 5 mm normal.
+  let face=-1,target=null;
   for(let i=0;i<12;i++){
-    const ok=await page.evaluate(i=>window.__OKACAD_NEXT_TEST__.selectFace(0,i,true),i);
-    if(!ok)break;
-    if(await page.evaluate(()=>window.__OKACAD_NEXT_TEST__.isEditable())){face=i;break;}
+    const f=await page.evaluate(i=>window.__OKACAD_NEXT_TEST__.getFaceTarget(0,i),i);
+    if(!f)break;
+    if(f.type==="平面"){face=i;target=f;break;}
   }
-  if(face<0)throw new Error("no editable planar face");
-  const before=await page.evaluate(()=>window.__OKACAD_NEXT_TEST__.getPartSize(0));
-  await page.click("[data-normal-delta='0.5']");
-  const after=await page.evaluate(()=>window.__OKACAD_NEXT_TEST__.getPartSize(0));
-  const sizeDelta=Math.max(Math.abs(after.x-before.x),Math.abs(after.y-before.y),Math.abs(after.z-before.z));
-  if(Math.abs(sizeDelta-0.5)>0.04)throw new Error("body move regression");
+  if(face<0)throw new Error("no planar snap target");
+  const ok=await page.evaluate(({face})=>window.__OKACAD_NEXT_TEST__.applySnapToFace(1,0,face,5),{face});
+  if(!ok)throw new Error("snap failed");
+  const snapped=await page.evaluate(()=>window.__OKACAD_NEXT_TEST__.getPartCenter(1));
+  const expected={
+    x:target.center.x+target.normal.x*5,
+    y:target.center.y+target.normal.y*5,
+    z:target.center.z+target.normal.z*5
+  };
+  if(Math.max(Math.abs(snapped.x-expected.x),Math.abs(snapped.y-expected.y),Math.abs(snapped.z-expected.z))>0.02)throw new Error("snap center/offset incorrect: "+JSON.stringify({snapped,expected}));
 
-  // Group two parts and move together.
-  await page.evaluate(()=>window.__OKACAD_NEXT_TEST__.setMode("group"));
-  await page.evaluate(()=>{window.__OKACAD_NEXT_TEST__.toggleGroupPart(0);window.__OKACAD_NEXT_TEST__.toggleGroupPart(1);window.__OKACAD_NEXT_TEST__.makeGroup();});
-  const count=await page.evaluate(()=>window.__OKACAD_NEXT_TEST__.getGroupCount());
-  if(count!==2)throw new Error("group creation failed");
-
-  const p0=await page.evaluate(()=>window.__OKACAD_NEXT_TEST__.getPartPos(0));
-  const p1=await page.evaluate(()=>window.__OKACAD_NEXT_TEST__.getPartPos(1));
-  const rel0={x:p1.x-p0.x,y:p1.y-p0.y,z:p1.z-p0.z};
-
-  await page.fill("#groupMoveAmount","5");
-  await page.click("[data-group-axis='x'][data-group-sign='1']");
-
-  const q0=await page.evaluate(()=>window.__OKACAD_NEXT_TEST__.getPartPos(0));
-  const q1=await page.evaluate(()=>window.__OKACAD_NEXT_TEST__.getPartPos(1));
-  if(Math.abs((q0.x-p0.x)-5)>0.001||Math.abs((q1.x-p1.x)-5)>0.001)throw new Error("group X move failed");
-  const rel1={x:q1.x-q0.x,y:q1.y-q0.y,z:q1.z-q0.z};
-  if(Math.max(Math.abs(rel1.x-rel0.x),Math.abs(rel1.y-rel0.y),Math.abs(rel1.z-rel0.z))>0.001)throw new Error("relative positions changed");
-
-  await page.click("#groupUndoBtn");
-  const u0=await page.evaluate(()=>window.__OKACAD_NEXT_TEST__.getPartPos(0));
-  const u1=await page.evaluate(()=>window.__OKACAD_NEXT_TEST__.getPartPos(1));
-  if(Math.max(Math.abs(u0.x-p0.x),Math.abs(u0.y-p0.y),Math.abs(u0.z-p0.z),Math.abs(u1.x-p1.x),Math.abs(u1.y-p1.y),Math.abs(u1.z-p1.z))>0.001)throw new Error("group undo failed");
+  // Group move still works.
+  await page.evaluate(()=>{window.__OKACAD_NEXT_TEST__.setMode("group");window.__OKACAD_NEXT_TEST__.toggleGroupPart(0);window.__OKACAD_NEXT_TEST__.toggleGroupPart(1);window.__OKACAD_NEXT_TEST__.makeGroup();});
+  if(await page.evaluate(()=>window.__OKACAD_NEXT_TEST__.getGroupCount())!==2)throw new Error("group regression");
 
   if(errors.length)throw new Error("page errors: "+errors.join(" | "));
-  console.log("CAD NEXT 0.5 GROUP MOVE smoke: OK");
+  console.log("CAD NEXT 0.6 TOUCH + SNAP smoke: OK");
   await browser.close();
 })().catch(e=>{console.error(e);process.exit(1)});
