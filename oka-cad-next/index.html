@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
   <meta name="theme-color" content="#07111d">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <title>岡重機 CAD NEXT 0.6 TOUCH + SNAP</title>
-  <link rel="stylesheet" href="./style.css?v=0.6.0">
+  <title>岡重機 CAD NEXT 0.7 VIEW FIRST</title>
+  <link rel="stylesheet" href="./style.css?v=0.7.0">
 </head>
 <body>
 <header class="topbar">
   <div>
     <div class="eyebrow">OKA JUKI CAD</div>
-    <h1>CAD NEXT <small>0.6 TOUCH + SNAP</small></h1>
+    <h1>CAD NEXT <small>0.7 VIEW FIRST</small></h1>
   </div>
   <div class="topActions">
     <button id="undoBtn" disabled>↶ 戻る</button>
@@ -61,13 +61,13 @@
 
     <div id="touchHud" class="touchHud hidden">
       <div class="touchHudTop">
-        <div>
-          <span>移動部品</span>
+        <div class="touchPartMini">
+          <span>移動</span>
           <strong id="touchPartName">—</strong>
         </div>
-        <button id="snapModeBtn" disabled>◎ 面中心合わせ</button>
+        <div id="touchPartPos" class="touchPartPos">X — / Y — / Z —</div>
+        <button id="snapModeBtn" disabled>◎ 面中心</button>
       </div>
-      <div id="touchPartPos" class="touchPartPos">中心 X 0.00 / Y 0.00 / Z 0.00 mm</div>
       <div id="snapBar" class="snapBar hidden">
         <span id="snapTargetText">合わせたい面をタップ</span>
         <label>面から
@@ -77,7 +77,7 @@
         <button id="applySnapBtn" disabled>合わせる</button>
         <button id="cancelSnapBtn">取消</button>
       </div>
-      <div class="touchHint">部品を<strong>長押し → そのまま指で移動</strong></div>
+      <div class="touchHint">長押し → そのまま指で移動</div>
     </div>
 
     <div id="status" class="status">STEP / STLを開くか「デモで試す」を押してください</div>
@@ -198,7 +198,7 @@
       </div>
     </details>
 
-    <p class="note">0.6ではスマホ向けに、3D画面上で部品を長押しドラッグできます。面中心への位置合わせと、そこからのmmオフセットも追加しています。</p>
+    <p class="note">0.7は「CADを見る」を最優先にして、長押し移動と面中心合わせの操作を画面下へ小型化しています。</p>
   </section>
 
   <section class="panel">
@@ -217,6 +217,6 @@
   "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
 }}
 </script>
-<script type="module" src="./app.js?v=0.6.0"></script>
+<script type="module" src="./app.js?v=0.7.0"></script>
 </body>
 </html>
