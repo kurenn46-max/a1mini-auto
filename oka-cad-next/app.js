@@ -111,7 +111,7 @@ function updateTouchHud(){
   if(!has){$("touchPartName").textContent="部品をタップ";$("touchPartPos").textContent="中心 X — / Y — / Z — mm";return}
   const p=parts[touchPartIndex],c=partWorldCenter(touchPartIndex);
   $("touchPartName").textContent=p.name;
-  $("touchPartPos").textContent="中心 X "+c.x.toFixed(2)+" / Y "+c.y.toFixed(2)+" / Z "+c.z.toFixed(2)+" mm";
+  $("touchPartPos").textContent="X "+c.x.toFixed(1)+" / Y "+c.y.toFixed(1)+" / Z "+c.z.toFixed(1);
 }
 function rayPlanePoint(clientX,clientY,plane){
   const r=renderer.domElement.getBoundingClientRect();
@@ -132,6 +132,7 @@ function startTouchHold(e,index,hitPoint){
     const indices=touchMoveSet(index),bases=new Map();
     for(const i of indices)bases.set(i,parts[i].mesh.position.clone());
     touchDrag={pointerId:e.pointerId,index,indices,bases,plane,start};
+    $("touchHud").classList.add("dragging");
     controls.enabled=false;
     try{renderer.domElement.setPointerCapture(e.pointerId)}catch(_){}
     setStatus("移動中：指を離すとこの位置で止まります。");
@@ -151,6 +152,7 @@ function endTouchDrag(e){
   cancelTouchHold();
   if(!touchDrag||touchDrag.pointerId!==e.pointerId)return false;
   touchDrag=null;controls.enabled=true;
+  $("touchHud").classList.remove("dragging");
   try{renderer.domElement.releasePointerCapture(e.pointerId)}catch(_){}
   updateTouchHud();setStatus("部品を移動しました。もう一度長押しで続けて動かせます。");return true;
 }
@@ -282,6 +284,7 @@ function setSelectionMode(mode){
   $("touchModeBtn").classList.toggle("active",selectionMode==="touch");
   $("groupPanel").classList.toggle("hidden",selectionMode!=="group");
   $("touchHud").classList.toggle("hidden",selectionMode!=="touch");
+  document.querySelector(".viewerCard")?.classList.toggle("touchMode",selectionMode==="touch");
   if(selectionMode==="group"){revertUncommitted();selectedPatch=null;selectedPart=-1;clearGroup(highlightGroup);clearGroup(gizmoGroup);highlightMesh=null;setStatus("複数部品モード：一緒に動かす部品をタップ");}
   else if(selectionMode==="touch"){revertUncommitted();selectedPatch=null;selectedPart=-1;clearGroup(highlightGroup);clearGroup(gizmoGroup);highlightMesh=null;setStatus("長押し移動：部品を長押しして、そのまま指で動かす");updateTouchHud();}
   else setStatus(selectionMode==="face"?"面を選ぶ：動かしたい面をタップ":"部品を選ぶ：部品全体をタップ");
@@ -301,7 +304,7 @@ renderer.domElement.addEventListener("pointermove",e=>{
     if(Math.hypot(e.clientX-touchPointerStart.x,e.clientY-touchPointerStart.y)>8){cancelTouchHold();touchPointerStart=null}
   }
 });
-renderer.domElement.addEventListener("pointercancel",e=>{cancelTouchHold();if(touchDrag&&touchDrag.pointerId===e.pointerId){touchDrag=null;controls.enabled=true}touchPointerStart=null});
+renderer.domElement.addEventListener("pointercancel",e=>{cancelTouchHold();if(touchDrag&&touchDrag.pointerId===e.pointerId){touchDrag=null;controls.enabled=true;$("touchHud").classList.remove("dragging")}touchPointerStart=null});
 renderer.domElement.addEventListener("pointerup",e=>{
   if(endTouchDrag(e)){pointerDown=null;touchPointerStart=null;return}
   cancelTouchHold();touchPointerStart=null;
