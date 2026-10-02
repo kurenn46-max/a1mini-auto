@@ -51,9 +51,11 @@ const assert = require('assert');
                   access_token: guest ? 'guest-token' : 'host-token'
                 } }, error: null });
               },
-              onAuthStateChange(){ return { data: { subscription: { unsubscribe(){} } } }; },
+              onAuthStateChange(cb){ window.__authCb = cb; return { data: { subscription: { unsubscribe(){} } } }; },
               signOut(){ window.__signedOut = true; return Promise.resolve({ error: null }); },
-              signInWithPassword(){ return Promise.resolve({ data: { user: { id: 'host-user' } }, error: null }); }
+              signInWithPassword(){ return Promise.resolve({ data: { user: { id: 'host-user' } }, error: null }); },
+              resetPasswordForEmail(email, options){ window.__resetRequest = { email, options }; return Promise.resolve({ data: {}, error: null }); },
+              updateUser(payload){ window.__updatedPassword = payload.password; return Promise.resolve({ data: { user: { id: 'host-user' } }, error: null }); }
             },
             from(table){ return makeQuery(table); }
           };
@@ -101,6 +103,22 @@ const assert = require('assert');
   async function noHorizontalOverflow() {
     return await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
   }
+
+  // Password recovery flow
+  await page.goto('http://127.0.0.1:8000/futari-calendar/?mode=login', { waitUntil: 'networkidle' });
+  await page.fill('#email', 'owner@example.test');
+  await page.click('#forgotPasswordBtn');
+  await page.waitForFunction(() => window.__resetRequest?.email === 'owner@example.test');
+  assert.strictEqual(await page.evaluate(() => window.__resetRequest.options.redirectTo), 'http://127.0.0.1:8000/futari-calendar/', 'reset redirect must point back to app');
+
+  await page.evaluate(() => window.__authCb('PASSWORD_RECOVERY', { user: { id: 'host-user' }, access_token: 'recovery-token' }));
+  await page.waitForSelector('#recoverySheet:not(.hidden)');
+  await page.fill('#newPassword', 'NewPass1234');
+  await page.fill('#newPasswordConfirm', 'NewPass1234');
+  await page.click('#saveNewPasswordBtn');
+  await page.waitForFunction(() => window.__updatedPassword === 'NewPass1234');
+  await page.waitForSelector('#appView:not(.hidden)');
+  assert.strictEqual(await page.isVisible('#recoverySheet'), false, 'recovery sheet should close after password update');
 
   // Registration transport test
   await page.goto('http://127.0.0.1:8000/futari-calendar/?mode=login', { waitUntil: 'networkidle' });
