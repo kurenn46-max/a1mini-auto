@@ -42,6 +42,9 @@ const assert = require('assert');
           return {
             auth: {
               getSession() {
+                if (location.search.includes('mode=login')) {
+                  return Promise.resolve({ data: { session: null }, error: null });
+                }
                 const guest = location.search.includes('role=guest');
                 return Promise.resolve({ data: { session: {
                   user: { id: guest ? 'guest-user' : 'host-user' },
@@ -50,7 +53,7 @@ const assert = require('assert');
               },
               onAuthStateChange(){ return { data: { subscription: { unsubscribe(){} } } }; },
               signOut(){ window.__signedOut = true; return Promise.resolve({ error: null }); },
-              signInWithPassword(){ return Promise.resolve({ data: {}, error: null }); }
+              signInWithPassword(){ return Promise.resolve({ data: { user: { id: 'host-user' } }, error: null }); }
             },
             from(table){ return makeQuery(table); }
           };
@@ -61,6 +64,13 @@ const assert = require('assert');
 
   await page.route('https://cdn.jsdelivr.net/**', route => {
     route.fulfill({ status: 200, contentType: 'application/javascript', body: mockSupabase });
+  });
+
+  const registerBodies = [];
+  await page.route('https://zungfgnlylvtdclehcwt.supabase.co/functions/v1/futari-calendar-api', async route => {
+    const body = JSON.parse(route.request().postData() || '{}');
+    registerBodies.push(body);
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, slot: body.ownerCode ? 1 : 2 }) });
   });
 
   let guestPresent = true;
@@ -91,6 +101,24 @@ const assert = require('assert');
   async function noHorizontalOverflow() {
     return await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
   }
+
+  // Registration transport test
+  await page.goto('http://127.0.0.1:8000/futari-calendar/?mode=login', { waitUntil: 'networkidle' });
+  await page.click('.register-box summary');
+  await page.click('#hostModeBtn');
+  await page.fill('#email', 'owner@example.test');
+  await page.fill('#password', 'TestPass123');
+
+  await page.click('#hostSignupBtn');
+  assert.ok((await page.textContent('#loginMsg')).includes('登録コード'), 'host registration must require a code before API call');
+  assert.strictEqual(registerBodies.length, 0, 'empty host code must not call registration API');
+
+  await page.fill('#ownerCode', 'OWNER-CODE-TRANSPORT-TEST');
+  await page.click('#hostSignupBtn');
+  await page.waitForFunction(() => !document.querySelector('#appView').classList.contains('hidden'));
+  assert.strictEqual(registerBodies.length, 1, 'host registration should call API once');
+  assert.strictEqual(registerBodies[0].ownerCode, 'OWNER-CODE-TRANSPORT-TEST', 'owner code must be sent to registration API');
+  assert.strictEqual(registerBodies[0].email, 'owner@example.test', 'registration email must be sent');
 
   // Host
   await page.goto('http://127.0.0.1:8000/futari-calendar/?role=host', { waitUntil: 'networkidle' });
