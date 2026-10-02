@@ -44,6 +44,7 @@
       </div>
       <div class="utility-actions">
         <button id="inviteBtn" class="mini-btn hidden" type="button">2人目を招待</button>
+        <button id="pairManageBtn" class="mini-btn" type="button">ペア管理</button>
         <button id="logoutBtn" class="mini-btn" type="button">ログアウト</button>
       </div>
     </div>
@@ -92,6 +93,54 @@
       <button id="saveInviteBtn" class="primary" type="button">招待先を登録</button>
       <button id="shareInviteBtn" class="primary hidden" type="button">招待リンクを共有</button>
     </div>
+  </section>
+
+  <div id="pairBackdrop" class="backdrop hidden"></div>
+  <section id="pairSheet" class="sheet hidden" aria-modal="true" role="dialog">
+    <div class="sheet-handle"></div>
+    <div class="sheet-head">
+      <div>
+        <div class="sheet-date">共有カレンダー</div>
+        <h2>ペア管理</h2>
+      </div>
+      <button id="closePair" class="close-btn" type="button">×</button>
+    </div>
+
+    <div class="status-card">
+      <div>
+        <div id="pairRole" class="role-pill">確認中</div>
+        <div id="pairStatus" class="pair-status">状態を確認しています…</div>
+      </div>
+    </div>
+
+    <div id="hostPairControls" class="hidden">
+      <div class="pair-note">
+        <strong>ゲストを退出させる</strong>
+        <p>同じ共有カレンダーは残ります。あとで別のゲストを招待すると、これまでの共有履歴も引き継ぎます。</p>
+      </div>
+      <button id="removeGuestBtn" class="danger wide" type="button">ゲストを退出させる</button>
+
+      <div class="pair-note danger-note">
+        <strong>ペアを解散</strong>
+        <p>現在のペアを終了して、新しい共有カレンダーへ切り替えます。次のゲストには前のペアの履歴を見せません。</p>
+      </div>
+      <button id="dissolvePairBtn" class="danger wide" type="button">ペアを解散する</button>
+    </div>
+
+    <div id="guestPairControls" class="hidden">
+      <div class="pair-note">
+        <strong>共有カレンダーから退出</strong>
+        <p>自分だけこの共有から抜けます。ホスト側の共有カレンダーや予定は残ります。</p>
+      </div>
+      <button id="guestLeaveBtn" class="danger wide" type="button">この共有から退出する</button>
+    </div>
+
+    <div class="pair-note">
+      <strong>ログアウト</strong>
+      <p>ペア関係はそのまま。端末からサインアウトするだけです。</p>
+    </div>
+    <button id="pairLogoutBtn" class="ghost wide" type="button">ログアウト</button>
+    <p id="pairMsg" class="msg" role="status"></p>
   </section>
 
   <div id="toast" class="toast hidden" role="status"></div>
