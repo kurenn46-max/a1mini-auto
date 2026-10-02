@@ -1,0 +1,28 @@
+name: Futari Calendar UI Smoke
+
+on:
+  push:
+    paths:
+      - 'futari-calendar/**'
+      - '.github/workflows/futari-calendar-ui-smoke.yml'
+  workflow_dispatch:
+
+jobs:
+  ui-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install browser test runtime
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Start local app server
+        run: |
+          python3 -m http.server 8000 > /tmp/futari-calendar-http.log 2>&1 &
+          sleep 2
+      - name: Run Futari Calendar browser test
+        run: node futari-calendar/tests/ui-smoke.cjs
