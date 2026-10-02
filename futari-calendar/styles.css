@@ -16,3 +16,9 @@
 .pair-note p{margin:5px 0 12px;color:var(--muted);font-size:12px;line-height:1.55}
 .danger-note{background:#fff8f7;border:1px solid #fee4e2;border-radius:14px;padding:12px;margin-top:16px}
 .wide{width:100%;margin-top:6px}
+
+.signup-choice{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.signup-choice .ghost{width:100%;margin-top:0}
+.signup-choice .selected-choice{background:#111827;color:#fff;border-color:#111827}
+.signup-area{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.signup-area .primary{width:100%;margin-top:12px}
