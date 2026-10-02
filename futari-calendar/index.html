@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#ffffff" />
   <meta name="color-scheme" content="light" />
   <title>ふたりカレンダー</title>
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=5" />
 </head>
 <body>
   <div id="loginView" class="view login-view">
@@ -19,9 +19,23 @@
       <button id="loginBtn" class="primary">ログイン</button>
       <details class="register-box">
         <summary>初回登録</summary>
-        <p>1人目は登録コードを入力。招待された2人目は空欄のままでOK。</p>
-        <label>1人目の登録コード（2人目は空欄）<input id="ownerCode" type="text" autocomplete="one-time-code" placeholder="1人目だけ入力"></label>
-        <button id="signupBtn" class="ghost">登録する</button>
+        <p>1人目（ホスト）か、招待された2人目かを選んで登録します。</p>
+        <div class="signup-choice">
+          <button id="hostModeBtn" class="ghost" type="button">1人目（ホスト）</button>
+          <button id="guestModeBtn" class="ghost" type="button">招待された2人目</button>
+        </div>
+
+        <div id="hostSignupArea" class="signup-area hidden">
+          <label>1人目の登録コード
+            <input id="ownerCode" type="text" autocomplete="one-time-code" placeholder="登録コードを入力">
+          </label>
+          <button id="hostSignupBtn" class="primary" type="button">ホストとして登録</button>
+        </div>
+
+        <div id="guestSignupArea" class="signup-area hidden">
+          <p>ホストから招待されたメールアドレスで登録してください。登録コードは不要です。</p>
+          <button id="guestSignupBtn" class="primary" type="button">2人目として登録</button>
+        </div>
       </details>
       <p id="loginMsg" class="msg" role="status"></p>
     </div>
@@ -146,7 +160,7 @@
   <div id="toast" class="toast hidden" role="status"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
-  <script src="config.js"></script>
-  <script src="app.js"></script>
+  <script src="config.js?v=5"></script>
+  <script src="app.js?v=5"></script>
 </body>
 </html>
