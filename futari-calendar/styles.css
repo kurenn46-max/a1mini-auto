@@ -22,3 +22,6 @@
 .signup-choice .selected-choice{background:#111827;color:#fff;border-color:#111827}
 .signup-area{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
 .signup-area .primary{width:100%;margin-top:12px}
+
+.link-btn{border:0;background:transparent;color:#2563eb;font:inherit;font-weight:700;padding:10px 4px;margin-top:2px;text-decoration:underline;text-underline-offset:3px}
+.link-btn:active{opacity:.65}
