@@ -18,6 +18,8 @@
   const inviteBackdrop = $('#inviteBackdrop');
   const pairSheet = $('#pairSheet');
   const pairBackdrop = $('#pairBackdrop');
+  const recoverySheet = $('#recoverySheet');
+  const recoveryBackdrop = $('#recoveryBackdrop');
 
   let current = new Date();
   current.setDate(1);
@@ -26,6 +28,7 @@
   let allowedUser = null;
   let events = [];
   let refreshTimer = null;
+  let recoveryMode = false;
 
   function iso(d) {
     const y = d.getFullYear();
@@ -107,30 +110,148 @@
     return body;
   }
 
+  function hasRecoveryHint() {
+    return location.hash.includes('type=recovery') || new URLSearchParams(location.search).get('recovery') === '1';
+  }
+
+  function openRecoverySheet() {
+    recoverySheet.classList.remove('hidden');
+    recoveryBackdrop.classList.remove('hidden');
+    $('#recoveryMsg').textContent = '';
+    $('#newPassword').value = '';
+    $('#newPasswordConfirm').value = '';
+    setTimeout(() => $('#newPassword').focus(), 80);
+  }
+
+  function hideRecoverySheet() {
+    recoverySheet.classList.add('hidden');
+    recoveryBackdrop.classList.add('hidden');
+  }
+
+  function cleanRecoveryUrl() {
+    try { history.replaceState({}, '', appUrl()); } catch (_) {}
+  }
+
   async function init() {
     if (!client) {
       setLoginMsg('接続ライブラリを読み込めませんでした。通信状態を確認して。');
       return;
     }
 
-    const { data, error } = await client.auth.getSession();
-    if (!error && data.session) {
-      sessionUser = data.session.user;
-      const state = await loadAllowedUser();
-      if (state === 'ok') return enterApp();
-      await client.auth.signOut();
-      sessionUser = null;
-      allowedUser = null;
-    }
+    client.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'PASSWORD_RECOVERY' && session?.user) {
+        recoveryMode = true;
+        sessionUser = session.user;
+        openRecoverySheet();
+        return;
+      }
 
-    client.auth.onAuthStateChange(async (_event, session) => {
+      if (recoveryMode) return;
+
       if (session?.user && appView.classList.contains('hidden')) {
         sessionUser = session.user;
         const state = await loadAllowedUser();
         if (state === 'ok') enterApp();
       }
     });
+
+    const { data, error } = await client.auth.getSession();
+    if (!error && data.session) {
+      sessionUser = data.session.user;
+
+      if (hasRecoveryHint()) {
+        recoveryMode = true;
+        openRecoverySheet();
+        return;
+      }
+
+      const state = await loadAllowedUser();
+      if (state === 'ok') return enterApp();
+
+      await client.auth.signOut();
+      sessionUser = null;
+      allowedUser = null;
+    }
   }
+
+  $('#forgotPasswordBtn').onclick = async () => {
+    const email = $('#email').value.trim().toLowerCase();
+
+    if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
+      setLoginMsg('登録したメールアドレスを入力して。');
+      $('#email').focus();
+      return;
+    }
+
+    setLoginMsg('再設定メールを送信中…');
+
+    const { error } = await client.auth.resetPasswordForEmail(email, {
+      redirectTo: appUrl()
+    });
+
+    if (error) {
+      setLoginMsg('再設定メールを送れませんでした。少し待ってもう一度試して。');
+      return;
+    }
+
+    setLoginMsg('再設定メールを送りました。メール内のリンクを開いてください。');
+  };
+
+  $('#saveNewPasswordBtn').onclick = async () => {
+    const password = $('#newPassword').value;
+    const confirmPassword = $('#newPasswordConfirm').value;
+
+    if (password.length < 8) {
+      $('#recoveryMsg').textContent = '新しいパスワードは8文字以上にして。';
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      $('#recoveryMsg').textContent = '2回のパスワードが一致していません。';
+      return;
+    }
+
+    $('#recoveryMsg').textContent = '変更中…';
+    const { error } = await client.auth.updateUser({ password });
+
+    if (error) {
+      $('#recoveryMsg').textContent = 'パスワードを変更できませんでした。リンクをもう一度開いて試して。';
+      return;
+    }
+
+    recoveryMode = false;
+    hideRecoverySheet();
+    cleanRecoveryUrl();
+
+    const { data } = await client.auth.getSession();
+    sessionUser = data?.session?.user || sessionUser;
+    const state = await loadAllowedUser();
+
+    if (state === 'ok') {
+      await enterApp();
+      showToast('パスワードを変更した');
+    } else {
+      await leaveAppToLogin('パスワードを変更しました。新しいパスワードでログインして。');
+    }
+  };
+
+  async function cancelRecovery() {
+    hideRecoverySheet();
+
+    if (recoveryMode) {
+      recoveryMode = false;
+      cleanRecoveryUrl();
+      try { await client.auth.signOut(); } catch (_) {}
+      sessionUser = null;
+      allowedUser = null;
+      appView.classList.add('hidden');
+      loginView.classList.remove('hidden');
+      setLoginMsg('パスワード変更を中止しました。');
+    }
+  }
+
+  $('#closeRecovery').onclick = cancelRecovery;
+  recoveryBackdrop.onclick = cancelRecovery;
 
   $('#loginBtn').onclick = async () => {
     const email = $('#email').value.trim().toLowerCase();
@@ -278,6 +399,7 @@
     closeSheet();
     closeInvite();
     closePair();
+    hideRecoverySheet();
 
     try { await client.auth.signOut(); } catch (_) {}
 
