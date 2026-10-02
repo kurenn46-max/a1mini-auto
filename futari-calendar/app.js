@@ -165,10 +165,22 @@
     await enterApp();
   };
 
-  $('#signupBtn').onclick = async () => {
+  function showSignupMode(mode) {
+    const host = mode === 'host';
+    $('#hostSignupArea').classList.toggle('hidden', !host);
+    $('#guestSignupArea').classList.toggle('hidden', host);
+    $('#hostModeBtn').classList.toggle('selected-choice', host);
+    $('#guestModeBtn').classList.toggle('selected-choice', !host);
+    setLoginMsg('');
+    if (host) setTimeout(() => $('#ownerCode').focus(), 60);
+  }
+
+  $('#hostModeBtn').onclick = () => showSignupMode('host');
+  $('#guestModeBtn').onclick = () => showSignupMode('guest');
+
+  async function registerAccount(ownerCode) {
     const email = $('#email').value.trim().toLowerCase();
     const password = $('#password').value;
-    const ownerCode = $('#ownerCode').value.trim();
 
     if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
       setLoginMsg('メールアドレスを確認して。');
@@ -219,6 +231,20 @@
     } catch (_) {
       setLoginMsg('通信に失敗しました。もう一度試して。');
     }
+  }
+
+  $('#hostSignupBtn').onclick = async () => {
+    const ownerCode = $('#ownerCode').value.trim();
+    if (!ownerCode) {
+      setLoginMsg('1人目の登録コードを入力して。');
+      $('#ownerCode').focus();
+      return;
+    }
+    await registerAccount(ownerCode);
+  };
+
+  $('#guestSignupBtn').onclick = async () => {
+    await registerAccount('');
   };
 
   async function enterApp() {
