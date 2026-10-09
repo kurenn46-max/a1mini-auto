@@ -31,7 +31,10 @@ class NightPrintViewModelE2ETest {
         fail("NIGHT PRINT $phase timed out after $timeoutMillis milliseconds")
     }
 
-    @Test fun prepareFlowRawStlPetgMustProduceExecutable235C() {
+    // Test the same public Prepare -> slice entrypoint for BOTH formats.
+    // Native-only 3MF slicing previously passed while a user's imported
+    // 3MF through SlicerViewModel reverted executable startup to 220C.
+    private fun runPrepareFlow(asset: String) {
         assertTrue(NativeLibrary.isLoaded)
         val ins = InstrumentationRegistry.getInstrumentation()
         val app = ins.targetContext.applicationContext as U1SlicerApplication
@@ -41,8 +44,8 @@ class NightPrintViewModelE2ETest {
         waitUntil("offline A1 mini target", 30_000) {
             vm.effectiveSliceTarget.value == SlicerTarget.BambuA1Mini
         }
-        val model = File(ins.targetContext.cacheDir, "nightprint_ui_flow_ring.stl")
-        ins.context.assets.open("nightprint_ring_20x24x20.stl").use { input ->
+        val model = File(ins.targetContext.cacheDir, "nightprint_ui_flow_" + asset)
+        ins.context.assets.open(asset).use { input ->
             model.outputStream().use { output -> input.copyTo(output) }
         }
         try {
@@ -92,6 +95,7 @@ class NightPrintViewModelE2ETest {
                     l.startsWith("M104 S") || l.startsWith("M109 S")
                 }.take(24).joinToString(" | ")
             }
+            println("NIGHT_PRINT_REAL_UI_SOURCE=" + asset)
             println("NIGHT_PRINT_REAL_UI_GCODE_PATH=" + gcode.absolutePath)
             println("NIGHT_PRINT_REAL_UI_COMMANDS=" + details)
             assertNull(
@@ -115,9 +119,17 @@ class NightPrintViewModelE2ETest {
             assertTrue("Expected 5 wall loops", footer.contains("; wall_loops = 5"))
             assertTrue("Expected PETG filament", footer.contains("; filament_type = PETG"))
             assertEquals(SlicerTarget.BambuA1Mini, vm.effectiveSliceTarget.value)
-            println("NIGHT_PRINT_REAL_UI_TEST_PASSED")
+            println("NIGHT_PRINT_REAL_UI_TEST_PASSED input=" + asset)
         } finally {
             model.delete()
         }
+    }
+
+    @Test fun prepareFlowRawStlPetgMustProduceExecutable235C() {
+        runPrepareFlow("nightprint_ring_20x24x20.stl")
+    }
+
+    @Test fun prepareFlowImported3mfPetgMustNotRevertTo220C() {
+        runPrepareFlow("nightprint_ring_petg235.3mf")
     }
 }
