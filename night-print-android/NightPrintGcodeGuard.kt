@@ -46,6 +46,66 @@ internal object NightPrintGcodeGuard {
         }
     }
 
+    /**
+     * Fixed-layer process integrity. The V2.8 ring G-code showed 100 UI
+     * layers but only 70 actual layer changes, some jumping by 1.2mm.
+     * Check executable layer structure, not a UI/header estimate.
+     */
+    fun checkA1MiniFixedLayers(gcodePath: String, expectedHeightMm: Float): String? {
+        if (!expectedHeightMm.isFinite() || expectedHeightMm !in 0.08f..0.32f) {
+            return "ナイト検査: 積層高さの設定が正しくありません。"
+        }
+        val file = File(gcodePath)
+        if (!file.isFile) return "ナイト検査: 積層検査用G-codeがありません。"
+        val expected = expectedHeightMm.toDouble()
+        val tolerance = maxOf(0.035, expected * 0.16)
+        var prevZ: Double? = null
+        var maxZ: Double? = null
+        var layerCount = 0
+        var waitingForZ = false
+        return try {
+            file.bufferedReader().use { reader ->
+                for (raw in reader.lineSequence()) {
+                    val s = raw.trim()
+                    if (s.startsWith("; max_z_height:")) {
+                        maxZ = s.substringAfter(":").trim().toDoubleOrNull()
+                    }
+                    if (s == ";LAYER_CHANGE") {
+                        if (waitingForZ) {
+                            return "ナイト検査: 積層Z座標が欠けています。印刷を中止してください。"
+                        }
+                        waitingForZ = true
+                        continue
+                    }
+                    if (!waitingForZ || !s.startsWith(";Z:")) continue
+                    val z = s.substringAfter(":").trim().toDoubleOrNull()
+                        ?: return "ナイト検査: 積層Zが数値ではありません。"
+                    if (!z.isFinite()) return "ナイト検査: 積層Zが不正です。"
+                    val step = z - (prevZ ?: 0.0)
+                    if (step <= 0.0 || kotlin.math.abs(step - expected) > tolerance) {
+                        return "ナイト検査: 積層間隔 " +
+                            String.format(java.util.Locale.US, "%.2f", step) +
+                            "mm が設定 " +
+                            String.format(java.util.Locale.US, "%.2f", expected) +
+                            "mm と不一致。印刷を中止してください。"
+                    }
+                    prevZ = z
+                    layerCount++
+                    waitingForZ = false
+                }
+            }
+            when {
+                waitingForZ || layerCount < 2 || prevZ == null ->
+                    "ナイト検査: 積層データが不完全です。印刷を中止してください。"
+                maxZ != null && kotlin.math.abs(prevZ!! - maxZ!!) > tolerance ->
+                    "ナイト検査: G-codeの最終高さがモデルと一致しません。印刷を中止してください。"
+                else -> null
+            }
+        } catch (_: Exception) {
+            "ナイト検査: 積層検査に失敗しました。印刷を中止してください。"
+        }
+    }
+
     fun checkA1MiniPetg(gcodePath: String, expectedNozzleC: Int): String? {
         val file = File(gcodePath)
         if (!file.isFile) return "ナイト検査: G-codeを確認できません。印刷を中止してください。"
