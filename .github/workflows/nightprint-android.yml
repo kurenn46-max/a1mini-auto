@@ -1,4 +1,4 @@
-name: Build NIGHT PRINT V2.2 for Android
+name: Build NIGHT PRINT V2.3 for Android
 
 on:
   workflow_dispatch:
@@ -56,19 +56,22 @@ jobs:
             -storepass android -keypass android -alias androiddebugkey \
             -keyalg RSA -keysize 2048 -validity 3650 \
             -dname "CN=Android Debug,O=Android,C=US"
-      - name: Verify V2.1 one-tap UI patch landed
+      - name: Verify V2.3 one-tap and accurate Job History patch landed
         working-directory: /tmp/u1-nightprint
         run: |
           grep -q 'Text("ナイト設定"' app/src/main/java/com/u1/slicer/MainActivity.kt
           grep -q '岡ちゃん標準・確実' app/src/main/java/com/u1/slicer/MainActivity.kt
           grep -q 'wall_loops.*5' app/src/main/java/com/u1/slicer/MainActivity.kt
           grep -q 'sparse_infill_density.*40' app/src/main/java/com/u1/slicer/MainActivity.kt
+          grep -q 'val cfg = targetAwareSliceConfig' app/src/main/java/com/u1/slicer/SlicerViewModel.kt
+          grep -q 'nozzleTemp = jobNozzleTemp' app/src/main/java/com/u1/slicer/SlicerViewModel.kt
+          grep -q 'filamentType = jobMaterial' app/src/main/java/com/u1/slicer/SlicerViewModel.kt
       - name: Build isolated Android APK
         working-directory: /tmp/u1-nightprint
         run: bash ./gradlew :app:assembleDebug --no-daemon --stacktrace
       - name: Save APK (test build only; not a release)
         uses: actions/upload-artifact@v4
         with:
-          name: NIGHT_PRINT_V2.2_A1mini_test_apk
+          name: NIGHT_PRINT_V2.3_A1mini_test_apk
           path: /tmp/u1-nightprint/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
