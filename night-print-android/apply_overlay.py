@@ -25,7 +25,9 @@ for src, dst in [
     ("NightPrintPreset.kt", java / "NightPrintPreset.kt"),
     ("NightPrintPresetTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintPresetTest.kt"),
     ("NightPrintGcodeGuard.kt", java / "NightPrintGcodeGuard.kt"),
-    ("NightPrintGcodeGuardTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintGcodeGuardTest.kt")
+    ("NightPrintGcodeGuardTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintGcodeGuardTest.kt"),
+    ("NightPrintOfflineA1MiniTarget.kt", java / "NightPrintOfflineA1MiniTarget.kt"),
+    ("NightPrintOfflineA1MiniTargetTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintOfflineA1MiniTargetTest.kt")
 ]:
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(overlay / src, dst)
@@ -33,11 +35,11 @@ for src, dst in [
 
 patch("app/build.gradle",
     'applicationId "com.u1.slicer.orca"',
-    'applicationId "com.u1.slicer.orca.nightprint.v23"')
+    'applicationId "com.u1.slicer.orca.nightprint.v25"')
 
 patch("app/src/main/AndroidManifest.xml",
     'android:label="@string/app_name"',
-    'android:label="NIGHT PRINT V2.3 岡ちゃん"')
+    'android:label="NIGHT PRINT V2.5 岡ちゃん"')
 
 patch("app/src/main/AndroidManifest.xml",
     '            <!-- Known 3MF/STL MIME types — works with both content:// and file:// -->',
@@ -254,3 +256,67 @@ patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
                         }
                     }''')
 print("NIGHT PRINT V2.3: executable PETG/temperature guard added")
+
+
+# V2.5 offline A1 mini: selecting a slicer target cannot depend on
+# network pairing. The original app silently defaulted to Snapmaker U1
+# (270-mm bed) whenever there was no active printer. Do not rewrite
+# another explicitly configured printer to A1 mini: block that mismatch.
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''    val effectiveSliceTarget: StateFlow<SlicerTarget> = printersRepo.activePrinter
+        .map(::resolveDefaultSliceTarget)
+        .stateIn(
+        viewModelScope,
+        SharingStarted.Eagerly,
+        resolveDefaultSliceTarget(null),
+    )''',
+    '''    val effectiveSliceTarget: StateFlow<SlicerTarget> = printersRepo.activePrinter
+        .map(::nightPrintOfflineA1MiniTarget)
+        .stateIn(
+        viewModelScope,
+        SharingStarted.Eagerly,
+        nightPrintOfflineA1MiniTarget(null),
+    )''')
+
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''    fun startSlicing() {
+        if (!com.u1.slicer.slice.isLocalSliceAvailable(''',
+    '''    fun startSlicing() {
+        // A1 mini is a dedicated machine target even without LAN pairing.
+        // Explicitly selected non-A1 printers are rejected, not silently converted.
+        if (nightPrintOfflineA1MiniTarget(activePrinterForSlicing.value)
+            != SlicerTarget.BambuA1Mini) {
+            _state.value = SlicerState.Error(
+                "ナイト検査: A1 mini以外のプリンターが選択されています。機種を確認してください。"
+            )
+            return
+        }
+        if (!com.u1.slicer.slice.isLocalSliceAvailable(''')
+
+# The Prepare screen already collects effectiveSliceTarget; show it explicitly.
+patch_prepare("app/src/main/java/com/u1/slicer/MainActivity.kt",
+    '''Text("NIGHT PRINT", fontWeight = FontWeight.Bold)''',
+    '''Text("NIGHT PRINT", fontWeight = FontWeight.Bold)
+                        Text(
+                            if (effectiveSliceTarget == com.u1.slicer.slice.SlicerTarget.BambuA1Mini)
+                                "A1 mini 対応（接続なしでもスライス可）"
+                            else "機種が一致しません：A1 miniを選択",
+                            style = MaterialTheme.typography.labelSmall
+                        )''')
+
+# Validate firmware identity on EVERY A1 mini slice (including PLA),
+# and retain the stricter PETG command audit as a separate check.
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                    if (target == SlicerTarget.BambuA1Mini &&
+                        ftTypes.size == 1 && ftTypes[0].equals("PETG", ignoreCase = true)) {''',
+    '''                    if (target == SlicerTarget.BambuA1Mini) {
+                        val machineIssue = NightPrintGcodeGuard.checkA1MiniMachine(result.gcodePath)
+                        if (machineIssue != null) {
+                            diagnostics.clearSliceInProgress()
+                            _state.value = SlicerState.Error(machineIssue)
+                            return@launch
+                        }
+                    }
+                    if (target == SlicerTarget.BambuA1Mini &&
+                        ftTypes.size == 1 && ftTypes[0].equals("PETG", ignoreCase = true)) {''')
+print("NIGHT PRINT v2.5: offline A1 mini target and G-code machine guard installed.")
