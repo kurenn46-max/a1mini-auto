@@ -10,7 +10,11 @@ import java.util.zip.ZipFile
  * Never mutate the source file or executable G-code.
  */
 internal object NightPrintImported3mfProfile {
-    data class Material(val filamentType: String, val nozzleC: Int, val bedC: Int)
+    data class Material(
+        val filamentType: String, val nozzleC: Int, val bedC: Int,
+        val layerHeight: Float, val walls: Int, val infill: Int,
+        val topLayers: Int, val bottomLayers: Int, val pattern: String,
+    )
     private const val MAX_CONFIG_BYTES = 64L * 1024L
 
     fun read(file: File?): Material? {
@@ -42,7 +46,22 @@ internal object NightPrintImported3mfProfile {
                 val bed = (oneString("textured_plate_temp") ?: oneString("hot_plate_temp"))
                     ?.toIntOrNull() ?: return@use null
                 if (bed !in 0..80) return@use null
-                Material("PETG", nozzle, bed)
+                // Only promote a complete, valid process profile to the
+                // source of truth. Bad/incomplete 3MF files still fail closed.
+                val layer = json.optString("layer_height").toFloatOrNull() ?: return@use null
+                val walls = json.optString("wall_loops").toIntOrNull() ?: return@use null
+                val infillText = json.optString("sparse_infill_density")
+                if (!infillText.endsWith("%")) return@use null
+                val infill = infillText.removeSuffix("%").toIntOrNull() ?: return@use null
+                val top = json.optString("top_shell_layers").toIntOrNull() ?: return@use null
+                val bottom = json.optString("bottom_shell_layers").toIntOrNull() ?: return@use null
+                val pattern = json.optString("sparse_infill_pattern")
+                if (!layer.isFinite() || layer !in 0.08f..0.32f ||
+                    walls !in 2..10 || infill !in 10..100 ||
+                    top !in 2..12 || bottom !in 2..12 ||
+                    pattern !in setOf("gyroid", "grid", "rectilinear", "cubic"))
+                    return@use null
+                Material("PETG", nozzle, bed, layer, walls, infill, top, bottom, pattern)
             }
         }.getOrNull()
     }

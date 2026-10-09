@@ -112,6 +112,34 @@ with zipfile.ZipFile(three_mf,"w",compression=zipfile.ZIP_DEFLATED) as z:
 <Default Extension="config" ContentType="application/octet-stream"/></Types>""")
     z.writestr("Metadata/project_settings.config", json.dumps(profile,separators=(",",":")))
 
+
+# User's real 0.16mm / 4 walls / 25% / cubic profile, same 1024-face mesh.
+fine_profile = dict(profile)
+fine_profile.update({
+    "layer_height":"0.16",
+    "initial_layer_print_height":"0.16",
+    "wall_loops":"4",
+    "top_shell_layers":"6",
+    "bottom_shell_layers":"4",
+    "sparse_infill_density":"25%",
+    "sparse_infill_pattern":"cubic",
+})
+fine_mf = dst / "nightprint_ring_petg235_016mm_4wall_25cubic.3mf"
+with zipfile.ZipFile(three_mf, "r") as original, zipfile.ZipFile(
+        fine_mf, "w", compression=zipfile.ZIP_DEFLATED) as out:
+    for entry in original.infolist():
+        payload = original.read(entry.filename)
+        if entry.filename == "Metadata/project_settings.config":
+            payload = json.dumps(fine_profile, separators=(",", ":")).encode("utf-8")
+        out.writestr(entry.filename, payload)
+with zipfile.ZipFile(fine_mf) as z:
+    assert z.testzip() is None
+    settings = json.loads(z.read("Metadata/project_settings.config"))
+    assert settings["layer_height"] == "0.16"
+    assert settings["nozzle_temperature"] == ["235"]
+    assert settings["wall_loops"] == "4"
+    assert settings["sparse_infill_pattern"] == "cubic"
+
 assert len(verts)==512 and len(tris)==1024
 with zipfile.ZipFile(three_mf) as z:
     assert json.loads(z.read("Metadata/project_settings.config"))["nozzle_temperature"]==["235"]

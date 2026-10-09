@@ -49,11 +49,11 @@ subprocess.run(
 
 patch("app/build.gradle",
     'applicationId "com.u1.slicer.orca"',
-    'applicationId "com.u1.slicer.orca.nightprint.v31"')
+    'applicationId "com.u1.slicer.orca.nightprint.v32"')
 
 patch("app/src/main/AndroidManifest.xml",
     'android:label="@string/app_name"',
-    'android:label="NIGHT PRINT V3.1 岡ちゃん"')
+    'android:label="NIGHT PRINT V3.2 岡ちゃん"')
 
 patch("app/src/main/AndroidManifest.xml",
     '            <!-- Known 3MF/STL MIME types — works with both content:// and file:// -->',
@@ -642,6 +642,29 @@ patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
                         !nightImportedInfo.hasMultiExtruderAssignments &&
                         nightImportedInfo.detectedExtruderCount <= 1
                     ) {
+                        // The currently persisted NIGHT preset belongs to the
+                        // PREVIOUS model. When a complete process-bearing 3MF
+                        // is imported, adopt its source process instead of
+                        // composing stale 0.20/5/40/gyroid over 0.16/4/25/cubic.
+                        // Only six process keys and bedTemp reset; support,
+                        // brim, printer and all unrelated overrides survive.
+                        val previous = slicingOverrides.value
+                        val sourceProcess = previous.copy(
+                            layerHeight = com.u1.slicer.data.OverrideValue(),
+                            wallCount = com.u1.slicer.data.OverrideValue(),
+                            infillDensity = com.u1.slicer.data.OverrideValue(),
+                            topShellLayers = com.u1.slicer.data.OverrideValue(),
+                            bottomShellLayers = com.u1.slicer.data.OverrideValue(),
+                            infillPattern = com.u1.slicer.data.OverrideValue(),
+                            bedTemp = com.u1.slicer.data.OverrideValue(),
+                        )
+                        if (sourceProcess != previous) {
+                            settingsRepo.saveSlicingOverrides(sourceProcess)
+                            kotlinx.coroutines.withTimeout(10_000L) {
+                                slicingOverrides.first { it == sourceProcess }
+                            }
+                            Log.i("SlicerVM", "NIGHTPRINT_V32_3MF_SOURCE_PROCESS_SELECTED")
+                        }
                         _config.value = _config.value.copy(
                             filamentType = nightImported.filamentType,
                             nozzleTemp = nightImported.nozzleC,
