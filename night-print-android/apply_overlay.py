@@ -31,11 +31,11 @@ for src, dst in [
 
 patch("app/build.gradle",
     'applicationId "com.u1.slicer.orca"',
-    'applicationId "com.u1.slicer.orca.nightprint.v21"')
+    'applicationId "com.u1.slicer.orca.nightprint.v22"')
 
 patch("app/src/main/AndroidManifest.xml",
     'android:label="@string/app_name"',
-    'android:label="NIGHT PRINT V2.1 岡ちゃん"')
+    'android:label="NIGHT PRINT V2.2 岡ちゃん"')
 
 patch("app/src/main/AndroidManifest.xml",
     '            <!-- Known 3MF/STL MIME types — works with both content:// and file:// -->',
@@ -198,4 +198,14 @@ patch("app/src/main/java/com/u1/slicer/MainActivity.kt",
                     if (state !is SlicerViewModel.SlicerState.Idle) {
                         IconButton(onClick = { viewModel.clearModel() }) {''')
 
-print("NIGHT PRINT v2.1 native Prepare one-tap overlay applied (device test pending).")
+
+# V2.2 safety contract: NIGHT PRINT is process-only. Filament/material/nozzle/bed
+# temperatures stay entirely under the upstream app's existing PETG/spool pipeline.
+# Fail the build if a future edit accidentally adds those keys to the NIGHT preset.
+preset_source = (overlay / "NightPrintPreset.kt").read_text(encoding="utf-8")
+for forbidden in ("nozzleTemp", "filamentType", "materialType", "bedTemp"):
+    if forbidden in preset_source:
+        raise RuntimeError(f"NIGHT PRINT must not override upstream material setting: {forbidden}")
+print("Verified: NIGHT PRINT does not override material or temperature settings")
+
+print("NIGHT PRINT v2.2 preserves upstream filament/temperature handling; process-only one-tap overlay applied (device test pending).")
