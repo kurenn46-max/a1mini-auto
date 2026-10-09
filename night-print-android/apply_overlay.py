@@ -122,10 +122,24 @@ patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
         _sliceStale.value = true
         if (lastModelInfo != null) profileNeedsReEmbed = true''')
 
+def patch_prepare(path, before, after):
+    """Patch only the PrepareScreen() scope, never the separate PreviewScreen."""
+    file = root / path
+    source = file.read_text(encoding="utf-8")
+    marker = "fun PrepareScreen("
+    if source.count(marker) != 1:
+        raise RuntimeError("PrepareScreen anchor missing/ambiguous")
+    head, tail = source.split(marker, 1)
+    if tail.count(before) < 1:
+        raise RuntimeError("PrepareScreen top bar anchor missing")
+    tail = tail.replace(before, after, 1)
+    file.write_text(head + marker + tail, encoding="utf-8")
+    print("Patched PrepareScreen", path)
+
 # V2.1: the one-tap button must live in the PrepareScreen composable,
 # not a sibling screen where modelLoaded/pendingNightPrintRaw are out of scope.
 # Keep its state local, and do not start slicing or printing on approval.
-patch("app/src/main/java/com/u1/slicer/MainActivity.kt",
+patch_prepare("app/src/main/java/com/u1/slicer/MainActivity.kt",
     '''    Scaffold(
         topBar = {
             TopAppBar(
