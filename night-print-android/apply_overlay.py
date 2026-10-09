@@ -29,6 +29,7 @@ for src, dst in [
     ("NightPrintOfflineA1MiniTarget.kt", java / "NightPrintOfflineA1MiniTarget.kt"),
     ("NightPrintOfflineA1MiniTargetTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintOfflineA1MiniTargetTest.kt"),
     ("NightPrintNativeSliceE2ETest.kt", root / "app/src/androidTest/java/com/u1/slicer/NightPrintNativeSliceE2ETest.kt"),
+    ("NightPrintViewModelE2ETest.kt", root / "app/src/androidTest/java/com/u1/slicer/NightPrintViewModelE2ETest.kt"),
     ("NightPrintStlTo3mf.kt", java / "NightPrintStlTo3mf.kt"),
     ("NightPrintStlTo3mfTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintStlTo3mfTest.kt")
 ]:
