@@ -12,6 +12,40 @@ import java.io.File
 internal object NightPrintGcodeGuard {
     private val heater = Regex("""^M10[49]\s+S(\d+(?:\.\d+)?)(?:\s|;|$)""")
 
+    /**
+     * Confirms the generated job is truly for the A1 mini, not only
+     * cosmetically labeled PETG or produced with the U1 270-mm bed.
+     * Printer pairing is not required for this offline check.
+     */
+    fun checkA1MiniMachine(gcodePath: String): String? {
+        val file = File(gcodePath)
+        if (!file.isFile) return "ナイト検査: G-codeがありません。"
+        var modelOk = false
+        var areaOk = false
+        return try {
+            file.bufferedReader().use { reader ->
+                for (line in reader.lineSequence()) {
+                    val value = line.trim()
+                    if (value.startsWith("; printer_model =")) {
+                        modelOk = value.substringAfter("=").trim()
+                            .equals("Bambu Lab A1 mini", ignoreCase = true)
+                    }
+                    if (value.startsWith("; printable_area =") ||
+                        value.startsWith("; bed_shape =")) {
+                        if (value.contains("180x180")) areaOk = true
+                    }
+                }
+            }
+            when {
+                !modelOk -> "ナイト検査: A1 mini用のG-codeではありません。印刷を中止してください。"
+                !areaOk -> "ナイト検査: A1 miniの180mm造形範囲を確認できません。印刷を中止してください。"
+                else -> null
+            }
+        } catch (_: Exception) {
+            "ナイト検査: 機種の確認に失敗しました。印刷を中止してください。"
+        }
+    }
+
     fun checkA1MiniPetg(gcodePath: String, expectedNozzleC: Int): String? {
         val file = File(gcodePath)
         if (!file.isFile) return "ナイト検査: G-codeを確認できません。印刷を中止してください。"
