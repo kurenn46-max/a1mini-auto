@@ -743,3 +743,26 @@ patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
                 }
                 recoveryPlateId = -1''')
 print("NIGHT PRINT V3.2: new 3MF resets only previous-model process overrides.")
+
+
+# V3.2: even if the native Orca engine reports SliceComplete, verify that
+# the ACTUAL emitted G-code matches the custom 3MF instructions. This closes
+# the gap where a preview/history says 4 walls/25%/0.16mm but native uses a
+# stale 5 walls/40%/0.20mm profile. No G-code rewrite. Stop on mismatch.
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                    val outputValidation = validateSliceOutput(''',
+    '''                    if (target == SlicerTarget.BambuA1Mini &&
+                        nightWrappedStlForThisSlice &&
+                        currentModelName.endsWith(".3mf", ignoreCase = true)) {
+                        val activeProfile = sourceModelFile
+                            ?: throw IllegalStateException("3MFの素材設定を確認できません。")
+                        val issue = NightPrint3mfProcess.checkOutput(
+                            activeProfile, result.gcodePath)
+                        if (issue != null) {
+                            diagnostics.clearSliceInProgress()
+                            _state.value = SlicerState.Error(issue)
+                            return@launch
+                        }
+                    }
+                    val outputValidation = validateSliceOutput(''')
+print("NIGHT PRINT V3.2: actual G-code audited against selected 3MF custom process, no silent fallback.")
