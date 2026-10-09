@@ -1,0 +1,119 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0c1524"><title>NIGHT PRINT V2｜岡ちゃん仕様</title><style>:root{color-scheme:dark;font-family:system-ui,-apple-system,'Noto Sans JP',sans-serif;background:#0c1524;color:#e8eef8}*{box-sizing:border-box}body{margin:0}.app{max-width:760px;margin:auto;padding:20px 16px 70px}header{padding:14px 4px 22px}h1{font-size:clamp(29px,8vw,43px);margin:6px 0}h1 small{font-size:14px;color:#9ed2ff;vertical-align:middle}h2{font-size:20px;line-height:1.4;margin:4px 0 16px}.eyebrow,.step{letter-spacing:.08em;color:#88a9d1;font-weight:700;font-size:13px}p{color:#bbcadb;line-height:1.75;margin:9px 0}.card{background:#152238;border:1px solid #2e415d;border-radius:19px;margin:0 0 15px;padding:21px 18px}.choices{display:grid;gap:9px}.choice{background:#0c192d;border:1px solid #38506d;color:#e9f0fa;border-radius:13px;text-align:left;padding:15px;display:flex;flex-direction:column;gap:4px;font-size:16px;cursor:pointer}.choice span{font-size:12px;color:#9fb0c6}.choice.active{border-color:#6ab8ff;outline:2px solid #3999e62e;background:#172e49}.spec{margin:16px 0;padding:12px;border:1px solid #30455e;border-radius:10px}.spec-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.metric{display:grid;gap:3px;text-align:center}.metric b{font-size:20px;color:#fff}.metric small{color:#a4b5ca;font-size:11px}.hint{font-size:12px;color:#a8b7ca}.primary,.upload,.secondary{display:flex;align-items:center;justify-content:space-between;width:100%;font:700 16px system-ui,sans-serif;border-radius:11px;padding:15px;border:1px solid #57b7ff;cursor:pointer}.primary,.upload{background:#1683d1;color:white}.secondary{margin-top:13px;background:#25344a;color:white;border-color:#475b75;justify-content:center}.secondary:disabled{opacity:.4}.audit{margin-top:13px;border:1px solid #455972;border-radius:12px;padding:14px;background:#0b1829}.audit.empty{color:#aab6c9}.status{font-weight:800;font-size:18px;margin:0 0 9px}.status.stop{color:#ffadb0}.status.warn{color:#f2d29a}.status.ok{color:#b4f1dc}.check{display:flex;gap:12px;justify-content:space-between;align-items:baseline;padding:11px 0;border-top:1px solid #293c52}.check span{flex:0 0 31%;font-weight:650;font-size:13px}.check small{flex:1;color:#bdcbdb;font-size:12px;text-align:right;overflow-wrap:anywhere}.mark.ok{color:#98e3c7}.mark.stop{color:#ffb3b9}.mark.warn{color:#f3d393}.mark.info{color:#aac6e0}ol{padding-left:22px;line-height:1.8;color:#d1dded}li{margin:10px 0}footer{padding:14px 4px;color:#92a2ba;line-height:1.8;font-size:12px}footer div{margin-top:12px}@media(min-width:650px){.choices{grid-template-columns:repeat(3,1fr)}.choice{min-height:92px}} 
+</style></head>
+<body><main class="app"><header><div class="eyebrow">岡重機 × ナイト</div><h1>NIGHT PRINT <small>V2 テスト版</small></h1><p>基本理念：<strong>簡単・確実</strong>。設定はナイト、最終判断は人間。</p></header>
+<section class="card"><div class="step">01 · 何を作る？</div><h2>用途を選ぶだけ</h2><div class="choices" id="choices"><button class="choice active" data-mode="strong"><strong>強度優先</strong><span>ヒンジ・爪・釣具の部品</span></button><button class="choice" data-mode="fit"><strong>寸法優先</strong><span>はめ込み・圧入</span></button><button class="choice" data-mode="trial"><strong>まず試作</strong><span>形を合わせる</span></button></div><div class="spec" id="spec"></div><button class="primary" id="sendnative"><span>ナイト設定を専用アプリに送る</span><span>→</span></button><p class="hint" id="sendstatus" aria-live="polite">※NIGHT PRINT専用Android版が必要。内容はAndroid版で再確認してから反映します。自動印刷しません。</p><button class="secondary" id="export">従来の設定ファイルをダウンロード</button><p class="hint">※PETG・0.4mmノズル・A1 miniを想定した初期値。実物の材料表示が優先。</p></section>
+<section class="card"><div class="step">02 · 失敗を印刷前に防ぐ</div><h2>G-codeをナイトが照合</h2><p>スライスした <b>.gcode</b> を選ぶと、機種・材料・壁・充填率・積層・ベッド温度などを点検するで。<b>ファイルはこの端末の中だけで読み取る。</b></p><label class="upload">G-codeを選んでチェック<input id="gcode" type="file" accept=".gcode,.gco,.txt,text/plain" hidden></label><div id="audit" class="audit empty" aria-live="polite">まだファイルを選んでへんで。</div><button class="secondary" id="copy" disabled>結果をコピーしてナイトに相談</button></section>
+<section class="card"><div class="step">03 · プリント前の最終確認</div><h2>印刷開始はスマホで承認</h2><ol><li>専用Android版では上の送信ボタンを押し、変更内容を確認して承認する。従来アプリを使う場合は設定ファイルを読み込む。</li><li>3MFの既存設定やPrepareの個別設定が優先されることもあるため、<b>再スライスする。</b></li><li>G-codeをこの画面で検査。造形向き・サポート・材料表示を自分でも確認してからYour One Slicerで印刷開始。</li></ol><p class="hint">※V2でも送信できるのは印刷設定のみ。再スライスとプリンターへの印刷は必ず画面で確認してな。</p></section>
+<footer>安全に関わる部品・針先カバーは実物で開閉、抜け止め、繰り返し強度を必ず確認。<div>© 岡ちゃん仕様 NIGHT PRINT — ローカル検査</div></footer></main><script type="module">const PRESETS = Object.freeze({
+  strong: {title:'強度優先', detail:'ヒンジ・爪・繰り返し使う部品', wall:5, infill:40, layer:0.20, top:5, bottom:5},
+  fit: {title:'寸法優先', detail:'キャップ・圧入・はめ合い部品', wall:5, infill:30, layer:0.16, top:5, bottom:5},
+  trial: {title:'試作', detail:'寸法合わせや形状を先に確認', wall:3, infill:15, layer:0.20, top:4, bottom:4}
+});
+function makeProcessProfile(key) {
+  const p = PRESETS[key]; if(!p) throw new Error('未対応プリセット');
+  return {
+    type:'process',name:`NIGHT PRINT 岡ちゃん ${p.title} PETG A1 mini`,
+    layer_height: String(p.layer), wall_loops:String(p.wall),
+    sparse_infill_density:`${p.infill}%`,
+    top_shell_layers:String(p.top), bottom_shell_layers:String(p.bottom),
+    sparse_infill_pattern:'gyroid'
+  };
+}
+const numeric = value => {
+  if(value===undefined || value===null || value==='') return null;
+  const n=Number(String(value).replace(/[%℃]/g,'').trim());return Number.isFinite(n)?n:null;
+};
+function parseGcode(source) {
+  const data = {};
+  // Use only comment metadata: don't misread machine startup macro commands as print geometry.
+  for(const line of source.split(/\r?\n/)) {
+    const s=line.trim();if(!s.startsWith(';'))continue;
+    const m=s.match(/^;\s*([a-z][a-z0-9_]*)\s*(?:=|:)\s*(.*?)\s*$/i);
+    if(!m)continue;
+    const k=m[1].toLowerCase();if(m[2].length>1000)continue;
+    // Do not let the embedded start/end machine macro override actual profile keys.
+    if(!/^(?:printer_model|filament_type|wall_loops|sparse_infill_density|layer_height|bottom_shell_layers|top_shell_layers|enable_support|first_layer_bed_temperature|bed_temperature|nozzle_temperature|total_layer_number|max_z_height|total_layer_count)$/.test(k)) continue;
+    data[k] = m[2].trim();
+  }
+  const getHeader=(label)=>{
+    const m=source.slice(0,7000).match(new RegExp('^;\\s*'+label+'\\s*:\\s*([^\\r\\n]+)','mi'));
+    return m?.[1].trim() || null;
+  };
+  const layerText=getHeader('total layer number');
+  return {
+    machine:data.printer_model??null,
+    material:data.filament_type??null,
+    wall:numeric(data.wall_loops),infill:numeric(data.sparse_infill_density),
+    layer:numeric(data.layer_height),top:numeric(data.top_shell_layers),bottom:numeric(data.bottom_shell_layers),
+    bed:numeric(data.first_layer_bed_temperature??data.bed_temperature),
+    nozzle:numeric(data.nozzle_temperature),
+    support:data.enable_support==='1'?true:data.enable_support==='0'?false:null,
+    layers:numeric(layerText),maxZ:numeric(getHeader('max_z_height')),
+    keysFound:Object.keys(data).length
+  };
+}
+function auditGcode(text, presetName='strong') {
+  const p=PRESETS[presetName];if(!p) throw new Error('未対応プリセット');
+  const info=parseGcode(text), checks=[];
+  const check=(name,level,detail)=>checks.push({name,level,detail});
+  if(!info.machine) check('機種','stop','機種を判定できないため安全確認が必要');
+  else if(!/bambu\s*lab\s*a1\s*mini/i.test(info.machine))check('機種','stop',`A1 mini以外の設定：${info.machine}`);
+  else check('機種','ok',info.machine);
+  if(!info.material) check('材料','stop','材料が判定できない');
+  else if(!/^petg(?:\b|$)/i.test(info.material)) check('材料','stop',`PETG以外：${info.material}`);
+  else check('材料','ok',info.material);
+  if(info.wall===null)check('壁の数','stop','G-codeから壁数を確認できない');
+  else if(info.wall<p.wall)check('壁の数','stop',`${info.wall}周。必要な基準は${p.wall}周以上`);
+  else check('壁の数','ok',`${info.wall}周`);
+  if(info.infill===null)check('充填率','stop','G-codeから充填率を確認できない');
+  else if(info.infill<p.infill)check('充填率','stop',`${info.infill}%。基準は${p.infill}%以上`);
+  else check('充填率','ok',`${info.infill}%`);
+  if(info.layer===null)check('積層高さ','warn','G-codeから設定値を確認できない');
+  else if(info.layer>p.layer+0.011)check('積層高さ','warn',`${info.layer}mm。推奨${p.layer.toFixed(2)}mm`);
+  else check('積層高さ','ok',`${info.layer}mm`);
+  for(const [k,label,target] of [['top','上面層',p.top],['bottom','底面層',p.bottom]]){
+    if(info[k]===null)check(label,'warn','確認不能');
+    else if(info[k]<target)check(label,'warn',`${info[k]}層。推奨${target}層`);
+    else check(label,'ok',`${info[k]}層`);
+  }
+  if(info.bed===null)check('ベッド温度','warn','確認不能。PETGのラベルも確認');
+  else if(info.bed<65||info.bed>85)check('ベッド温度','warn',`${info.bed}℃。PETGのメーカー指定範囲と照合してな`);
+  else check('ベッド温度','ok',`${info.bed}℃（材料ラベルも確認）`);
+  if(info.support===null)check('サポート','warn','設定不明。ヒンジ・ロック爪の下面をプレビューで確認');
+  else check('サポート','info',info.support?'ON：付着・除去しやすさをプレビューで確認':'OFF：空中造形やヒンジ下面を確認');
+  if(info.maxZ===null)check('造形高さ','warn','造形物の最大高さを確認できない');
+  else if(info.maxZ>180)check('造形高さ','stop',`${info.maxZ}mmでA1 miniの180mmを超えている`);
+  else check('造形高さ','ok',`${info.maxZ}mm（モデルの最高点）`);
+  return {info,checks,status:checks.some(c=>c.level==='stop')?'stop':checks.some(c=>c.level==='warn')?'warn':'ok',preset:p};
+}
+
+
+const $=id=>document.getElementById(id);let mode='strong';let last=null;
+function display(){const p=PRESETS[mode];$('spec').innerHTML=`<div class="spec-grid"><div class="metric"><b>${p.wall}周</b><small>壁の数</small></div><div class="metric"><b>${p.infill}%</b><small>充填率</small></div><div class="metric"><b>${p.layer.toFixed(2)}mm</b><small>積層</small></div></div><p class="hint">上下面${p.top}層 / ${p.bottom}層。サポートとPETG温度はモデルと材料のラベルを見て決める。</p>`}
+for(const b of document.querySelectorAll('.choice'))b.addEventListener('click',()=>{mode=b.dataset.mode;for(const x of document.querySelectorAll('.choice'))x.classList.toggle('active',x===b);display();if(last)render(last.text,last.name)});
+$('export').addEventListener('click',()=>{const j=JSON.stringify(makeProcessProfile(mode),null,2);const a=document.createElement('a');const u=URL.createObjectURL(new Blob([j],{type:'application/json'}));a.href=u;a.download=`NIGHT_PRINT_OKA_${mode}_A1mini_PETG.orca_process`;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1000)});
+function safe(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function render(text,name){const r=auditGcode(text,mode);last={text,name,result:r};const msgs={stop:'要修正：この設定では印刷をすすめない',warn:'要確認：不明・注意項目あり',ok:'設定値は確認できた'};const icons={stop:'✕',warn:'△',ok:'✓',info:'i'};const body=r.checks.map(c=>`<div class="check"><span class="mark ${c.level}">${icons[c.level]} ${safe(c.name)}</span><small>${safe(c.detail)}</small></div>`).join('');$('audit').className='audit';$('audit').innerHTML=`<div class="status ${r.status}">${msgs[r.status]}</div><p class="hint">${safe(name)} / 造形最高点 ${r.info.maxZ??'不明'}mm / 実造形層数 ${r.info.layers??'不明'}</p>${body}<p class="hint">※位置・温度・ノズル経路の全検査、強度保証、機械への送信は行っていません。</p>`;$('copy').disabled=false}
+$('gcode').addEventListener('change',async e=>{const f=e.target.files?.[0];if(!f)return;const size=75*1024*1024;if(f.size>size){$('audit').textContent='75MB以下のG-codeで試してな。';return}if(!/\.(gcode|gco|txt)$/i.test(f.name)){$('audit').textContent='G-codeファイルを選んでな。';return}try{$('audit').textContent='端末の中で読み取り中…';render(await f.text(),f.name)}catch(err){$('audit').textContent='読み込みに失敗：'+err.message}});
+$('copy').addEventListener('click',async()=>{if(!last)return;const r=last.result;const msg=`ナイト、A1 mini印刷前の検査結果を確認して。\n対象:${last.name}\n用途:${PRESETS[mode].title}\n判定:${r.status}\n`+r.checks.map(c=>`${c.name}: ${c.level} ${c.detail}`).join('\n')+`\n本体形状・サポート・材料表示は別途確認。`;try{await navigator.clipboard.writeText(msg);$('copy').textContent='コピーしたで ✓'}catch{const a=document.createElement('textarea');a.value=msg;document.body.append(a);a.select();document.execCommand('copy');a.remove();$('copy').textContent='コピーしたで ✓'}});
+
+// Hand-off only: a whitelisted, non-executable preset; native app validates and asks for consent.
+$('sendnative').addEventListener('click',()=>{
+  const p=PRESETS[mode];
+  const payload={
+    schema:'nightprint/v1',
+    name:'岡ちゃん '+p.title,
+    layer_height:p.layer,
+    wall_loops:p.wall,
+    sparse_infill_density:p.infill,
+    top_shell_layers:p.top,
+    bottom_shell_layers:p.bottom,
+    sparse_infill_pattern:'gyroid'
+  };
+  const href='nightprint://apply?profile='+encodeURIComponent(JSON.stringify(payload));
+  $('sendstatus').textContent='専用Androidアプリで確認画面が開くはずやで。開かなければまだ専用版が未導入か、リンク方式が非対応や。';
+  window.location.assign(href);
+});
+
+display();
+</script></body></html>
