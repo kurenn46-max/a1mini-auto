@@ -25,7 +25,9 @@ for src, dst in [
     ("NightPrintPreset.kt", java / "NightPrintPreset.kt"),
     ("NightPrintPresetTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintPresetTest.kt"),
     ("NightPrintGcodeGuard.kt", java / "NightPrintGcodeGuard.kt"),
-    ("NightPrintGcodeGuardTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintGcodeGuardTest.kt")
+    ("NightPrintGcodeGuardTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintGcodeGuardTest.kt"),
+    ("NightPrintA1MiniMaterialBridge.kt", java / "NightPrintA1MiniMaterialBridge.kt"),
+    ("NightPrintA1MiniMaterialBridgeTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintA1MiniMaterialBridgeTest.kt")
 ]:
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(overlay / src, dst)
@@ -33,11 +35,11 @@ for src, dst in [
 
 patch("app/build.gradle",
     'applicationId "com.u1.slicer.orca"',
-    'applicationId "com.u1.slicer.orca.nightprint.v23"')
+    'applicationId "com.u1.slicer.orca.nightprint.v24"')
 
 patch("app/src/main/AndroidManifest.xml",
     'android:label="@string/app_name"',
-    'android:label="NIGHT PRINT V2.3 岡ちゃん"')
+    'android:label="NIGHT PRINT V2.4 岡ちゃん"')
 
 patch("app/src/main/AndroidManifest.xml",
     '            <!-- Known 3MF/STL MIME types — works with both content:// and file:// -->',
@@ -254,3 +256,78 @@ patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
                         }
                     }''')
 print("NIGHT PRINT V2.3: executable PETG/temperature guard added")
+
+
+# V2.4 PETG fix: A1 mini's native Bambu pipeline seeded PLA/220C,
+# while post-slice G-code comments were rewritten to PETG/235C.
+# Resolve the native config from the SAME buildProfileOverrides input as the
+# G-code profile, before native.slice(), for a single-filament STL only.
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                diagnostics.recordEvent(
+                    "slice_started",''',
+    '''                val nightSingleStl = target == SlicerTarget.BambuA1Mini &&
+                    currentModelName.endsWith(".stl", ignoreCase = true) &&
+                    targetAwareSliceConfig.extruderCount == 1
+                val nightMaterial = if (nightSingleStl)
+                    NightPrintA1MiniMaterialBridge.resolve(profileOverrides)
+                else null
+                if (nightSingleStl && nightMaterial == null) {
+                    _state.value = SlicerState.Error(
+                        "ナイト検査: A1 miniの素材とノズル温度を確定できません。印刷を中止してください。")
+                    return@launch
+                }
+                diagnostics.recordEvent(
+                    "slice_started",''')
+
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                val jniSliceConfig = targetAwareSliceConfig.copy(
+                    layerHeight = if (ov.layerHeight.mode == OverrideMode.OVERRIDE)''',
+    '''                val jniSliceConfig = targetAwareSliceConfig.copy(
+                    // Native Bambu slicing MUST receive the resolved PETG values;
+                    // rewriting the footer after slicing does not fix heat commands.
+                    filamentType = nightMaterial?.type ?: targetAwareSliceConfig.filamentType,
+                    filamentTypes = nightMaterial?.let { arrayOf(it.type) }
+                        ?: targetAwareSliceConfig.filamentTypes,
+                    extruderTemps = nightMaterial?.let { intArrayOf(it.nozzleC) }
+                        ?: targetAwareSliceConfig.extruderTemps,
+                    layerHeight = if (ov.layerHeight.mode == OverrideMode.OVERRIDE)''')
+
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                    filamentNozzleTempInitialLayers = filamentArrays.nozzleTempInitialLayers,''',
+    '''                    filamentNozzleTempInitialLayers = nightMaterial?.let { intArrayOf(it.nozzleC) }
+                        ?: filamentArrays.nozzleTempInitialLayers,''')
+
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                        ).keys.joinToString(separator = "|", prefix = "|", postfix = "|")
+                    } else {
+                        ""
+                    },
+                )
+                val result = native.slice(jniSliceConfig)''',
+    '''                        ).keys.let { currentKeys ->
+                            // Only the A1 mini single-STL bridge adds native
+                            // temperature/type overrides. Other paths unchanged.
+                            if (nightMaterial != null)
+                                currentKeys + setOf("filament_type", "nozzle_temperature")
+                            else currentKeys
+                        }.joinToString(separator = "|", prefix = "|", postfix = "|")
+                    } else {
+                        ""
+                    },
+                )
+                val result = native.slice(jniSliceConfig)''')
+
+# Native C++ consumes the explicit keys; the shipped Bambu path already
+# supports explicit nozzle_temperature, but never consumed filament_type.
+# Keep the change A1-mini-scoped to preserve other targets' behaviour.
+patch("app/src/main/cpp/src/sapil_print.cpp",
+    '''    if (explicitly_overrides("nozzle_temperature") && !config.extruder_temps.empty()) {''',
+    '''    if (target == "BAMBU_A1_MINI" && explicitly_overrides("filament_type") &&
+        !config.filament_types.empty()) {
+        std::vector<std::string> types = config.filament_types;
+        while ((int)types.size() < n_ext) types.push_back(types.back());
+        dpc.set_key_value("filament_type",
+            new Slic3r::ConfigOptionStrings(std::move(types)));
+    }
+    if (explicitly_overrides("nozzle_temperature") && !config.extruder_temps.empty()) {''')
+print("NIGHT PRINT V2.4: PETG material and heat commands are now linked to native A1 mini slicer (device validation required).")
