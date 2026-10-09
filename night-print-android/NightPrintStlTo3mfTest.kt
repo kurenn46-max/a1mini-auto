@@ -58,7 +58,7 @@ class NightPrintStlTo3mfTest {
                 // actual native slicer skipped layers on a user's ring.
                 assertEquals(4, Regex("<vertex x=").findAll(mesh).count())
                 assertEquals(4, Regex("<triangle v1=").findAll(mesh).count())
-                val indices = Regex("""<triangle v1="(\\d+)" v2="(\\d+)" v3="(\\d+)"/>""")
+                val indices = Regex("""<triangle v1="(\d+)" v2="(\d+)" v3="(\d+)"/>""")
                     .findAll(mesh)
                     .flatMap { match -> match.groupValues.drop(1).map { it.toInt() } }
                     .toList()
