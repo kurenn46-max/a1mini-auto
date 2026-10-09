@@ -23,6 +23,14 @@ jobs:
           cd /tmp/u1-nightprint
           git fetch --depth 1 origin 712d9fc41e8d35b328a87cfd8144434049f77ae7
           git checkout --detach 712d9fc41e8d35b328a87cfd8144434049f77ae7
+          # The upstream JVM source-guard test inspects one file from its
+          # (large) OrcaSlicer submodule. Fetch exactly the pinned file,
+          # without downloading the ~1GB native source tree.
+          mkdir -p app/src/main/cpp/orcaslicer/src/libslic3r
+          curl --fail --silent --show-error --location --retry 3 \
+            "https://raw.githubusercontent.com/taylormadearmy/OrcaSlicer/2535da4cbd89430cb3f3b31f42673b98cf4bc041/src/libslic3r/PrintObject.cpp" \
+            --output app/src/main/cpp/orcaslicer/src/libslic3r/PrintObject.cpp
+          test -s app/src/main/cpp/orcaslicer/src/libslic3r/PrintObject.cpp
       - name: Apply native integration
         run: python3 night-print-android/apply_overlay.py /tmp/u1-nightprint
       - name: Configure Java
