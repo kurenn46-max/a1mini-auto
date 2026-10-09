@@ -31,11 +31,11 @@ for src, dst in [
 
 patch("app/build.gradle",
     'applicationId "com.u1.slicer.orca"',
-    'applicationId "com.u1.slicer.orca.nightprint"')
+    'applicationId "com.u1.slicer.orca.nightprint.v21"')
 
 patch("app/src/main/AndroidManifest.xml",
     'android:label="@string/app_name"',
-    'android:label="NIGHT PRINT 岡ちゃん"')
+    'android:label="NIGHT PRINT V2.1 岡ちゃん"')
 
 patch("app/src/main/AndroidManifest.xml",
     '            <!-- Known 3MF/STL MIME types — works with both content:// and file:// -->',
