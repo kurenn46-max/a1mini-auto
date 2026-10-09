@@ -507,7 +507,8 @@ patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
                     _splitObjectOps.value.isEmpty() &&
                     _splitVolumeOps.value.isEmpty() &&
                     _perVolumeExtruders.value.isEmpty() &&
-                    _perObjectPoses.value.isEmpty() &&
+                    // The app stores a default pose for even untouched models.
+                    // F66 replays that pose after reload; it is NOT a hazard.
                     _copyCount.value == 1) {
                     val imported = rawInputFile?.takeIf {
                         it.isFile && it.extension.equals("3mf", ignoreCase = true)
@@ -539,6 +540,9 @@ patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
                             profileJson.optString("sparse_infill_density") ==
                                 "${kotlin.math.round(process.fillDensity * 100f).toInt()}%" &&
                             profileJson.optString("sparse_infill_pattern") == process.fillPattern
+                        Log.i("SlicerVM", "NIGHTPRINT_V3_3MF_PROFILE_MATCH=$matchingProfile " +
+                            "copies=${_copyCount.value} poses=${_perObjectPoses.value.size} " +
+                            "material=${_config.value.filamentType} nozzle=${_config.value.nozzleTemp}")
                         if (matchingProfile) {
                             val originalInfo = com.u1.slicer.bambu.ThreeMfParser.parse(imported)
                             if (originalInfo.isBambu && !originalInfo.isMultiPlate &&
@@ -554,6 +558,7 @@ patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
                                     _fileThreeMfInfo = originalInfo
                                     _sourceConfig.value = parsed
                                     nightWrappedStlForThisSlice = true
+                                    Log.i("SlicerVM", "NIGHTPRINT_V3_3MF_DIRECT_PROFILE_APPLIED")
                                     diagnostics.recordEvent(
                                         "nightprint_verified_imported_3mf_direct_reload",
                                         mapOf("path" to imported.absolutePath,
