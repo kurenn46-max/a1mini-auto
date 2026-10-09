@@ -47,11 +47,11 @@ subprocess.run(
 
 patch("app/build.gradle",
     'applicationId "com.u1.slicer.orca"',
-    'applicationId "com.u1.slicer.orca.nightprint.v27"')
+    'applicationId "com.u1.slicer.orca.nightprint.v28"')
 
 patch("app/src/main/AndroidManifest.xml",
     'android:label="@string/app_name"',
-    'android:label="NIGHT PRINT V2.7 岡ちゃん"')
+    'android:label="NIGHT PRINT V2.8 岡ちゃん"')
 
 patch("app/src/main/AndroidManifest.xml",
     '            <!-- Known 3MF/STL MIME types — works with both content:// and file:// -->',
@@ -409,3 +409,76 @@ patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
                 // Re-embed before slicing when needed:''')
 
 print("NIGHT PRINT V2.7: native STL slices now use generated PETG-profile-bearing 3MF, with fail-closed executable G-code audit.")
+
+
+# V2.8: V2.7's generated 3MF was fed into embedProfile() once again,
+# where BambuImportedConfigComposer and the explicit STL overrides could
+# reintroduce PLA-baseline 220C. The native ARM64 3MF E2E test has already
+# proven that directly loading the generated profile creates PETG startup
+# commands. Load that exact profiled file, and skip the second profile merge.
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                val firstSliceThisLaunch = diagnostics.markSliceStart()
+
+                // NIGHT PRINT:''',
+    '''                val firstSliceThisLaunch = diagnostics.markSliceStart()
+                var nightWrappedStlForThisSlice = false
+
+                // NIGHT PRINT:''')
+
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                    _sourceConfig.value = confirmedProfile
+                    diagnostics.recordEvent(
+                        "nightprint_stl_material_profile",''',
+    '''                    _sourceConfig.value = confirmedProfile
+                    nightWrappedStlForThisSlice = true
+                    diagnostics.recordEvent(
+                        "nightprint_stl_material_profile",''')
+
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                        val isSingleExtruderRefresh = profileNeedsReEmbed && remap == null && _config.value.extruderCount <= 1''',
+    '''                        val isSingleExtruderRefresh = nightWrappedStlForThisSlice ||
+                            (profileNeedsReEmbed && remap == null && _config.value.extruderCount <= 1)''')
+
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                        val reembedded = embedProfile(src, srcInfo, transientWorkspaceDir(), plateId = reembedPlateId)
+                        // Acquire previewMutex''',
+    '''                        // For NIGHT's STL wrapper, do NOT re-compose/re-embed the
+                        // Bambu profile: it already contains the resolved PETG
+                        // temps and process. The native 3MF E2E verifies this
+                        // exact source path. Re-embedding can replace 235 with 220.
+                        val reembedded = if (nightWrappedStlForThisSlice) {
+                            require(src.isFile && src.extension.equals("3mf", ignoreCase = true))
+                            diagnostics.recordEvent(
+                                "nightprint_direct_profile_reload",
+                                mapOf("path" to src.absolutePath, "length" to src.length()),
+                            )
+                            src
+                        } else {
+                            embedProfile(src, srcInfo, transientWorkspaceDir(), plateId = reembedPlateId)
+                        }
+                        // Acquire previewMutex''')
+
+# An explicit Bambu override for the raw STL's old filament library can
+# overwrite nozzle temp in the already-correct generated 3MF. Treat the
+# wrapped file's validated filament profile as the single source of truth.
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                        ).keys.joinToString(separator = "|", prefix = "|", postfix = "|")
+                    } else {
+                        ""
+                    },
+                )
+                val result = native.slice(jniSliceConfig)''',
+    '''                        ).keys.filterNot { key ->
+                            nightWrappedStlForThisSlice &&
+                                key in setOf(
+                                    "filament_type",
+                                    "nozzle_temperature",
+                                    "nozzle_temperature_initial_layer",
+                                )
+                        }.joinToString(separator = "|", prefix = "|", postfix = "|")
+                    } else {
+                        ""
+                    },
+                )
+                val result = native.slice(jniSliceConfig)''')
+print("NIGHT PRINT V2.8: A1 mini STL profile directly loaded into native slicer, no second Bambu composition.")
