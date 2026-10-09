@@ -122,20 +122,66 @@ patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
         _sliceStale.value = true
         if (lastModelInfo != null) profileNeedsReEmbed = true''')
 
-# V2.1: put NIGHT PRINT directly in the Prepare top bar.  No browser/deep-link
-# dance is required for the everyday "岡ちゃん標準" preset.  The button only
-# stages the same confirmation dialog; it still cannot start a print.
+# V2.1: the one-tap button must live in the PrepareScreen composable,
+# not a sibling screen where modelLoaded/pendingNightPrintRaw are out of scope.
+# Keep its state local, and do not start slicing or printing on approval.
 patch("app/src/main/java/com/u1/slicer/MainActivity.kt",
-    '''                actions = {
-                    if (state !is SlicerViewModel.SlicerState.Idle) {''',
-    '''                actions = {
-                    if (modelLoaded) {
-                        TextButton(onClick = {
-                            pendingNightPrintRaw = """{"schema":"nightprint/v1","name":"岡ちゃん標準・確実","layer_height":0.20,"wall_loops":5,"sparse_infill_density":40,"top_shell_layers":5,"bottom_shell_layers":5,"sparse_infill_pattern":"gyroid"}"""
-                        }) {
-                            Text("ナイト設定", fontWeight = FontWeight.Bold)
+    '''    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text("Your One Slicer", fontWeight = FontWeight.Bold)''',
+    '''    var nightPresetDialogVisible by remember { mutableStateOf(false) }
+    if (nightPresetDialogVisible) {
+        val preset = remember {
+            NightPrintPreset.parse("""{"schema":"nightprint/v1","name":"岡ちゃん標準・確実","layer_height":0.20,"wall_loops":5,"sparse_infill_density":40,"top_shell_layers":5,"bottom_shell_layers":5,"sparse_infill_pattern":"gyroid"}""")
+        }
+        AlertDialog(
+            onDismissRequest = { nightPresetDialogVisible = false },
+            title = { Text("ナイトの印刷設定") },
+            text = { Text(preset.summary()) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.saveSlicingOverrides(
+                        preset.applyTo(viewModel.slicingOverrides.value)
+                    )
+                    nightPresetDialogVisible = false
+                }) { Text("設定を反映") }
+            },
+            dismissButton = {
+                TextButton(onClick = { nightPresetDialogVisible = false }) {
+                    Text("キャンセル")
+                }
+            }
+        )
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text("NIGHT PRINT", fontWeight = FontWeight.Bold)''')
+
+patch("app/src/main/java/com/u1/slicer/MainActivity.kt",
+    '''                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                actions = {
+                    if (state !is SlicerViewModel.SlicerState.Idle) {
+                        IconButton(onClick = { viewModel.clearModel() }) {''',
+    '''                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                actions = {
+                    if (state is SlicerViewModel.SlicerState.ModelLoaded ||
+                        state is SlicerViewModel.SlicerState.SliceComplete) {
+                        TextButton(onClick = { nightPresetDialogVisible = true }) {
+                            Text("ナイト設定", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                         }
                     }
-                    if (state !is SlicerViewModel.SlicerState.Idle) {''')
+                    if (state !is SlicerViewModel.SlicerState.Idle) {
+                        IconButton(onClick = { viewModel.clearModel() }) {''')
 
-print("NIGHT PRINT native overlay applied (not built or device-tested).")
+print("NIGHT PRINT v2.1 native Prepare one-tap overlay applied (device test pending).")
