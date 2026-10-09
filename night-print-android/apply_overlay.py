@@ -523,7 +523,18 @@ patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
                                     .bufferedReader(Charsets.UTF_8).use { it.readText() })
                             }
                         }.getOrNull()
-                        val process = slicingOverrides.value.resolveInto(_config.value)
+                        // A freshly imported 3MF normally uses USE_FILE for
+                        // process settings. Never compare its 5 walls/40% infill
+                        // against unrelated Snapmaker defaults (2 walls/15%).
+                        // Only an explicit user OVERRIDE requires matching.
+                        val userOptions = slicingOverrides.value
+                        fun <T> acceptsProjectValue(
+                            opt: com.u1.slicer.data.OverrideValue<T>, embedded: T?
+                        ): Boolean = when (opt.mode) {
+                            OverrideMode.USE_FILE -> true
+                            OverrideMode.OVERRIDE -> embedded != null && opt.value == embedded
+                            OverrideMode.ORCA_DEFAULT -> false
+                        }
                         val mat = profileJson?.optJSONArray("filament_type")
                         val temp = profileJson?.optJSONArray("nozzle_temperature")
                         val initial = profileJson?.optJSONArray("nozzle_temperature_initial_layer")
@@ -534,13 +545,22 @@ patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
                             temp?.length() == 1 && initial?.length() == 1 &&
                             temp.optString(0).toIntOrNull() == _config.value.nozzleTemp &&
                             initial.optString(0).toIntOrNull() == _config.value.nozzleTemp &&
-                            profileJson.optString("wall_loops").toIntOrNull() == process.perimeters &&
-                            profileJson.optString("top_shell_layers").toIntOrNull() == process.topSolidLayers &&
-                            profileJson.optString("bottom_shell_layers").toIntOrNull() == process.bottomSolidLayers &&
-                            profileJson.optString("layer_height").toFloatOrNull() == process.layerHeight &&
-                            profileJson.optString("sparse_infill_density") ==
-                                "${kotlin.math.round(process.fillDensity * 100f).toInt()}%" &&
-                            profileJson.optString("sparse_infill_pattern") == process.fillPattern
+                            acceptsProjectValue(userOptions.wallCount,
+                                profileJson.optString("wall_loops").toIntOrNull()) &&
+                            acceptsProjectValue(userOptions.topShellLayers,
+                                profileJson.optString("top_shell_layers").toIntOrNull()) &&
+                            acceptsProjectValue(userOptions.bottomShellLayers,
+                                profileJson.optString("bottom_shell_layers").toIntOrNull()) &&
+                            acceptsProjectValue(userOptions.layerHeight,
+                                profileJson.optString("layer_height").toFloatOrNull()) &&
+                            acceptsProjectValue(userOptions.infillDensity,
+                                profileJson.optString("sparse_infill_density")
+                                    .removeSuffix("%").toFloatOrNull()?.div(100f)) &&
+                            acceptsProjectValue(userOptions.infillPattern,
+                                profileJson.optString("sparse_infill_pattern").takeIf { it.isNotEmpty() }) &&
+                            acceptsProjectValue(userOptions.bedTemp,
+                                profileJson.optJSONArray("textured_plate_temp")
+                                    ?.optString(0)?.toIntOrNull())
                         Log.i("SlicerVM", "NIGHTPRINT_V3_3MF_PROFILE_MATCH=$matchingProfile " +
                             "copies=${_copyCount.value} poses=${_perObjectPoses.value.size} " +
                             "material=${_config.value.filamentType} nozzle=${_config.value.nozzleTemp}")

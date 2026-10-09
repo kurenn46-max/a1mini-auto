@@ -33,7 +33,11 @@ class NightPrintViewModelE2ETest {
 
     // Exercise the SAME Android Prepare-screen path for both input formats.
     // A native-only 3MF test previously missed the user's real 220C error.
-    private fun checkedPrepareFlow(fixtureName: String, configureMaterial: Boolean = true) {
+    private fun checkedPrepareFlow(
+        fixtureName: String,
+        configureMaterial: Boolean = true,
+        applyNightPreset: Boolean = true
+    ) {
         assertTrue(NativeLibrary.isLoaded)
         val ins = InstrumentationRegistry.getInstrumentation()
         val app = ins.targetContext.applicationContext as U1SlicerApplication
@@ -79,18 +83,33 @@ class NightPrintViewModelE2ETest {
                 }
                 // For real user imported 3MF, never pre-seed material/temperature.
                 // The original project_settings.config MUST be authoritative.
-                // EXACT public path used by NIGHT's '設定を反映' button:
-                val preset = NightPrintPreset.parse(
+                if (!applyNightPreset) {
+                    // Simulate the app's true first-import USE_FILE defaults,
+                    // regardless of whichever prior instrumentation test ran.
+                    vm.saveSlicingOverrides(com.u1.slicer.data.SlicingOverrides())
+                } else {
+                    // EXACT public path used by NIGHT's '設定を反映' button:
+                    val preset = NightPrintPreset.parse(
                     """{"schema":"nightprint/v1","name":"岡ちゃん標準・確実",
                     "layer_height":0.20,"wall_loops":5,
                     "sparse_infill_density":40,"top_shell_layers":5,
                     "bottom_shell_layers":5,"sparse_infill_pattern":"gyroid"}""".trimIndent()
                 )
-                vm.saveSlicingOverrides(preset.applyTo(vm.slicingOverrides.value))
+                    vm.saveSlicingOverrides(preset.applyTo(vm.slicingOverrides.value))
+                }
             }
-            waitUntil("NIGHT settings persisted", 30_000) {
-                val ov = vm.slicingOverrides.value
-                ov.wallCount.value == 5 && (ov.infillDensity.value ?: 0f) > 0.395f
+            if (applyNightPreset) {
+                waitUntil("NIGHT settings persisted", 30_000) {
+                    val ov = vm.slicingOverrides.value
+                    ov.wallCount.value == 5 && (ov.infillDensity.value ?: 0f) > 0.395f
+                }
+            } else {
+                waitUntil("original 3MF process remains in USE_FILE mode", 30_000) {
+                    val ov = vm.slicingOverrides.value
+                    ov.wallCount.mode == com.u1.slicer.data.OverrideMode.USE_FILE &&
+                        ov.infillDensity.mode == com.u1.slicer.data.OverrideMode.USE_FILE &&
+                        ov.layerHeight.mode == com.u1.slicer.data.OverrideMode.USE_FILE
+                }
             }
             ins.runOnMainSync { vm.startSlicing() }
             waitUntil("actual UI slicing", 180_000) {
@@ -151,5 +170,12 @@ class NightPrintViewModelE2ETest {
         // Regression for the actual V3.0 phone failure: importing PETG 235C
         // must NOT require the user to manually change PLA/220C to PETG.
         checkedPrepareFlow("nightprint_ring_petg235.3mf", configureMaterial = false)
+    }
+
+    @Test fun plain3mfImportWithoutAnyManualPresetMustHonorEmbeddedProcessAndPetg() {
+        // No nozzle, filament OR print-process overrides. A normal 3MF file
+        // must own all PETG/235C, 100 layers, 5 walls and 40% settings.
+        checkedPrepareFlow("nightprint_ring_petg235.3mf",
+            configureMaterial = false, applyNightPreset = false)
     }
 }
