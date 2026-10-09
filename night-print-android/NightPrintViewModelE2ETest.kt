@@ -50,7 +50,7 @@ class NightPrintViewModelE2ETest {
             waitUntil("raw STL loaded", 60_000) {
                 when (vm.state.value) {
                     is SlicerViewModel.SlicerState.Error ->
-                        fail("Model load failed: " + (vm.state.value as SlicerViewModel.SlicerState.Error).message)
+                        throw AssertionError("Model load failed: " + (vm.state.value as SlicerViewModel.SlicerState.Error).message)
                     is SlicerViewModel.SlicerState.ModelLoaded -> true
                     else -> false
                 }
@@ -78,7 +78,7 @@ class NightPrintViewModelE2ETest {
             ins.runOnMainSync { vm.startSlicing() }
             waitUntil("actual UI slicing", 180_000) {
                 when (val s = vm.state.value) {
-                    is SlicerViewModel.SlicerState.Error -> fail("Actual app slicing failed: " + s.message)
+                    is SlicerViewModel.SlicerState.Error -> throw AssertionError("Actual app slicing failed: " + s.message)
                     is SlicerViewModel.SlicerState.SliceComplete -> true
                     else -> false
                 }
