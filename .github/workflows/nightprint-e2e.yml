@@ -41,6 +41,14 @@ jobs:
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0"
+      - name: Create isolated debug signing key for test APKs
+        run: |
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair -noprompt \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android -keypass android -alias androiddebugkey \
+            -keyalg RSA -keysize 2048 -validity 3650 \
+            -dname "CN=Android Debug,O=Android,C=US"
       - name: Compile real-device instrumentation test APK
         working-directory: /tmp/u1-nightprint
         run: bash ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --stacktrace
