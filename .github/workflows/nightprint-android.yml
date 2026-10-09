@@ -66,6 +66,7 @@ jobs:
           grep -q 'val cfg = targetAwareSliceConfig' app/src/main/java/com/u1/slicer/SlicerViewModel.kt
           grep -q 'nozzleTemp = jobNozzleTemp' app/src/main/java/com/u1/slicer/SlicerViewModel.kt
           grep -q 'filamentType = jobMaterial' app/src/main/java/com/u1/slicer/SlicerViewModel.kt
+          grep -q 'NightPrintGcodeGuard.checkA1MiniPetg' app/src/main/java/com/u1/slicer/SlicerViewModel.kt
       - name: Build isolated Android APK
         working-directory: /tmp/u1-nightprint
         run: bash ./gradlew :app:assembleDebug --no-daemon --stacktrace
