@@ -92,7 +92,7 @@ internal object NightPrint3mfProcess {
         if (!changed) return input
         require(config.size in 1..MAX_CONFIG_SIZE) { "3MFの設定情報が大きすぎます。" }
         output.parentFile?.mkdirs()
-        val temporary = File(output.parentFile, output.name + ".partial")
+        val temporary = File(output.parentFile, output.name + ".partial.3mf")
         temporary.delete()
         try {
             ZipFile(input).use { source ->
@@ -130,6 +130,9 @@ internal object NightPrint3mfProcess {
                 ?: error("更新後の3MFからPETG設定を検証できません。")
             require(after == before) {
                 "3MFのPETG温度や素材が変化しました。"
+            }
+            if (output.exists() && !output.delete()) {
+                error("旧い中間3MFを削除できません。")
             }
             require(temporary.renameTo(output)) {
                 "印刷設定を更新した3MFを保存できません。"
