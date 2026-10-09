@@ -56,7 +56,7 @@ stl = dst / "nightprint_ring_20x24x20.stl"
 # Binary STL exactly matching the failed real-user fixture's 1024 facets.
 # Each triangle stores independent coordinates; the converter MUST weld them.
 with stl.open("wb") as out:
-    out.write(b"NIGHT PRINT binary STL 20x24x20".ljust(80, b"\\0"))
+    out.write(b"NIGHT PRINT binary STL 20x24x20".ljust(80, bytes([0])))
     out.write(struct.pack("<I", len(tris)))
     for t in tris:
         n = normal(t)
