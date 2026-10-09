@@ -1,7 +1,11 @@
-name: Build NIGHT PRINT for Android
+name: Build NIGHT PRINT V2.5 for Android
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - 'night-print-android/**'
+      - '.github/workflows/nightprint-android.yml'
 
 permissions:
   contents: read
@@ -14,7 +18,19 @@ jobs:
       - name: Checkout NIGHT PRINT overlay
         uses: actions/checkout@v4
       - name: Clone upstream Your One Slicer
-        run: git clone --depth 1 https://github.com/taylormadearmy/u1-slicer-for-android.git /tmp/u1-nightprint
+        run: |
+          git clone --depth 1 https://github.com/taylormadearmy/u1-slicer-for-android.git /tmp/u1-nightprint
+          cd /tmp/u1-nightprint
+          git fetch --depth 1 origin 712d9fc41e8d35b328a87cfd8144434049f77ae7
+          git checkout --detach 712d9fc41e8d35b328a87cfd8144434049f77ae7
+          # The upstream JVM source-guard test inspects one file from its
+          # (large) OrcaSlicer submodule. Fetch exactly the pinned file,
+          # without downloading the ~1GB native source tree.
+          mkdir -p app/src/main/cpp/orcaslicer/src/libslic3r
+          curl --fail --silent --show-error --location --retry 3 \
+            "https://raw.githubusercontent.com/taylormadearmy/OrcaSlicer/2535da4cbd89430cb3f3b31f42673b98cf4bc041/src/libslic3r/PrintObject.cpp" \
+            --output app/src/main/cpp/orcaslicer/src/libslic3r/PrintObject.cpp
+          test -s app/src/main/cpp/orcaslicer/src/libslic3r/PrintObject.cpp
       - name: Apply native integration
         run: python3 night-print-android/apply_overlay.py /tmp/u1-nightprint
       - name: Configure Java
@@ -22,19 +38,44 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Configure Android SDK
-        uses: android-actions/setup-android@v3
       - name: Install Android SDK 34
-        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
-      - name: Test preset parser and override mapping
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0"
+      - name: Validate Python patch syntax
+        run: python3 -m py_compile night-print-android/apply_overlay.py
+      - name: Test full JVM unit suite (incl NIGHT PRINT)
         working-directory: /tmp/u1-nightprint
-        run: bash ./gradlew :app:testDebugUnitTest --tests 'com.u1.slicer.NightPrintPresetTest' --no-daemon --stacktrace
+        run: bash ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
+      - name: Create ephemeral Android debug signing key
+        run: |
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair -noprompt \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android -keypass android -alias androiddebugkey \
+            -keyalg RSA -keysize 2048 -validity 3650 \
+            -dname "CN=Android Debug,O=Android,C=US"
+      - name: Verify V2.5 one-tap and accurate Job History patch landed
+        working-directory: /tmp/u1-nightprint
+        run: |
+          grep -q 'Text("ナイト設定"' app/src/main/java/com/u1/slicer/MainActivity.kt
+          grep -q '岡ちゃん標準・確実' app/src/main/java/com/u1/slicer/MainActivity.kt
+          grep -q 'wall_loops.*5' app/src/main/java/com/u1/slicer/MainActivity.kt
+          grep -q 'sparse_infill_density.*40' app/src/main/java/com/u1/slicer/MainActivity.kt
+          grep -q 'val cfg = targetAwareSliceConfig' app/src/main/java/com/u1/slicer/SlicerViewModel.kt
+          grep -q 'nozzleTemp = jobNozzleTemp' app/src/main/java/com/u1/slicer/SlicerViewModel.kt
+          grep -q 'filamentType = jobMaterial' app/src/main/java/com/u1/slicer/SlicerViewModel.kt
+          grep -q 'NightPrintGcodeGuard.checkA1MiniPetg' app/src/main/java/com/u1/slicer/SlicerViewModel.kt
+          grep -q 'nightPrintOfflineA1MiniTarget' app/src/main/java/com/u1/slicer/SlicerViewModel.kt
+          grep -q 'NightPrintGcodeGuard.checkA1MiniMachine' app/src/main/java/com/u1/slicer/SlicerViewModel.kt
+          grep -q 'A1 mini 対応' app/src/main/java/com/u1/slicer/MainActivity.kt
       - name: Build isolated Android APK
         working-directory: /tmp/u1-nightprint
         run: bash ./gradlew :app:assembleDebug --no-daemon --stacktrace
-      - name: Save APK
+      - name: Save APK (test build only; not a release)
         uses: actions/upload-artifact@v4
         with:
-          name: NIGHT_PRINT_A1mini_debug_apk
+          name: NIGHT_PRINT_V2.5_A1mini_test_apk
           path: /tmp/u1-nightprint/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
