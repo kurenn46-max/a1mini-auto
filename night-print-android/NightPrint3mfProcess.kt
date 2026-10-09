@@ -23,6 +23,63 @@ internal object NightPrint3mfProcess {
     private const val MAX_SINGLE_ENTRY = 120L * 1024 * 1024
     private const val MAX_UNCOMPRESSED = 250L * 1024 * 1024
 
+    /**
+     * After native slicing, compare the REAL G-code process footer against
+     * the transient 3MF the engine was given. Metadata/Job History alone is
+     * not sufficient evidence of the model instructions being honored.
+     * Uses an exact set of validated single-material project keys.
+     */
+    fun checkOutput(profileFile: File, gcodeFile: String): String? = runCatching {
+        val expected = ZipFile(profileFile).use { archive ->
+            val entry = archive.getEntry("Metadata/project_settings.config")
+                ?: return@runCatching "ナイト検査: 3MF設定が見つかりません。"
+            require(entry.size in 1..MAX_CONFIG_SIZE.toLong()) {
+                "3MF設定のサイズが不正です。"
+            }
+            JSONObject(archive.getInputStream(entry).bufferedReader().use { it.readText() })
+        }
+        val file = File(gcodeFile)
+        require(file.isFile && file.length() > 1024) { "G-codeがありません。" }
+        val footer = java.io.RandomAccessFile(file, "r").use { random ->
+            val bytes = minOf(300_000L, random.length()).toInt()
+            random.seek(random.length() - bytes)
+            ByteArray(bytes).also { random.readFully(it) }.toString(Charsets.UTF_8)
+        }
+        fun gcodeValue(key: String): String? {
+            val marker = "; " + key + " = "
+            return footer.lineSequence().lastOrNull { it.startsWith(marker) }
+                ?.removePrefix(marker)?.trim()
+        }
+        val exactKeys = listOf(
+            "wall_loops",
+            "top_shell_layers",
+            "bottom_shell_layers",
+            "sparse_infill_density",
+            "sparse_infill_pattern"
+        )
+        for (key in exactKeys) {
+            val wanted = expected.optString(key).takeIf { it.isNotBlank() }
+                ?: return@runCatching "ナイト検査: 3MFの" + key + "が不足しています。"
+            val actual = gcodeValue(key)
+            if (actual != wanted) {
+                return@runCatching "ナイト検査: " + key +
+                    " は3MF=" + wanted + " / G-code=" + actual + "で不一致。印刷禁止。"
+            }
+        }
+        val layer = expected.optString("layer_height").toFloatOrNull()
+            ?: return@runCatching "ナイト検査: 3MF積層高さが不正です。"
+        val initial = expected.optString("initial_layer_print_height").toFloatOrNull()
+            ?: return@runCatching "ナイト検査: 3MF初層高さが不正です。"
+        if (layer !in 0.08f..0.4f || kotlin.math.abs(layer - initial) > 0.0001f)
+            return@runCatching "ナイト検査: 不規則な初層高さには未対応です。"
+        val actualLayer = gcodeValue("layer_height")?.toFloatOrNull()
+        if (actualLayer == null || kotlin.math.abs(layer - actualLayer) > 0.0001f) {
+            return@runCatching "ナイト検査: 3MF積層高さ" + layer +
+                "とG-code積層高さが一致しません。"
+        }
+        NightPrintGcodeGuard.checkA1MiniFixedLayers(gcodeFile, layer)
+    }.getOrElse { "ナイト検査: 3MF設定照合に失敗しました: " + (it.message ?: "unknown") }
+
     fun prepare(
         input: File,
         output: File,
