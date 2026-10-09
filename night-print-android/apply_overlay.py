@@ -48,11 +48,11 @@ subprocess.run(
 
 patch("app/build.gradle",
     'applicationId "com.u1.slicer.orca"',
-    'applicationId "com.u1.slicer.orca.nightprint.v29"')
+    'applicationId "com.u1.slicer.orca.nightprint.v30"')
 
 patch("app/src/main/AndroidManifest.xml",
     'android:label="@string/app_name"',
-    'android:label="NIGHT PRINT V2.9 岡ちゃん"')
+    'android:label="NIGHT PRINT V3.0 岡ちゃん"')
 
 patch("app/src/main/AndroidManifest.xml",
     '            <!-- Known 3MF/STL MIME types — works with both content:// and file:// -->',
@@ -484,6 +484,90 @@ patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
                 val result = native.slice(jniSliceConfig)''')
 print("NIGHT PRINT V2.8: A1 mini STL profile directly loaded into native slicer, no second Bambu composition.")
 
+
+
+# V3.0: A simple single-material Bambu 3MF can already contain a complete
+# PETG process profile. Upstream's SECOND re-embed recreates that profile from
+# a stale PLA/220 default. Only bypass it when the ORIGINAL source 3MF profile
+# and the exact user-visible process agree. Unsupported/edited 3MF continues
+# via the guarded original path. Never rewrite executable G-code.
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                // Re-embed before slicing when needed:''',
+    '''                // NIGHT PRINT V3.0: fail-safe fast path for simple, verified
+                // imported PETG 3MF (the V2.9 real Android UI regression).
+                // The original 3MF is the single source of truth, exactly as
+                // in the passing real native 3MF E2E; the later re-embed can
+                // otherwise overwrite PETG 235C with PLA 220C.
+                if (effectiveSliceTarget.value == SlicerTarget.BambuA1Mini &&
+                    currentModelName.endsWith(".3mf", ignoreCase = true) &&
+                    _config.value.extruderCount == 1 &&
+                    toolRemapSlots == null &&
+                    additionalModelFiles.isEmpty() &&
+                    _duplicateOps.value.isEmpty() &&
+                    _splitObjectOps.value.isEmpty() &&
+                    _splitVolumeOps.value.isEmpty() &&
+                    _perVolumeExtruders.value.isEmpty() &&
+                    _perObjectPoses.value.isEmpty() &&
+                    _copyCount.value == 1) {
+                    val imported = rawInputFile?.takeIf {
+                        it.isFile && it.extension.equals("3mf", ignoreCase = true)
+                    }
+                    if (imported != null) {
+                        val profileJson = runCatching {
+                            java.util.zip.ZipFile(imported).use { zip ->
+                                val entry = zip.getEntry("Metadata/project_settings.config")
+                                if (entry == null) null
+                                else org.json.JSONObject(zip.getInputStream(entry)
+                                    .bufferedReader(Charsets.UTF_8).use { it.readText() })
+                            }
+                        }.getOrNull()
+                        val process = slicingOverrides.value.resolveInto(_config.value)
+                        val mat = profileJson?.optJSONArray("filament_type")
+                        val temp = profileJson?.optJSONArray("nozzle_temperature")
+                        val initial = profileJson?.optJSONArray("nozzle_temperature_initial_layer")
+                        val matchingProfile = profileJson != null &&
+                            mat?.length() == 1 &&
+                            mat.optString(0).equals("PETG", ignoreCase = true) &&
+                            _config.value.filamentType.equals("PETG", ignoreCase = true) &&
+                            temp?.length() == 1 && initial?.length() == 1 &&
+                            temp.optString(0).toIntOrNull() == _config.value.nozzleTemp &&
+                            initial.optString(0).toIntOrNull() == _config.value.nozzleTemp &&
+                            profileJson.optString("wall_loops").toIntOrNull() == process.perimeters &&
+                            profileJson.optString("top_shell_layers").toIntOrNull() == process.topSolidLayers &&
+                            profileJson.optString("bottom_shell_layers").toIntOrNull() == process.bottomSolidLayers &&
+                            profileJson.optString("layer_height").toFloatOrNull() == process.layerHeight &&
+                            profileJson.optString("sparse_infill_density") ==
+                                "${kotlin.math.round(process.fillDensity * 100f).toInt()}%" &&
+                            profileJson.optString("sparse_infill_pattern") == process.fillPattern
+                        if (matchingProfile) {
+                            val originalInfo = com.u1.slicer.bambu.ThreeMfParser.parse(imported)
+                            if (originalInfo.isBambu && !originalInfo.isMultiPlate &&
+                                !originalInfo.hasPaintData && !originalInfo.hasLayerToolChanges &&
+                                !originalInfo.hasMultiExtruderAssignments &&
+                                originalInfo.detectedExtruderCount <= 1) {
+                                val parsed = java.util.zip.ZipFile(imported).use {
+                                    profileEmbedder.parseSourceConfig(it)
+                                }
+                                if (parsed != null) {
+                                    sourceModelFile = imported
+                                    sourceModelInfo = originalInfo
+                                    _fileThreeMfInfo = originalInfo
+                                    _sourceConfig.value = parsed
+                                    nightWrappedStlForThisSlice = true
+                                    diagnostics.recordEvent(
+                                        "nightprint_verified_imported_3mf_direct_reload",
+                                        mapOf("path" to imported.absolutePath,
+                                            "material" to "PETG",
+                                            "nozzleC" to _config.value.nozzleTemp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Re-embed before slicing when needed:''')
+print("NIGHT PRINT V3.0: imported single PETG 3MF direct-profile Android fix installed.")
 
 # V2.9 G-code layer sanity: native Orca must emit all fixed 0.20mm
 # layers for a 20mm vertical tube, not merely report 100 layers in UI.
