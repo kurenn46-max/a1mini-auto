@@ -71,6 +71,18 @@ jobs:
           grep -q 'new Slic3r::ConfigOptionStrings(std::move(types))' app/src/main/cpp/src/sapil_print.cpp
           grep -q 'filamentTypes = nightMaterial' app/src/main/java/com/u1/slicer/SlicerViewModel.kt
           grep -q 'nozzle_temperature' app/src/main/java/com/u1/slicer/SlicerViewModel.kt
+      - name: Verify native slicing engine was rebuilt (required for PETG fix)
+        working-directory: /tmp/u1-nightprint
+        run: |
+          # The upstream Gradle config DISABLES externalNativeBuild. Its checked-in
+          # .so still emits PLA macros even when Kotlin passes a PETG profile.
+          # Source-only C++ changes must never be labeled as a working PETG fix.
+          OLD_NATIVE_SHA="5dc6747eb793fe49cd7f96790900af128f1a0d549f941e1e60967c3a8b51a0c0"
+          CURRENT_NATIVE_SHA="$(sha256sum app/src/main/jniLibs/arm64-v8a/libprusaslicer-jni.so | cut -d' ' -f1)"
+          if [ "$CURRENT_NATIVE_SHA" = "$OLD_NATIVE_SHA" ]; then
+            echo "::error::Native A1 mini PETG fix was not compiled into libprusaslicer-jni.so; refusing test APK release."
+            exit 1
+          fi
       - name: Build isolated Android APK
         working-directory: /tmp/u1-nightprint
         run: bash ./gradlew :app:assembleDebug --no-daemon --stacktrace
