@@ -48,8 +48,20 @@ class NightPrintNativeSliceE2ETest {
         return file
     }
 
-    private fun checkedSlice(name: String): String {
-        val model = fixture(name)
+    private fun checkedSlice(name: String, autoWrapStl: Boolean = false): String {
+        val original = fixture(name)
+        val model = if (autoWrapStl) {
+            NightPrintStlTo3mf.wrap(
+                original,
+                File(cache, "automatically-profiled-ring.3mf"),
+                NightPrintStlTo3mf.Settings(
+                    filamentType = "PETG", nozzleC = 235, bedC = 65,
+                    wallLoops = 5, fillDensityPercent = 40,
+                    layerHeightMm = 0.20f, topLayers = 5, bottomLayers = 5,
+                    infillPattern = "gyroid",
+                ),
+            )
+        } else original
         assertTrue("Real native model load failed for $name", native.loadModel(model.absolutePath))
         val base = SliceConfig(
             layerHeight = 0.20f,
@@ -112,8 +124,8 @@ class NightPrintNativeSliceE2ETest {
         return slice.gcodePath
     }
 
-    @Test fun a1MiniRawStlMustNeverUsePla220ExecutableStartup() {
-        checkedSlice("nightprint_ring_20x24x20.stl")
+    @Test fun a1MiniAutoWrappedRawStlUsesPetg235ExecutableStartup() {
+        checkedSlice("nightprint_ring_20x24x20.stl", autoWrapStl = true)
     }
 
     @Test fun a1MiniPetgProfile3mfMustNeverUsePla220ExecutableStartup() {
