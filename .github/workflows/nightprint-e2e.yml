@@ -77,7 +77,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: NIGHT_PRINT_V2.8_UI_Gcode_verified_test_apk
+          name: NIGHT_PRINT_V2.9_UI_Gcode_verified_test_apk
           path: /tmp/u1-nightprint/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
