@@ -713,3 +713,33 @@ patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
                                 ?: targetAwareSliceConfig.nozzleTemp
                         )''')
 print("NIGHT PRINT V3.1: imported PETG project profile is authoritative for UI, history and executable code guard.")
+
+
+# V3.2 3MF-first import contract: do not leak NIGHT settings from model A
+# onto an unrelated 3MF model B. Clearing happens ONCE for a real new import,
+# not for silent/native re-embeds, and only for verified simple PETG project
+# profiles. A user may still apply explicit process overrides AFTER import.
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                rawInputFile = sourceFile
+                recoveryPlateId = -1''',
+    '''                rawInputFile = sourceFile
+                if (!silent &&
+                    filename.endsWith(".3mf", ignoreCase = true) &&
+                    effectiveSliceTarget.value == SlicerTarget.BambuA1Mini &&
+                    NightPrintImported3mfProfile.read(sourceFile) != null) {
+                    val inherited = slicingOverrides.value
+                    val fresh = inherited.copy(
+                        layerHeight = com.u1.slicer.data.OverrideValue(),
+                        wallCount = com.u1.slicer.data.OverrideValue(),
+                        infillDensity = com.u1.slicer.data.OverrideValue(),
+                        infillPattern = com.u1.slicer.data.OverrideValue(),
+                        topShellLayers = com.u1.slicer.data.OverrideValue(),
+                        bottomShellLayers = com.u1.slicer.data.OverrideValue(),
+                        bedTemp = com.u1.slicer.data.OverrideValue(),
+                    )
+                    settingsRepo.saveSlicingOverrides(fresh)
+                    Log.i("SlicerVM",
+                        "NIGHTPRINT_V32_NEW_3MF_USES_FILE_PROFILE")
+                }
+                recoveryPlateId = -1''')
+print("NIGHT PRINT V3.2: new 3MF resets only previous-model process overrides.")

@@ -42,7 +42,8 @@ class NightPrintViewModelE2ETest {
         expectedInfill: Int = 40,
         expectedTop: Int = 5,
         expectedBottom: Int = 5,
-        expectedPattern: String = "gyroid"
+        expectedPattern: String = "gyroid",
+        seedPreviousModelPreset: Boolean = false
     ) {
         assertTrue(NativeLibrary.isLoaded)
         val ins = InstrumentationRegistry.getInstrumentation()
@@ -52,6 +53,23 @@ class NightPrintViewModelE2ETest {
 
         waitUntil("offline A1 mini target", 30_000) {
             vm.effectiveSliceTarget.value == SlicerTarget.BambuA1Mini
+        }
+        if (seedPreviousModelPreset) {
+            val old = NightPrintPreset.parse(
+                """{"schema":"nightprint/v1","name":"以前のモデル",
+                "layer_height":0.20,"wall_loops":5,"sparse_infill_density":40,
+                "top_shell_layers":5,"bottom_shell_layers":5,
+                "sparse_infill_pattern":"gyroid"}""".trimIndent()
+            )
+            ins.runOnMainSync {
+                vm.saveSlicingOverrides(old.applyTo(vm.slicingOverrides.value))
+            }
+            waitUntil("old NIGHT profile is actually persisted", 30_000) {
+                val ov = vm.slicingOverrides.value
+                ov.wallCount.value == 5 &&
+                    ov.wallCount.mode == com.u1.slicer.data.OverrideMode.OVERRIDE &&
+                    ov.layerHeight.mode == com.u1.slicer.data.OverrideMode.OVERRIDE
+            }
         }
         val model = File(ins.targetContext.cacheDir, "nightprint_ui_flow_" + fixtureName)
         ins.context.assets.open(fixtureName).use { input ->
@@ -89,11 +107,10 @@ class NightPrintViewModelE2ETest {
                 }
                 // For real user imported 3MF, never pre-seed material/temperature.
                 // The original project_settings.config MUST be authoritative.
-                if (!applyNightPreset) {
-                    // Simulate the app's true first-import USE_FILE defaults,
-                    // regardless of whichever prior instrumentation test ran.
+                if (!applyNightPreset && !seedPreviousModelPreset) {
+                    // Control case: fresh settings, no old preset.
                     vm.saveSlicingOverrides(com.u1.slicer.data.SlicingOverrides())
-                } else {
+                } else if (applyNightPreset) {
                     // EXACT public path used by NIGHT's '設定を反映' button:
                     val preset = NightPrintPreset.parse(
                     """{"schema":"nightprint/v1","name":"岡ちゃん標準・確実",
@@ -196,9 +213,20 @@ class NightPrintViewModelE2ETest {
     }
 
     @Test fun importedFine3mfWithPriorNightPresetMustPreservePetg235AndApplyOverrides() {
-        // Reproduce a phone where NIGHT settings from a prior model persist.
-        // Explicit settings should override process only, NEVER PETG nozzle.
+        // NIGHT settings applied AFTER loading the 3MF remain an explicit
+        // print-process override. PETG 235C must still be preserved.
         checkedPrepareFlow("nightprint_ring_petg235_fine016_4w_25cubic.3mf",
             configureMaterial = false, applyNightPreset = true)
+    }
+
+    @Test fun new3mfMustClearStaleNightSettingsFromPreviouslyImportedModel() {
+        // This is the phone workflow: NIGHT settings were applied to model A,
+        // then user opens model B, a 0.16mm/25% 3MF. Only B's settings should
+        // apply; no "NIGHT Settings" button is pressed for model B.
+        checkedPrepareFlow("nightprint_ring_petg235_fine016_4w_25cubic.3mf",
+            configureMaterial = false, applyNightPreset = false,
+            expectedLayerMm = 0.16f, expectedWalls = 4, expectedInfill = 25,
+            expectedTop = 6, expectedBottom = 4, expectedPattern = "cubic",
+            seedPreviousModelPreset = true)
     }
 }
