@@ -25,10 +25,20 @@ class NightPrintOfflineA1MiniTargetTest {
         assertEquals(SlicerTarget.BambuA1Mini, nightPrintOfflineA1MiniTarget(active))
     }
 
+    @Test fun migratedUnpairedPrinter1UsesOfflineA1Mini() {
+        val placeholder = Printer(
+            id = "placeholder", nickname = "Printer 1",
+            kind = PrinterKind.MOONRAKER,
+            moonrakerUrl = ""
+        )
+        assertEquals(SlicerTarget.BambuA1Mini, nightPrintOfflineA1MiniTarget(placeholder))
+    }
+
     @Test fun wrongConfiguredPrinterIsNotSilentlyReinterpreted() {
         val active = Printer(
             id = "test", nickname = "Other printer",
-            kind = PrinterKind.MOONRAKER
+            kind = PrinterKind.MOONRAKER,
+            moonrakerUrl = "http://192.0.2.2"
         )
         assertEquals(SlicerTarget.SnapmakerU1, nightPrintOfflineA1MiniTarget(active))
     }
