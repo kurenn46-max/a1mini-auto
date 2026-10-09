@@ -1,6 +1,7 @@
 package com.u1.slicer
 
 import com.u1.slicer.data.Printer
+import com.u1.slicer.data.PrinterKind
 import com.u1.slicer.slice.SlicerTarget
 import com.u1.slicer.slice.resolveDefaultSliceTarget
 
@@ -13,5 +14,11 @@ import com.u1.slicer.slice.resolveDefaultSliceTarget
  * explicit startSlicing guard rather than silently ignored.
  */
 internal fun nightPrintOfflineA1MiniTarget(active: Printer?): SlicerTarget =
-    if (active == null) SlicerTarget.BambuA1Mini
-    else resolveDefaultSliceTarget(active)
+    when {
+        active == null -> SlicerTarget.BambuA1Mini
+        // Upstream migration creates an unpaired "Printer 1" MOONRAKER entry.
+        // It is only a placeholder, not evidence of a configured U1.
+        active.kind == PrinterKind.MOONRAKER && active.moonrakerUrl.isBlank() ->
+            SlicerTarget.BambuA1Mini
+        else -> resolveDefaultSliceTarget(active)
+    }
