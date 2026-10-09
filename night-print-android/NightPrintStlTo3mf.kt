@@ -31,6 +31,22 @@ internal object NightPrintStlTo3mf {
 
     private const val MAX_BYTES = 80L * 1024L * 1024L
     private const val MAX_FACETS = 300_000L
+    private const val MAX_UNIQUE_VERTICES = 300_000
+
+    // The V2.8 converter wrote independent vertex indices for every triangle.
+    // Native Orca can interpret such a soup as disconnected surface faces,
+    // producing missing 0.2mm layers and unsafe 1.2mm jumps on a simple ring.
+    // Weld only BIT-IDENTICAL STL coordinates; no geometry is moved.
+    private data class VertexKey(val xBits: Int, val yBits: Int, val zBits: Int) {
+        fun values(): FloatArray = floatArrayOf(
+            Float.fromBits(xBits), Float.fromBits(yBits), Float.fromBits(zBits))
+    }
+
+    private fun vertexKey(v: FloatArray): VertexKey = VertexKey(
+        if (v[0] == 0f) 0 else v[0].toBits(),
+        if (v[1] == 0f) 0 else v[1].toBits(),
+        if (v[2] == 0f) 0 else v[2].toBits(),
+    )
     private const val MODEL_NS = "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"
 
     fun wrap(input: File, output: File, settings: Settings): File {
@@ -55,6 +71,38 @@ internal object NightPrintStlTo3mf {
         require(total in 4..MAX_FACETS) {
             "STLの三角形数が正しくありません（上限30万）。"
         }
+        // Build a bounded, shared-vertex indexed mesh before writing XML.
+        val uniqueVertices = LinkedHashMap<VertexKey, Int>()
+        val vertexIds = IntArray(total.toInt() * 3)
+        var triangleCount = 0
+        val scanned = scanTriangles(input, binary) { a, b, c ->
+            val offset = triangleCount * 3
+            for ((j, point) in arrayOf(a, b, c).withIndex()) {
+                val key = vertexKey(point)
+                val id = uniqueVertices[key] ?: run {
+                    require(uniqueVertices.size < MAX_UNIQUE_VERTICES) {
+                        "STLの頂点数が上限を超えています。安全のため中止します。"
+                    }
+                    val newId = uniqueVertices.size
+                    uniqueVertices[key] = newId
+                    newId
+                }
+                vertexIds[offset + j] = id
+            }
+            triangleCount++
+        }
+        check(scanned == total && triangleCount == total.toInt()) {
+            "STLが変換中に変更されました。"
+        }
+        for (i in 0 until triangleCount) {
+            val o = i * 3
+            require(vertexIds[o] != vertexIds[o + 1] &&
+                vertexIds[o + 1] != vertexIds[o + 2] &&
+                vertexIds[o] != vertexIds[o + 2]) {
+                "STLに面積ゼロの三角形が含まれます。"
+            }
+        }
+
         output.parentFile?.mkdirs()
         val temp = File(output.parentFile, output.name + ".partial")
         temp.delete()
@@ -87,25 +135,18 @@ internal object NightPrintStlTo3mf {
                 xml.write(MODEL_NS)
                 xml.write("\" unit=\"millimeter\" xml:lang=\"en-US\">")
                 xml.write("<resources><object id=\"1\" type=\"model\" name=\"NIGHT PRINT STL\"><mesh><vertices>")
-                var vertices = 0L
-                val parsed = scanTriangles(input, binary) { a, b, c ->
-                    for (v in arrayOf(a, b, c)) {
-                        xml.write("<vertex x=\"")
-                        xml.write(v[0].toString())
-                        xml.write("\" y=\"")
-                        xml.write(v[1].toString())
-                        xml.write("\" z=\"")
-                        xml.write(v[2].toString())
-                        xml.write("\"/>")
-                    }
-                    vertices += 3
+                // A shared vertex table is essential for manifold 3MF topology.
+                for (key in uniqueVertices.keys) {
+                    val v = key.values()
+                    xml.write("<vertex x=\\"" + v[0] + "\\" y=\\"" + v[1] +
+                        "\\" z=\\"" + v[2] + "\\"/>")
                 }
-                check(parsed == total && vertices == total * 3) { "STLが読み取り途中で変更されました。" }
                 xml.write("</vertices><triangles>")
-                for (i in 0L until total) {
-                    val base = 3L * i
-                    xml.write("<triangle v1=\"" + base + "\" v2=\"" + (base + 1) +
-                        "\" v3=\"" + (base + 2) + "\"/>")
+                for (i in 0 until triangleCount) {
+                    val o = 3 * i
+                    xml.write("<triangle v1=\\"" + vertexIds[o] +
+                        "\\" v2=\\"" + vertexIds[o + 1] +
+                        "\\" v3=\\"" + vertexIds[o + 2] + "\\"/>")
                 }
                 xml.write("</triangles></mesh></object></resources><build><item objectid=\"1\"/></build></model>")
                 xml.flush()
