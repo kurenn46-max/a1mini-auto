@@ -30,6 +30,7 @@ for src, dst in [
     ("NightPrintOfflineA1MiniTargetTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintOfflineA1MiniTargetTest.kt"),
     ("NightPrintNativeSliceE2ETest.kt", root / "app/src/androidTest/java/com/u1/slicer/NightPrintNativeSliceE2ETest.kt"),
     ("NightPrintViewModelE2ETest.kt", root / "app/src/androidTest/java/com/u1/slicer/NightPrintViewModelE2ETest.kt"),
+    ("NightPrintImported3mfProfile.kt", java / "NightPrintImported3mfProfile.kt"),
     ("NightPrintStlTo3mf.kt", java / "NightPrintStlTo3mf.kt"),
     ("NightPrintStlTo3mfTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintStlTo3mfTest.kt")
 ]:
@@ -48,11 +49,11 @@ subprocess.run(
 
 patch("app/build.gradle",
     'applicationId "com.u1.slicer.orca"',
-    'applicationId "com.u1.slicer.orca.nightprint.v30"')
+    'applicationId "com.u1.slicer.orca.nightprint.v31"')
 
 patch("app/src/main/AndroidManifest.xml",
     'android:label="@string/app_name"',
-    'android:label="NIGHT PRINT V3.0 岡ちゃん"')
+    'android:label="NIGHT PRINT V3.1 岡ちゃん"')
 
 patch("app/src/main/AndroidManifest.xml",
     '            <!-- Known 3MF/STL MIME types — works with both content:// and file:// -->',
@@ -599,3 +600,81 @@ patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
                     }''')
 
 print("NIGHT PRINT V2.9: welded manifold 3MF and strict fixed-layer G-code validation installed.")
+
+
+# V3.1: importing single-material 3MF must not silently reset PETG/235 to
+# the printer's unrelated PLA/220C slot. Bind the file profile before ModelLoaded,
+# after upstream's saveConfig, WITHOUT changing the persistent spool settings.
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                    // Persist the reset so wipeTowerEnabled=false survives across sessions (B24 fix).
+                    saveConfig()
+                    Log.i("SlicerVM", "Single-color model: set preview colors from slots ${colors}")''',
+    '''                    // Persist the reset so wipeTowerEnabled=false survives across sessions (B24 fix).
+                    saveConfig()
+                    val nightImported = NightPrintImported3mfProfile.read(rawInputFile)
+                    val nightImportedInfo = _fileThreeMfInfo ?: _threeMfInfo.value
+                    if (effectiveSliceTarget.value == SlicerTarget.BambuA1Mini &&
+                        nightImported != null &&
+                        nightImportedInfo?.isBambu == true &&
+                        !nightImportedInfo.isMultiPlate &&
+                        !nightImportedInfo.hasPaintData &&
+                        !nightImportedInfo.hasLayerToolChanges &&
+                        !nightImportedInfo.hasMultiExtruderAssignments &&
+                        nightImportedInfo.detectedExtruderCount <= 1
+                    ) {
+                        _config.value = _config.value.copy(
+                            filamentType = nightImported.filamentType,
+                            nozzleTemp = nightImported.nozzleC,
+                            bedTemp = nightImported.bedC,
+                            extruderCount = 1,
+                            extruderTemps = intArrayOf(nightImported.nozzleC),
+                            filamentTypes = arrayOf(nightImported.filamentType),
+                            filamentNozzleTempInitialLayers = intArrayOf(nightImported.nozzleC),
+                        )
+                        Log.i("SlicerVM",
+                            "NIGHTPRINT_V31_IMPORTED_PROFILE_READY=" +
+                                "${nightImported.filamentType}:" +
+                                "${nightImported.nozzleC}C")
+                    }
+                    Log.i("SlicerVM", "Single-color model: set preview colors from slots ${colors}")''')
+
+# The native A1 mini 3MF path already honors the embedded PETG profile.
+# For the narrow validated direct-profile import, do not re-stamp its G-code
+# header with the stale printer slot's PLA/220 material (post-slice only).
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                    val ftTypes: List<String>
+                    val ntTemps: List<Int>''',
+    '''                    var ftTypes: List<String>
+                    var ntTemps: List<Int>''')
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                    val ftPatched = fixFilamentTypeHeader(result.gcodePath, ftTypes)''',
+    '''                    if (nightWrappedStlForThisSlice &&
+                        currentModelName.endsWith(".3mf", ignoreCase = true)) {
+                        val source = NightPrintImported3mfProfile.read(rawInputFile)
+                            ?: throw IllegalStateException(
+                                "ナイト検査: 元の3MFのPETG素材設定が消失しました。印刷禁止。")
+                        ftTypes = listOf(source.filamentType)
+                        ntTemps = listOf(source.nozzleC)
+                    }
+                    val ftPatched = fixFilamentTypeHeader(result.gcodePath, ftTypes)''')
+# PETG guards are required even if the upstream header resolver reports PLA.
+# They compare executable heating commands against the SOURCE file temperature.
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                    if (target == SlicerTarget.BambuA1Mini &&
+                        ftTypes.size == 1 && ftTypes[0].equals("PETG", ignoreCase = true)) {
+                        val nightGuardError = NightPrintGcodeGuard.checkA1MiniPetg(
+                            result.gcodePath, ntTemps.firstOrNull() ?: targetAwareSliceConfig.nozzleTemp
+                        )''',
+    '''                    val originalPetg = if (target == SlicerTarget.BambuA1Mini &&
+                        currentModelName.endsWith(".3mf", ignoreCase = true))
+                        NightPrintImported3mfProfile.read(rawInputFile) else null
+                    if (target == SlicerTarget.BambuA1Mini &&
+                        ((ftTypes.size == 1 && ftTypes[0].equals("PETG", ignoreCase = true)) ||
+                            originalPetg != null)) {
+                        val nightGuardError = NightPrintGcodeGuard.checkA1MiniPetg(
+                            result.gcodePath,
+                            originalPetg?.nozzleC
+                                ?: ntTemps.firstOrNull()
+                                ?: targetAwareSliceConfig.nozzleTemp
+                        )''')
+print("NIGHT PRINT V3.1: imported PETG project profile is authoritative for UI, history and executable code guard.")
