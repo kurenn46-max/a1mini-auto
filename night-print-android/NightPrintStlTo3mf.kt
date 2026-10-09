@@ -138,15 +138,15 @@ internal object NightPrintStlTo3mf {
                 // A shared vertex table is essential for manifold 3MF topology.
                 for (key in uniqueVertices.keys) {
                     val v = key.values()
-                    xml.write("<vertex x=\\"" + v[0] + "\\" y=\\"" + v[1] +
-                        "\\" z=\\"" + v[2] + "\\"/>")
+                    xml.write("<vertex x=\"" + v[0] + "\" y=\"" + v[1] +
+                        "\" z=\"" + v[2] + "\"/>")
                 }
                 xml.write("</vertices><triangles>")
                 for (i in 0 until triangleCount) {
                     val o = 3 * i
-                    xml.write("<triangle v1=\\"" + vertexIds[o] +
-                        "\\" v2=\\"" + vertexIds[o + 1] +
-                        "\\" v3=\\"" + vertexIds[o + 2] + "\\"/>")
+                    xml.write("<triangle v1=\"" + vertexIds[o] +
+                        "\" v2=\"" + vertexIds[o + 1] +
+                        "\" v3=\"" + vertexIds[o + 2] + "\"/>")
                 }
                 xml.write("</triangles></mesh></object></resources><build><item objectid=\"1\"/></build></model>")
                 xml.flush()
