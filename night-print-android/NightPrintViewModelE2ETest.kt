@@ -33,7 +33,7 @@ class NightPrintViewModelE2ETest {
 
     // Exercise the SAME Android Prepare-screen path for both input formats.
     // A native-only 3MF test previously missed the user's real 220C error.
-    private fun checkedPrepareFlow(fixtureName: String) {
+    private fun checkedPrepareFlow(fixtureName: String, configureMaterial: Boolean = true) {
         assertTrue(NativeLibrary.isLoaded)
         val ins = InstrumentationRegistry.getInstrumentation()
         val app = ins.targetContext.applicationContext as U1SlicerApplication
@@ -60,10 +60,14 @@ class NightPrintViewModelE2ETest {
 
             // Use the same public Prepare-screen overrides and configuration.
             ins.runOnMainSync {
-                vm.updateConfig { cfg ->
-                    cfg.copy(filamentType = "PETG", nozzleTemp = 235, bedTemp = 65, extruderCount = 1)
+                if (configureMaterial) {
+                    vm.updateConfig { cfg ->
+                        cfg.copy(filamentType = "PETG", nozzleTemp = 235, bedTemp = 65, extruderCount = 1)
+                    }
+                    vm.setFilamentMaterialOverride(0, "PETG")
                 }
-                vm.setFilamentMaterialOverride(0, "PETG")
+                // For real user imported 3MF, never pre-seed material/temperature.
+                // The original project_settings.config MUST be authoritative.
                 // EXACT public path used by NIGHT's '設定を反映' button:
                 val preset = NightPrintPreset.parse(
                     """{"schema":"nightprint/v1","name":"岡ちゃん標準・確実",
@@ -130,5 +134,11 @@ class NightPrintViewModelE2ETest {
 
     @Test fun prepareFlowImported3mfPetgMustProduceExecutable235C() {
         checkedPrepareFlow("nightprint_ring_petg235.3mf")
+    }
+
+    @Test fun freshInstallImported3mfUsesEmbeddedPetg235WithoutConfigOverrides() {
+        // Regression for the actual V3.0 phone failure: importing PETG 235C
+        // must NOT require the user to manually change PLA/220C to PETG.
+        checkedPrepareFlow("nightprint_ring_petg235.3mf", configureMaterial = false)
     }
 }
