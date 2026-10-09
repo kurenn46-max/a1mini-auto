@@ -71,4 +71,39 @@ class NightPrintGcodeGuardTest {
             file.delete()
         }
     }
+
+    @Test fun acceptsOneHundredActualPointTwoLayers() {
+        val file = File.createTempFile("nightprint-100-layers-", ".gcode")
+        try {
+            val data = StringBuilder("; max_z_height: 20.00\n")
+            for (layer in 1..100) {
+                data.append(";LAYER_CHANGE\n;Z:")
+                    .append(String.format(java.util.Locale.US, "%.2f", layer * 0.2))
+                    .append("\n;HEIGHT:0.2\n")
+            }
+            file.writeText(data.toString())
+            assertNull(NightPrintGcodeGuard.checkA1MiniFixedLayers(file.absolutePath, 0.2f))
+        } finally { file.delete() }
+    }
+
+    @Test fun rejectsMissingLayersEvenWhenUiCouldShowOneHundred() {
+        val file = File.createTempFile("nightprint-skipped-layer-", ".gcode")
+        try {
+            file.writeText("""
+                ; total layer number: 100
+                ; max_z_height: 20.00
+                ;LAYER_CHANGE
+                ;Z:0.2
+                ;HEIGHT:0.2
+                ;LAYER_CHANGE
+                ;Z:1.4
+                ;HEIGHT:1.2
+            """.trimIndent())
+            assertTrue(
+                NightPrintGcodeGuard.checkA1MiniFixedLayers(file.absolutePath, 0.2f)!!
+                    .contains("積層間隔")
+            )
+        } finally { file.delete() }
+    }
+
 }
