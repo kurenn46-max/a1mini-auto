@@ -2,6 +2,10 @@ name: Build NIGHT PRINT for Android
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - 'night-print-android/**'
+      - '.github/workflows/nightprint-android.yml'
 
 permissions:
   contents: read
@@ -14,7 +18,11 @@ jobs:
       - name: Checkout NIGHT PRINT overlay
         uses: actions/checkout@v4
       - name: Clone upstream Your One Slicer
-        run: git clone --depth 1 https://github.com/taylormadearmy/u1-slicer-for-android.git /tmp/u1-nightprint
+        run: |
+          git clone --depth 1 https://github.com/taylormadearmy/u1-slicer-for-android.git /tmp/u1-nightprint
+          cd /tmp/u1-nightprint
+          git fetch --depth 1 origin 712d9fc41e8d35b328a87cfd8144434049f77ae7
+          git checkout --detach 712d9fc41e8d35b328a87cfd8144434049f77ae7
       - name: Apply native integration
         run: python3 night-print-android/apply_overlay.py /tmp/u1-nightprint
       - name: Configure Java
@@ -26,13 +34,15 @@ jobs:
         uses: android-actions/setup-android@v3
       - name: Install Android SDK 34
         run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
-      - name: Test preset parser and override mapping
+      - name: Validate Python patch syntax
+        run: python3 -m py_compile night-print-android/apply_overlay.py
+      - name: Test full JVM unit suite (incl NIGHT PRINT)
         working-directory: /tmp/u1-nightprint
-        run: bash ./gradlew :app:testDebugUnitTest --tests 'com.u1.slicer.NightPrintPresetTest' --no-daemon --stacktrace
+        run: bash ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
       - name: Build isolated Android APK
         working-directory: /tmp/u1-nightprint
         run: bash ./gradlew :app:assembleDebug --no-daemon --stacktrace
-      - name: Save APK
+      - name: Save APK (test build only; not a release)
         uses: actions/upload-artifact@v4
         with:
           name: NIGHT_PRINT_A1mini_debug_apk
