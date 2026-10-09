@@ -117,22 +117,22 @@ internal object NightPrintStlTo3mf {
                 val json = """{
                   "filament_type":["$mat"],
                   "filament_colour":["#888888"],
-                  "nozzle_temperature":["\${settings.nozzleC}"],
-                  "nozzle_temperature_initial_layer":["\${settings.nozzleC}"],
-                  "hot_plate_temp":["\${settings.bedC}"],
-                  "hot_plate_temp_initial_layer":["\${settings.bedC}"],
-                  "textured_plate_temp":["\${settings.bedC}"],
-                  "textured_plate_temp_initial_layer":["\${settings.bedC}"],
+                  "nozzle_temperature":["${settings.nozzleC}"],
+                  "nozzle_temperature_initial_layer":["${settings.nozzleC}"],
+                  "hot_plate_temp":["${settings.bedC}"],
+                  "hot_plate_temp_initial_layer":["${settings.bedC}"],
+                  "textured_plate_temp":["${settings.bedC}"],
+                  "textured_plate_temp_initial_layer":["${settings.bedC}"],
                   "filament_flow_ratio":["0.98"],
                   "filament_max_volumetric_speed":["2"],
                   "curr_bed_type":"Textured PEI Plate",
                   "layer_height":"$layer",
                   "initial_layer_print_height":"$layer",
-                  "wall_loops":"\${settings.wallLoops}",
-                  "top_shell_layers":"\${settings.topLayers}",
-                  "bottom_shell_layers":"\${settings.bottomLayers}",
-                  "sparse_infill_density":"\${settings.fillDensityPercent}%",
-                  "sparse_infill_pattern":"\${settings.infillPattern}"
+                  "wall_loops":"${settings.wallLoops}",
+                  "top_shell_layers":"${settings.topLayers}",
+                  "bottom_shell_layers":"${settings.bottomLayers}",
+                  "sparse_infill_density":"${settings.fillDensityPercent}%",
+                  "sparse_infill_pattern":"${settings.infillPattern}"
                 }"""
                 zip.write(json.toByteArray(Charsets.UTF_8))
                 zip.closeEntry()
