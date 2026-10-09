@@ -1,0 +1,94 @@
+name: NIGHT PRINT Real Android Native Slicing E2E
+
+# Separate, fail-closed hardware-free test. Never treated as a release if the
+# ARM64-native generated G-code fails PETG or machine-specific checks.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'night-print-android/**'
+      - '.github/workflows/nightprint-e2e.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  native-slice-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    steps:
+      - name: Checkout NIGHT PRINT tests
+        uses: actions/checkout@v4
+      - name: Clone pinned real native OrcaSlicer Android implementation
+        run: |
+          git clone --depth 1 https://github.com/taylormadearmy/u1-slicer-for-android.git /tmp/u1-nightprint
+          cd /tmp/u1-nightprint
+          git fetch --depth 1 origin 712d9fc41e8d35b328a87cfd8144434049f77ae7
+          git checkout --detach 712d9fc41e8d35b328a87cfd8144434049f77ae7
+          mkdir -p app/src/main/cpp/orcaslicer/src/libslic3r
+          curl --fail --silent --show-error --location --retry 3 \
+            "https://raw.githubusercontent.com/taylormadearmy/OrcaSlicer/2535da4cbd89430cb3f3b31f42673b98cf4bc041/src/libslic3r/PrintObject.cpp" \
+            --output app/src/main/cpp/orcaslicer/src/libslic3r/PrintObject.cpp
+          test -s app/src/main/cpp/orcaslicer/src/libslic3r/PrintObject.cpp
+      - name: Install NIGHT PRINT and reproducible ring test models
+        run: python3 night-print-android/apply_overlay.py /tmp/u1-nightprint
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android 34 build requirements
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0"
+      - name: Create isolated debug signing key for test APKs
+        run: |
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair -noprompt \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android -keypass android -alias androiddebugkey \
+            -keyalg RSA -keysize 2048 -validity 3650 \
+            -dname "CN=Android Debug,O=Android,C=US"
+      - name: Compile real-device instrumentation test APK
+        working-directory: /tmp/u1-nightprint
+        run: bash ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --stacktrace
+      - name: Enable KVM for fast Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm || true
+          test -e /dev/kvm
+      - name: Test actual ARM64 slicer inside Android emulator (NO PRINT)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          # API 35 Google APIs x86_64 supports arm64-v8a native ABI translation.
+          # Thus the packaged upstream arm64-only Orca engine executes for real.
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          ram-size: 4096M
+          heap-size: 512M
+          emulator-boot-timeout: 600
+          emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          disable-animations: true
+          script: bash "$GITHUB_WORKSPACE/night-print-android/run_android_e2e.sh"
+      - name: Publish test APK ONLY when entire real app-path E2E passes
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NIGHT_PRINT_V2.8_UI_Gcode_verified_test_apk
+          path: /tmp/u1-nightprint/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Save device test reports even if G-code fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NIGHT_PRINT_native_slicer_e2e_diagnostics
+          if-no-files-found: warn
+          path: |
+            /tmp/u1-nightprint/app/build/reports/androidTests/connected/
+            /tmp/u1-nightprint/app/build/outputs/androidTest-results/connected/
+            /tmp/nightprint_emulator_abis.txt
+            /tmp/nightprint_e2e_artifacts/
