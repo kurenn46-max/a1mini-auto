@@ -27,11 +27,21 @@ for src, dst in [
     ("NightPrintGcodeGuard.kt", java / "NightPrintGcodeGuard.kt"),
     ("NightPrintGcodeGuardTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintGcodeGuardTest.kt"),
     ("NightPrintOfflineA1MiniTarget.kt", java / "NightPrintOfflineA1MiniTarget.kt"),
-    ("NightPrintOfflineA1MiniTargetTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintOfflineA1MiniTargetTest.kt")
+    ("NightPrintOfflineA1MiniTargetTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintOfflineA1MiniTargetTest.kt"),
+    ("NightPrintNativeSliceE2ETest.kt", root / "app/src/androidTest/java/com/u1/slicer/NightPrintNativeSliceE2ETest.kt")
 ]:
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(overlay / src, dst)
     print("Installed", dst.relative_to(root))
+
+# Deterministic ring fixtures go into the Android instrumented test APK.
+# They are not print jobs and cannot be uploaded to a printer by this overlay.
+import subprocess
+subprocess.run(
+    [sys.executable, str(overlay / "generate_e2e_ring.py"),
+     str(root / "app/src/androidTest/assets")],
+    check=True,
+)
 
 patch("app/build.gradle",
     'applicationId "com.u1.slicer.orca"',
