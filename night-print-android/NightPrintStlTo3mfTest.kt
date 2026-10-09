@@ -53,8 +53,17 @@ class NightPrintStlTo3mfTest {
                 assertTrue(zip.size() >= 4)
                 val mesh = zip.getInputStream(zip.getEntry("3D/3dmodel.model")).bufferedReader().readText()
                 val p = zip.getInputStream(zip.getEntry("Metadata/project_settings.config")).bufferedReader().readText()
-                assertEquals(12, Regex("<vertex x=").findAll(mesh).count())
+                // Four tetra faces share exactly four unique vertices.
+                // V2.8 incorrectly wrote 12 disconnected vertices, then the
+                // actual native slicer skipped layers on a user's ring.
+                assertEquals(4, Regex("<vertex x=").findAll(mesh).count())
                 assertEquals(4, Regex("<triangle v1=").findAll(mesh).count())
+                val indices = Regex("""<triangle v1="(\\d+)" v2="(\\d+)" v3="(\\d+)"/>""")
+                    .findAll(mesh)
+                    .flatMap { match -> match.groupValues.drop(1).map { it.toInt() } }
+                    .toList()
+                assertEquals(12, indices.size)
+                assertEquals(setOf(0, 1, 2, 3), indices.toSet())
                 assertTrue(mesh.contains("unit=\"millimeter\""))
                 assertTrue(mesh.contains("x=\"1.0\""))
                 assertTrue(p.contains("\"filament_type\":[\"PETG\"]"))
@@ -78,7 +87,9 @@ class NightPrintStlTo3mfTest {
             NightPrintStlTo3mf.wrap(stl, out, settings)
             ZipFile(out).use { zip ->
                 val mesh = zip.getInputStream(zip.getEntry("3D/3dmodel.model")).bufferedReader().readText()
-                assertEquals(12, Regex("<vertex x=").findAll(mesh).count())
+                // Four identical binary STL faces still share just three
+                // unique vertices, proving solid-prefixed binaries are welded.
+                assertEquals(3, Regex("<vertex x=").findAll(mesh).count())
                 assertEquals(4, Regex("<triangle v1=").findAll(mesh).count())
             }
         } finally { stl.delete(); out.delete() }
