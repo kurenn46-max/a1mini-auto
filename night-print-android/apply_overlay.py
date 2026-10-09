@@ -31,11 +31,11 @@ for src, dst in [
 
 patch("app/build.gradle",
     'applicationId "com.u1.slicer.orca"',
-    'applicationId "com.u1.slicer.orca.nightprint.v22"')
+    'applicationId "com.u1.slicer.orca.nightprint.v23"')
 
 patch("app/src/main/AndroidManifest.xml",
     'android:label="@string/app_name"',
-    'android:label="NIGHT PRINT V2.2 岡ちゃん"')
+    'android:label="NIGHT PRINT V2.3 岡ちゃん"')
 
 patch("app/src/main/AndroidManifest.xml",
     '            <!-- Known 3MF/STL MIME types — works with both content:// and file:// -->',
@@ -208,4 +208,28 @@ for forbidden in ("nozzleTemp", "filamentType", "materialType", "bedTemp"):
         raise RuntimeError(f"NIGHT PRINT must not override upstream material setting: {forbidden}")
 print("Verified: NIGHT PRINT does not override material or temperature settings")
 
-print("NIGHT PRINT v2.2 preserves upstream filament/temperature handling; process-only one-tap overlay applied (device test pending).")
+
+# V2.3: Job History must reflect the slice actually produced, not the
+# separate UI/default config. Otherwise it incorrectly shows PLA/210/15%
+# even when the generated G-code header and process overrides are PETG/235/40%.
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                    val cfg = _config.value
+                    val jobId = sliceJobDao.insert(''',
+    '''                    // Use the exact effective process config, plus filament
+                    // material/temperature resolved for the G-code header above.
+                    val cfg = targetAwareSliceConfig
+                    val jobMaterial = ftTypes.distinct().joinToString("/")
+                        .ifBlank { cfg.filamentType }
+                    val jobNozzleTemp = ntTemps.firstOrNull() ?: cfg.nozzleTemp
+                    val jobId = sliceJobDao.insert(''')
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                            nozzleTemp = cfg.nozzleTemp,
+                            bedTemp = cfg.bedTemp,
+                            supportEnabled = cfg.supportEnabled,
+                            filamentType = cfg.filamentType,''',
+    '''                            nozzleTemp = jobNozzleTemp,
+                            bedTemp = cfg.bedTemp,
+                            supportEnabled = cfg.supportEnabled,
+                            filamentType = jobMaterial,''')
+print("NIGHT PRINT V2.3: Job History uses resolved slice settings and filament header")
+
