@@ -72,20 +72,7 @@ jobs:
           emulator-boot-timeout: 600
           emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
           disable-animations: true
-          script: |
-            set -e
-            mkdir -p /tmp/nightprint_e2e_artifacts
-            # Collect actual generated G-code EVEN WHEN the PETG test fails.
-            # This avoids asking the user to repeatedly export files by hand.
-            trap 'adb pull /sdcard/Android/data/com.u1.slicer.orca.nightprint.v25/files/ /tmp/nightprint_e2e_artifacts/ >/dev/null 2>&1 || true; adb logcat -d -t 12000 > /tmp/nightprint_e2e_artifacts/logcat.txt 2>/dev/null || true' EXIT
-            adb shell getprop ro.product.cpu.abilist | tee /tmp/nightprint_emulator_abis.txt
-            if ! grep -q 'arm64-v8a' /tmp/nightprint_emulator_abis.txt; then
-              echo "::error::This emulator cannot load the upstream ARM64-only native slicer. Real end-to-end validation not run."
-              exit 1
-            fi
-            cd /tmp/u1-nightprint
-            bash ./gradlew :app:connectedDebugAndroidTest --no-daemon --stacktrace \
-              "-Pandroid.testInstrumentationRunnerArguments.class=com.u1.slicer.NightPrintNativeSliceE2ETest"
+          script: bash "$GITHUB_WORKSPACE/night-print-android/run_android_e2e.sh"
       - name: Save device test reports even if G-code fails
         if: always()
         uses: actions/upload-artifact@v4
