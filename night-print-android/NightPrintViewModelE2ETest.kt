@@ -36,7 +36,13 @@ class NightPrintViewModelE2ETest {
     private fun checkedPrepareFlow(
         fixtureName: String,
         configureMaterial: Boolean = true,
-        applyNightPreset: Boolean = true
+        applyNightPreset: Boolean = true,
+        expectedLayerMm: Float = 0.20f,
+        expectedWalls: Int = 5,
+        expectedInfill: Int = 40,
+        expectedTop: Int = 5,
+        expectedBottom: Int = 5,
+        expectedPattern: String = "gyroid"
     ) {
         assertTrue(NativeLibrary.isLoaded)
         val ins = InstrumentationRegistry.getInstrumentation()
@@ -140,16 +146,21 @@ class NightPrintViewModelE2ETest {
                 NightPrintGcodeGuard.checkA1MiniPetg(gcode.absolutePath, 235)
             )
             val footer = gcode.readText().takeLast(300_000)
-            assertTrue("Expected 40% infill", footer.contains("; sparse_infill_density = 40%"))
+            assertTrue("Expected ${expectedInfill}% infill", footer.contains("; sparse_infill_density = ${expectedInfill}%"))
+            assertTrue("Expected top layers", footer.contains("; top_shell_layers = ${expectedTop}"))
+            assertTrue("Expected bottom layers", footer.contains("; bottom_shell_layers = ${expectedBottom}"))
+            assertTrue("Expected infill pattern", footer.contains("; sparse_infill_pattern = ${expectedPattern}"))
+            assertTrue("Expected layer height", footer.contains("; layer_height = ${expectedLayerMm}"))
             val actualLayerCount = gcode.useLines { lines ->
                 lines.count { it.trim() == ";LAYER_CHANGE" }
             }
-            println("NIGHT_PRINT_REAL_UI_LAYERS=$actualLayerCount expected=100")
-            assertEquals("20mm ring/0.20mm must have 100 actual layers", 100, actualLayerCount)
-            assertNull("Actual Prepare-flow G-code skipped 0.2mm layers",
+            val expectedLayers = kotlin.math.round(20f / expectedLayerMm).toInt()
+            println("NIGHT_PRINT_REAL_UI_LAYERS=$actualLayerCount expected=$expectedLayers input=$fixtureName")
+            assertEquals("Real layers must match 20mm/model print profile", expectedLayers, actualLayerCount)
+            assertNull("Actual Prepare-flow G-code has skipped layers",
                 NightPrintGcodeGuard.checkA1MiniFixedLayers(
-                    gcode.absolutePath, 0.2f, expectedLayerCount = 100))
-            assertTrue("Expected 5 wall loops", footer.contains("; wall_loops = 5"))
+                    gcode.absolutePath, expectedLayerMm, expectedLayerCount = expectedLayers))
+            assertTrue("Expected ${expectedWalls} wall loops", footer.contains("; wall_loops = ${expectedWalls}"))
             assertTrue("Expected PETG filament", footer.contains("; filament_type = PETG"))
             assertEquals(SlicerTarget.BambuA1Mini, vm.effectiveSliceTarget.value)
             println("NIGHT_PRINT_REAL_UI_TEST_PASSED")
@@ -173,9 +184,21 @@ class NightPrintViewModelE2ETest {
     }
 
     @Test fun plain3mfImportWithoutAnyManualPresetMustHonorEmbeddedProcessAndPetg() {
-        // No nozzle, filament OR print-process overrides. A normal 3MF file
-        // must own all PETG/235C, 100 layers, 5 walls and 40% settings.
         checkedPrepareFlow("nightprint_ring_petg235.3mf",
             configureMaterial = false, applyNightPreset = false)
+    }
+
+    @Test fun importedFine3mfMustUse016mm4Walls25PercentCubicWithoutNightSetting() {
+        checkedPrepareFlow("nightprint_ring_petg235_fine016_4w_25cubic.3mf",
+            configureMaterial = false, applyNightPreset = false,
+            expectedLayerMm = 0.16f, expectedWalls = 4, expectedInfill = 25,
+            expectedTop = 6, expectedBottom = 4, expectedPattern = "cubic")
+    }
+
+    @Test fun importedFine3mfWithPriorNightPresetMustPreservePetg235AndApplyOverrides() {
+        // Reproduce a phone where NIGHT settings from a prior model persist.
+        // Explicit settings should override process only, NEVER PETG nozzle.
+        checkedPrepareFlow("nightprint_ring_petg235_fine016_4w_25cubic.3mf",
+            configureMaterial = false, applyNightPreset = true)
     }
 }
