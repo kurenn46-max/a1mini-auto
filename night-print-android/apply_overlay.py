@@ -48,11 +48,11 @@ subprocess.run(
 
 patch("app/build.gradle",
     'applicationId "com.u1.slicer.orca"',
-    'applicationId "com.u1.slicer.orca.nightprint.v28"')
+    'applicationId "com.u1.slicer.orca.nightprint.v29"')
 
 patch("app/src/main/AndroidManifest.xml",
     'android:label="@string/app_name"',
-    'android:label="NIGHT PRINT V2.8 岡ちゃん"')
+    'android:label="NIGHT PRINT V2.9 岡ちゃん"')
 
 patch("app/src/main/AndroidManifest.xml",
     '            <!-- Known 3MF/STL MIME types — works with both content:// and file:// -->',
@@ -483,3 +483,30 @@ patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
                 )
                 val result = native.slice(jniSliceConfig)''')
 print("NIGHT PRINT V2.8: A1 mini STL profile directly loaded into native slicer, no second Bambu composition.")
+
+
+# V2.9 G-code layer sanity: native Orca must emit all fixed 0.20mm
+# layers for a 20mm vertical tube, not merely report 100 layers in UI.
+# Keep the same fail-closed behavior as the PETG/nozzle G-code guard.
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                            _state.value = SlicerState.Error(nightGuardError)
+                            return@launch
+                        }
+                    }''',
+    '''                            _state.value = SlicerState.Error(nightGuardError)
+                            return@launch
+                        }
+                    }
+                    if (target == SlicerTarget.BambuA1Mini &&
+                        ov.layerHeight.mode == OverrideMode.OVERRIDE) {
+                        val layerIssue = NightPrintGcodeGuard.checkA1MiniFixedLayers(
+                            result.gcodePath, targetAwareSliceConfig.layerHeight
+                        )
+                        if (layerIssue != null) {
+                            diagnostics.clearSliceInProgress()
+                            _state.value = SlicerState.Error(layerIssue)
+                            return@launch
+                        }
+                    }''')
+
+print("NIGHT PRINT V2.9: welded manifold 3MF and strict fixed-layer G-code validation installed.")
