@@ -35,6 +35,33 @@ class NightPrintGcodeGuardTest {
         assertTrue(check("PETG", 220)!!.contains("220"))
     }
 
+    @Test fun acceptsA1MiniMachineMetadataAndBed() {
+        val file = File.createTempFile("night-a1mini-", ".gcode")
+        try {
+            file.writeText("""
+                ; printer_model = Bambu Lab A1 mini
+                ; printable_area = 0x0,180x0,180x180,0x180
+                M1002 set_filament_type:PETG
+                M109 S235
+                ;LAYER_CHANGE
+            """.trimIndent())
+            assertNull(NightPrintGcodeGuard.checkA1MiniMachine(file.absolutePath))
+        } finally { file.delete() }
+    }
+
+    @Test fun rejectsSnapmakerMachineEvenIfPetgSelected() {
+        val file = File.createTempFile("night-wrong-target-", ".gcode")
+        try {
+            file.writeText("""
+                ; printer_model = Snapmaker U1
+                ; bed_shape = 0x0,270x0,270x270,0x270
+                M109 S235
+                ;LAYER_CHANGE
+            """.trimIndent())
+            assertTrue(NightPrintGcodeGuard.checkA1MiniMachine(file.absolutePath)!!.contains("A1 mini"))
+        } finally { file.delete() }
+    }
+
     @Test fun blocksMissingFirstLayerMarker() {
         val file = File.createTempFile("night-print-missing-", ".gcode")
         try {
