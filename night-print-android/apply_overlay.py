@@ -122,4 +122,20 @@ patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
         _sliceStale.value = true
         if (lastModelInfo != null) profileNeedsReEmbed = true''')
 
+# V2.1: put NIGHT PRINT directly in the Prepare top bar.  No browser/deep-link
+# dance is required for the everyday "岡ちゃん標準" preset.  The button only
+# stages the same confirmation dialog; it still cannot start a print.
+patch("app/src/main/java/com/u1/slicer/MainActivity.kt",
+    '''                actions = {
+                    if (state !is SlicerViewModel.SlicerState.Idle) {''',
+    '''                actions = {
+                    if (modelLoaded) {
+                        TextButton(onClick = {
+                            pendingNightPrintRaw = """{"schema":"nightprint/v1","name":"岡ちゃん標準・確実","layer_height":0.20,"wall_loops":5,"sparse_infill_density":40,"top_shell_layers":5,"bottom_shell_layers":5,"sparse_infill_pattern":"gyroid"}"""
+                        }) {
+                            Text("ナイト設定", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    if (state !is SlicerViewModel.SlicerState.Idle) {''')
+
 print("NIGHT PRINT native overlay applied (not built or device-tested).")
