@@ -58,7 +58,18 @@ class NightPrintViewModelE2ETest {
                 }
             }
 
-            // Use the same public Prepare-screen overrides and configuration.
+            // The real phone imports a configured PETG 3MF WITHOUT calling
+            // updateConfig() or selecting a PETG spool first. Verify state
+            // BEFORE any NIGHT process preset or native slice.
+            if (!configureMaterial) {
+                assertEquals("Imported 3MF must set material without UI override",
+                    "PETG", vm.config.value.filamentType)
+                assertEquals("Imported 3MF must set nozzle without UI override",
+                    235, vm.config.value.nozzleTemp)
+                assertEquals("Imported 3MF must set bed without UI override",
+                    65, vm.config.value.bedTemp)
+            }
+            // Use the same public Prepare-screen process preset.
             ins.runOnMainSync {
                 if (configureMaterial) {
                     vm.updateConfig { cfg ->
