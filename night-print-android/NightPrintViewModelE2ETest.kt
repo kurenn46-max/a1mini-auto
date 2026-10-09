@@ -59,17 +59,23 @@ class NightPrintViewModelE2ETest {
             // Use the same public Prepare-screen overrides and configuration.
             ins.runOnMainSync {
                 vm.updateConfig { cfg ->
-                    cfg.copy(
-                        filamentType = "PETG", nozzleTemp = 235, bedTemp = 65,
-                        extruderCount = 1,
-                        layerHeight = 0.20f, perimeters = 5,
-                        topSolidLayers = 5, bottomSolidLayers = 5,
-                        fillDensity = 0.40f, fillPattern = "gyroid",
-                    )
+                    cfg.copy(filamentType = "PETG", nozzleTemp = 235, bedTemp = 65, extruderCount = 1)
                 }
                 vm.setFilamentMaterialOverride(0, "PETG")
-                vm.startSlicing()
+                // EXACT public path used by NIGHT's '設定を反映' button:
+                val preset = NightPrintPreset.parse(
+                    """{"schema":"nightprint/v1","name":"岡ちゃん標準・確実",
+                    "layer_height":0.20,"wall_loops":5,
+                    "sparse_infill_density":40,"top_shell_layers":5,
+                    "bottom_shell_layers":5,"sparse_infill_pattern":"gyroid"}""".trimIndent()
+                )
+                vm.saveSlicingOverrides(preset.applyTo(vm.slicingOverrides.value))
             }
+            waitUntil("NIGHT settings persisted", 30_000) {
+                val ov = vm.slicingOverrides.value
+                ov.wallCount.value == 5 && (ov.infillDensity.value ?: 0f) > 0.395f
+            }
+            ins.runOnMainSync { vm.startSlicing() }
             waitUntil("actual UI slicing", 180_000) {
                 when (val s = vm.state.value) {
                     is SlicerViewModel.SlicerState.Error -> fail("Actual app slicing failed: " + s.message)
