@@ -104,6 +104,8 @@ class NightPrintViewModelE2ETest {
             )
             val footer = gcode.readText().takeLast(300_000)
             assertTrue("Expected 40% infill", footer.contains("; sparse_infill_density = 40%"))
+            assertNull("Actual Prepare-flow G-code skipped 0.2mm layers",
+                NightPrintGcodeGuard.checkA1MiniFixedLayers(gcode.absolutePath, 0.2f))
             assertTrue("Expected 5 wall loops", footer.contains("; wall_loops = 5"))
             assertTrue("Expected PETG filament", footer.contains("; filament_type = PETG"))
             assertEquals(SlicerTarget.BambuA1Mini, vm.effectiveSliceTarget.value)
