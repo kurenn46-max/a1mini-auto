@@ -36,7 +36,15 @@ class NightPrintViewModelE2ETest {
     private fun checkedPrepareFlow(
         fixtureName: String,
         configureMaterial: Boolean = true,
-        applyNightPreset: Boolean = true
+        applyNightPreset: Boolean = true,
+        preloadOldNightPreset: Boolean = false,
+        expectedLayerHeight: Float = 0.2f,
+        expectedLayers: Int = 100,
+        expectedWallCount: Int = 5,
+        expectedInfill: Int = 40,
+        expectedTop: Int = 5,
+        expectedBottom: Int = 5,
+        expectedPattern: String = "gyroid",
     ) {
         assertTrue(NativeLibrary.isLoaded)
         val ins = InstrumentationRegistry.getInstrumentation()
@@ -52,6 +60,25 @@ class NightPrintViewModelE2ETest {
             model.outputStream().use { output -> input.copyTo(output) }
         }
         try {
+            if (preloadOldNightPreset) {
+                // Replicate user's sequence: apply the hard-coded 0.20/5/40
+                // NIGHT preset while the previous model is loaded, then
+                // open a different 3MF carrying 0.16/4/25/cubic.
+                ins.runOnMainSync {
+                    val stale = NightPrintPreset.parse(
+                        """{"schema":"nightprint/v1","name":"old preset",
+                        "layer_height":0.20,"wall_loops":5,
+                        "sparse_infill_density":40,"top_shell_layers":5,
+                        "bottom_shell_layers":5,"sparse_infill_pattern":"gyroid"}"""
+                    )
+                    vm.saveSlicingOverrides(stale.applyTo(vm.slicingOverrides.value))
+                }
+                waitUntil("stale NIGHT preset persisted", 30_000) {
+                    val o = vm.slicingOverrides.value
+                    o.wallCount.value == 5 && o.infillDensity.value == 0.4f &&
+                        o.layerHeight.mode == com.u1.slicer.data.OverrideMode.OVERRIDE
+                }
+            }
             ins.runOnMainSync { vm.loadModelFromFile(model) }
             waitUntil("raw STL loaded", 60_000) {
                 when (vm.state.value) {
@@ -84,9 +111,11 @@ class NightPrintViewModelE2ETest {
                 // For real user imported 3MF, never pre-seed material/temperature.
                 // The original project_settings.config MUST be authoritative.
                 if (!applyNightPreset) {
-                    // Simulate the app's true first-import USE_FILE defaults,
-                    // regardless of whichever prior instrumentation test ran.
-                    vm.saveSlicingOverrides(com.u1.slicer.data.SlicingOverrides())
+                    if (!preloadOldNightPreset) {
+                        // Baseline test: clear prior instrumentation history.
+                        // A stale-preset test MUST rely only on load's reset.
+                        vm.saveSlicingOverrides(com.u1.slicer.data.SlicingOverrides())
+                    }
                 } else {
                     // EXACT public path used by NIGHT's '設定を反映' button:
                     val preset = NightPrintPreset.parse(
@@ -140,16 +169,25 @@ class NightPrintViewModelE2ETest {
                 NightPrintGcodeGuard.checkA1MiniPetg(gcode.absolutePath, 235)
             )
             val footer = gcode.readText().takeLast(300_000)
-            assertTrue("Expected 40% infill", footer.contains("; sparse_infill_density = 40%"))
+            assertTrue("Expected ${expectedInfill}% infill",
+                footer.contains("; sparse_infill_density = ${expectedInfill}%"))
             val actualLayerCount = gcode.useLines { lines ->
                 lines.count { it.trim() == ";LAYER_CHANGE" }
             }
-            println("NIGHT_PRINT_REAL_UI_LAYERS=$actualLayerCount expected=100")
-            assertEquals("20mm ring/0.20mm must have 100 actual layers", 100, actualLayerCount)
-            assertNull("Actual Prepare-flow G-code skipped 0.2mm layers",
+            println("NIGHT_PRINT_REAL_UI_LAYERS=$actualLayerCount expected=$expectedLayers")
+            assertEquals("20mm ring/${expectedLayerHeight}mm must have $expectedLayers layers",
+                expectedLayers, actualLayerCount)
+            assertNull("Actual Prepare-flow G-code skipped ${expectedLayerHeight}mm layers",
                 NightPrintGcodeGuard.checkA1MiniFixedLayers(
-                    gcode.absolutePath, 0.2f, expectedLayerCount = 100))
-            assertTrue("Expected 5 wall loops", footer.contains("; wall_loops = 5"))
+                    gcode.absolutePath, expectedLayerHeight, expectedLayerCount = expectedLayers))
+            assertTrue("Expected $expectedWallCount wall loops",
+                footer.contains("; wall_loops = $expectedWallCount"))
+            assertTrue("Expected $expectedTop top layers",
+                footer.contains("; top_shell_layers = $expectedTop"))
+            assertTrue("Expected $expectedBottom bottom layers",
+                footer.contains("; bottom_shell_layers = $expectedBottom"))
+            assertTrue("Expected $expectedPattern infill pattern",
+                footer.contains("; sparse_infill_pattern = $expectedPattern"))
             assertTrue("Expected PETG filament", footer.contains("; filament_type = PETG"))
             assertEquals(SlicerTarget.BambuA1Mini, vm.effectiveSliceTarget.value)
             println("NIGHT_PRINT_REAL_UI_TEST_PASSED")
@@ -170,6 +208,37 @@ class NightPrintViewModelE2ETest {
         // Regression for the actual V3.0 phone failure: importing PETG 235C
         // must NOT require the user to manually change PLA/220C to PETG.
         checkedPrepareFlow("nightprint_ring_petg235.3mf", configureMaterial = false)
+    }
+
+    @Test fun fine3mfOverridesOldNightPresetOnImportWithoutPla220Regression() {
+        checkedPrepareFlow(
+            "nightprint_ring_petg235_016mm_4wall_25cubic.3mf",
+            configureMaterial = false,
+            applyNightPreset = false,
+            preloadOldNightPreset = true,
+            expectedLayerHeight = 0.16f,
+            expectedLayers = 125,
+            expectedWallCount = 4,
+            expectedInfill = 25,
+            expectedTop = 6,
+            expectedBottom = 4,
+            expectedPattern = "cubic",
+        )
+    }
+
+    @Test fun fine3mfWithoutAnyManualPresetMustKeepAllSixFileSettings() {
+        checkedPrepareFlow(
+            "nightprint_ring_petg235_016mm_4wall_25cubic.3mf",
+            configureMaterial = false,
+            applyNightPreset = false,
+            expectedLayerHeight = 0.16f,
+            expectedLayers = 125,
+            expectedWallCount = 4,
+            expectedInfill = 25,
+            expectedTop = 6,
+            expectedBottom = 4,
+            expectedPattern = "cubic",
+        )
     }
 
     @Test fun plain3mfImportWithoutAnyManualPresetMustHonorEmbeddedProcessAndPetg() {
