@@ -66,6 +66,10 @@ jobs:
           disable-animations: true
           script: |
             set -e
+            mkdir -p /tmp/nightprint_e2e_artifacts
+            # Collect actual generated G-code EVEN WHEN the PETG test fails.
+            # This avoids asking the user to repeatedly export files by hand.
+            trap 'adb pull /sdcard/Android/data/com.u1.slicer.orca.nightprint.v25/files/ /tmp/nightprint_e2e_artifacts/ >/dev/null 2>&1 || true; adb logcat -d -t 12000 > /tmp/nightprint_e2e_artifacts/logcat.txt 2>/dev/null || true' EXIT
             adb shell getprop ro.product.cpu.abilist | tee /tmp/nightprint_emulator_abis.txt
             if ! grep -q 'arm64-v8a' /tmp/nightprint_emulator_abis.txt; then
               echo "::error::This emulator cannot load the upstream ARM64-only native slicer. Real end-to-end validation not run."
@@ -84,3 +88,4 @@ jobs:
             /tmp/u1-nightprint/app/build/reports/androidTests/connected/
             /tmp/u1-nightprint/app/build/outputs/androidTest-results/connected/
             /tmp/nightprint_emulator_abis.txt
+            /tmp/nightprint_e2e_artifacts/
