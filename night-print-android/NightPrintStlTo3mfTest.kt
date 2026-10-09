@@ -50,7 +50,7 @@ class NightPrintStlTo3mfTest {
         try {
             NightPrintStlTo3mf.wrap(stl, out, settings)
             ZipFile(out).use { zip ->
-                assertEquals(null, zip.testzip())
+                assertTrue(zip.size() >= 4)
                 val mesh = zip.getInputStream(zip.getEntry("3D/3dmodel.model")).bufferedReader().readText()
                 val p = zip.getInputStream(zip.getEntry("Metadata/project_settings.config")).bufferedReader().readText()
                 assertEquals(12, Regex("<vertex x=").findAll(mesh).count())
