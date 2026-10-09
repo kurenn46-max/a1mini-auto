@@ -73,6 +73,14 @@ jobs:
           emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
           disable-animations: true
           script: bash "$GITHUB_WORKSPACE/night-print-android/run_android_e2e.sh"
+      - name: Publish test APK ONLY when entire real app-path E2E passes
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NIGHT_PRINT_V2.8_UI_Gcode_verified_test_apk
+          path: /tmp/u1-nightprint/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
       - name: Save device test reports even if G-code fails
         if: always()
         uses: actions/upload-artifact@v4
