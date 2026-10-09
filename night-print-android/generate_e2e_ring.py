@@ -7,6 +7,7 @@ self-contained filament/process profile. No printer or network is needed.
 from __future__ import annotations
 import json
 import math
+import struct
 import sys
 import zipfile
 from pathlib import Path
@@ -14,7 +15,7 @@ import xml.etree.ElementTree as ET
 
 dst = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("app/src/androidTest/assets")
 dst.mkdir(parents=True, exist_ok=True)
-segs = 32
+segs = 128  # User's original failed ring had 1024 STL facets (8 per segment).
 outer = 12.0
 inner = 10.0
 height = 20.0
@@ -52,16 +53,16 @@ def normal(tri):
     return tuple(x/length for x in v)
 
 stl = dst / "nightprint_ring_20x24x20.stl"
-with stl.open("w", encoding="ascii") as out:
-    out.write("solid nightprint_ring\n")
+# Binary STL exactly matching the failed real-user fixture's 1024 facets.
+# Each triangle stores independent coordinates; the converter MUST weld them.
+with stl.open("wb") as out:
+    out.write(b"NIGHT PRINT binary STL 20x24x20".ljust(80, b"\\0"))
+    out.write(struct.pack("<I", len(tris)))
     for t in tris:
         n = normal(t)
-        out.write("  facet normal %.8g %.8g %.8g\n" % n)
-        out.write("    outer loop\n")
-        for vi in t:
-            out.write("      vertex %.9g %.9g %.9g\n" % verts[vi])
-        out.write("    endloop\n  endfacet\n")
-    out.write("endsolid nightprint_ring\n")
+        coords = tuple(value for idx in t for value in verts[idx])
+        out.write(struct.pack("<12fH", *(n + coords), 0))
+assert stl.stat().st_size == 84 + len(tris) * 50
 
 ns = "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"
 ET.register_namespace("", ns)
@@ -111,7 +112,7 @@ with zipfile.ZipFile(three_mf,"w",compression=zipfile.ZIP_DEFLATED) as z:
 <Default Extension="config" ContentType="application/octet-stream"/></Types>""")
     z.writestr("Metadata/project_settings.config", json.dumps(profile,separators=(",",":")))
 
-assert len(verts)==128 and len(tris)==256
+assert len(verts)==512 and len(tris)==1024
 with zipfile.ZipFile(three_mf) as z:
     assert json.loads(z.read("Metadata/project_settings.config"))["nozzle_temperature"]==["235"]
     assert z.testzip() is None
