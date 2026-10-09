@@ -1,0 +1,40 @@
+name: Build NIGHT PRINT for Android
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout NIGHT PRINT overlay
+        uses: actions/checkout@v4
+      - name: Clone upstream Your One Slicer
+        run: git clone --depth 1 https://github.com/taylormadearmy/u1-slicer-for-android.git /tmp/u1-nightprint
+      - name: Apply native integration
+        run: python3 night-print-android/apply_overlay.py /tmp/u1-nightprint
+      - name: Configure Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Configure Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install Android SDK 34
+        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+      - name: Test preset parser and override mapping
+        working-directory: /tmp/u1-nightprint
+        run: bash ./gradlew :app:testDebugUnitTest --tests 'com.u1.slicer.NightPrintPresetTest' --no-daemon --stacktrace
+      - name: Build isolated Android APK
+        working-directory: /tmp/u1-nightprint
+        run: bash ./gradlew :app:assembleDebug --no-daemon --stacktrace
+      - name: Save APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NIGHT_PRINT_A1mini_debug_apk
+          path: /tmp/u1-nightprint/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
