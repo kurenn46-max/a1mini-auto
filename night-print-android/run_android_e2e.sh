@@ -4,7 +4,7 @@
 set -euo pipefail
 mkdir -p /tmp/nightprint_e2e_artifacts
 function save_evidence() {
-  adb pull /sdcard/Android/data/com.u1.slicer.orca.nightprint.v27/files/ /tmp/nightprint_e2e_artifacts/ >/dev/null 2>&1 || true
+  adb pull /sdcard/Android/data/com.u1.slicer.orca.nightprint.v28/files/ /tmp/nightprint_e2e_artifacts/ >/dev/null 2>&1 || true
   adb logcat -d -t 12000 > /tmp/nightprint_e2e_artifacts/logcat.txt 2>/dev/null || true
 }
 trap save_evidence EXIT
@@ -17,4 +17,4 @@ fi
 
 cd /tmp/u1-nightprint
 bash ./gradlew :app:connectedDebugAndroidTest --no-daemon --stacktrace \
-  '-Pandroid.testInstrumentationRunnerArguments.class=com.u1.slicer.NightPrintNativeSliceE2ETest'
+  '-Pandroid.testInstrumentationRunnerArguments.class=com.u1.slicer.NightPrintNativeSliceE2ETest,com.u1.slicer.NightPrintViewModelE2ETest'
