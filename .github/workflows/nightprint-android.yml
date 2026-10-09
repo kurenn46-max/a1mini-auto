@@ -1,4 +1,4 @@
-name: Build NIGHT PRINT V2.9 for Android
+name: Build NIGHT PRINT V3.0 for Android
 
 on:
   workflow_dispatch:
@@ -84,6 +84,6 @@ jobs:
       - name: Save APK (test build only; not a release)
         uses: actions/upload-artifact@v4
         with:
-          name: NIGHT_PRINT_V2.9_A1mini_test_apk
+          name: NIGHT_PRINT_V3.0_unverified_build_only
           path: /tmp/u1-nightprint/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
