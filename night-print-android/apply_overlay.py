@@ -23,7 +23,9 @@ def patch(path, before, after):
 
 for src, dst in [
     ("NightPrintPreset.kt", java / "NightPrintPreset.kt"),
-    ("NightPrintPresetTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintPresetTest.kt")
+    ("NightPrintPresetTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintPresetTest.kt"),
+    ("NightPrintGcodeGuard.kt", java / "NightPrintGcodeGuard.kt"),
+    ("NightPrintGcodeGuardTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintGcodeGuardTest.kt")
 ]:
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(overlay / src, dst)
@@ -233,3 +235,22 @@ patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
                             filamentType = jobMaterial,''')
 print("NIGHT PRINT V2.3: Job History uses resolved slice settings and filament header")
 
+
+# The Bambu A1 mini generated start G-code may still contain PLA/220C
+# even when the settings footer says PETG/235C. Inspect executable commands
+# before the first layer and FAIL CLOSED for single-filament PETG jobs.
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                    Log.i("SlicerVM", "B110 nozzle_temperature patch: $ntPatched (temps=$ntTemps)")''',
+    '''                    Log.i("SlicerVM", "B110 nozzle_temperature patch: $ntPatched (temps=$ntTemps)")
+                    if (target == SlicerTarget.BambuA1Mini &&
+                        ftTypes.size == 1 && ftTypes[0].equals("PETG", ignoreCase = true)) {
+                        val nightGuardError = NightPrintGcodeGuard.checkA1MiniPetg(
+                            result.gcodePath, ntTemps.firstOrNull() ?: targetAwareSliceConfig.nozzleTemp
+                        )
+                        if (nightGuardError != null) {
+                            diagnostics.clearSliceInProgress()
+                            _state.value = SlicerState.Error(nightGuardError)
+                            return@launch
+                        }
+                    }''')
+print("NIGHT PRINT V2.3: executable PETG/temperature guard added")
