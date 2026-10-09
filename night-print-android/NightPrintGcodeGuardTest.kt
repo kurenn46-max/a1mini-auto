@@ -82,7 +82,24 @@ class NightPrintGcodeGuardTest {
                     .append("\n;HEIGHT:0.2\n")
             }
             file.writeText(data.toString())
+            assertNull(NightPrintGcodeGuard.checkA1MiniFixedLayers(file.absolutePath, 0.2f, expectedLayerCount = 100))
+        } finally { file.delete() }
+    }
+
+    @Test fun blocksOnlySeventyUniformLayersEvenIfHeaderClaimsSeventy() {
+        val file = File.createTempFile("nightprint-short-ring-", ".gcode")
+        try {
+            val data = StringBuilder("; max_z_height: 14.00\n")
+            for (layer in 1..70) {
+                data.append(";LAYER_CHANGE\n;Z:")
+                    .append(String.format(java.util.Locale.US, "%.2f", layer * 0.2))
+                    .append("\n;HEIGHT:0.2\n")
+            }
+            file.writeText(data.toString())
+            // Spacing alone is not proof of 100 printable layers.
             assertNull(NightPrintGcodeGuard.checkA1MiniFixedLayers(file.absolutePath, 0.2f))
+            assertTrue(NightPrintGcodeGuard.checkA1MiniFixedLayers(
+                file.absolutePath, 0.2f, expectedLayerCount = 100)!!.contains("70 層"))
         } finally { file.delete() }
     }
 

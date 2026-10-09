@@ -51,9 +51,16 @@ internal object NightPrintGcodeGuard {
      * layers but only 70 actual layer changes, some jumping by 1.2mm.
      * Check executable layer structure, not a UI/header estimate.
      */
-    fun checkA1MiniFixedLayers(gcodePath: String, expectedHeightMm: Float): String? {
+    fun checkA1MiniFixedLayers(
+        gcodePath: String,
+        expectedHeightMm: Float,
+        expectedLayerCount: Int? = null,
+    ): String? {
         if (!expectedHeightMm.isFinite() || expectedHeightMm !in 0.08f..0.32f) {
             return "ナイト検査: 積層高さの設定が正しくありません。"
+        }
+        if (expectedLayerCount != null && expectedLayerCount !in 2..200_000) {
+            return "ナイト検査: 期待積層数が不正です。"
         }
         val file = File(gcodePath)
         if (!file.isFile) return "ナイト検査: 積層検査用G-codeがありません。"
@@ -97,6 +104,14 @@ internal object NightPrintGcodeGuard {
             when {
                 waitingForZ || layerCount < 2 || prevZ == null ->
                     "ナイト検査: 積層データが不完全です。印刷を中止してください。"
+                // Header/UI layer estimates do not prove real layers exist.
+                // For known-geometry fixtures, always validate the actual
+                // LAYER_CHANGE count AND its final Z against model height.
+                expectedLayerCount != null && layerCount != expectedLayerCount ->
+                    "ナイト検査: 実積層数 $layerCount 層（必要 $expectedLayerCount 層）。印刷を中止してください。"
+                expectedLayerCount != null &&
+                    kotlin.math.abs(prevZ!! - expected * expectedLayerCount) > tolerance ->
+                    "ナイト検査: モデル高さと実積層の最終Zが一致しません。印刷を中止してください。"
                 maxZ != null && kotlin.math.abs(prevZ!! - maxZ!!) > tolerance ->
                     "ナイト検査: G-codeの最終高さがモデルと一致しません。印刷を中止してください。"
                 else -> null

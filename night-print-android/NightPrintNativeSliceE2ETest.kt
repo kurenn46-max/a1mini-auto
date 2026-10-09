@@ -112,8 +112,14 @@ class NightPrintNativeSliceE2ETest {
             }.take(22).toList().joinToString(" | ") })
         assertNull("WRONG A1 mini machine/bed for $name: $machineIssue", machineIssue)
         assertNull("UNSAFE PETG executable start code for $name: $petgIssue", petgIssue)
+        val actualLayerCount = generated.useLines { lines ->
+            lines.count { it.trim() == ";LAYER_CHANGE" }
+        }
+        println("NIGHTPRINT_E2E actualLayers=$actualLayerCount expected=100 input=$name")
+        assertEquals("A 20mm ring at 0.20mm MUST produce 100 real layers", 100, actualLayerCount)
         assertNull("STL/3MF native G-code has missing or oversized 0.2mm layers",
-            NightPrintGcodeGuard.checkA1MiniFixedLayers(generated.absolutePath, 0.2f))
+            NightPrintGcodeGuard.checkA1MiniFixedLayers(
+                generated.absolutePath, 0.2f, expectedLayerCount = 100))
         // Footer parameters matter for process reproduction, but are never
         // sufficient on their own to prove executable G-code is safe.
         val footer = generated.readText().takeLast(300_000)
