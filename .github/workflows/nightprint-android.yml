@@ -1,4 +1,4 @@
-name: Build NIGHT PRINT V2.5 for Android
+name: Build NIGHT PRINT V2.7 for Android
 
 on:
   workflow_dispatch:
@@ -56,7 +56,7 @@ jobs:
             -storepass android -keypass android -alias androiddebugkey \
             -keyalg RSA -keysize 2048 -validity 3650 \
             -dname "CN=Android Debug,O=Android,C=US"
-      - name: Verify V2.5 one-tap and accurate Job History patch landed
+      - name: Verify V2.7 one-tap and accurate Job History patch landed
         working-directory: /tmp/u1-nightprint
         run: |
           grep -q 'Text("ナイト設定"' app/src/main/java/com/u1/slicer/MainActivity.kt
@@ -69,6 +69,9 @@ jobs:
           grep -q 'NightPrintGcodeGuard.checkA1MiniPetg' app/src/main/java/com/u1/slicer/SlicerViewModel.kt
           grep -q 'nightPrintOfflineA1MiniTarget' app/src/main/java/com/u1/slicer/SlicerViewModel.kt
           grep -q 'NightPrintGcodeGuard.checkA1MiniMachine' app/src/main/java/com/u1/slicer/SlicerViewModel.kt
+          grep -q 'NightPrintStlTo3mf.wrap' app/src/main/java/com/u1/slicer/SlicerViewModel.kt
+          test -s app/src/main/java/com/u1/slicer/NightPrintStlTo3mf.kt
+          test -s app/src/test/java/com/u1/slicer/NightPrintStlTo3mfTest.kt
           grep -q 'A1 mini 対応' app/src/main/java/com/u1/slicer/MainActivity.kt
       - name: Build isolated Android APK
         working-directory: /tmp/u1-nightprint
@@ -76,6 +79,6 @@ jobs:
       - name: Save APK (test build only; not a release)
         uses: actions/upload-artifact@v4
         with:
-          name: NIGHT_PRINT_V2.5_A1mini_test_apk
+          name: NIGHT_PRINT_V2.7_A1mini_test_apk
           path: /tmp/u1-nightprint/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
