@@ -31,6 +31,7 @@ for src, dst in [
     ("NightPrintNativeSliceE2ETest.kt", root / "app/src/androidTest/java/com/u1/slicer/NightPrintNativeSliceE2ETest.kt"),
     ("NightPrintViewModelE2ETest.kt", root / "app/src/androidTest/java/com/u1/slicer/NightPrintViewModelE2ETest.kt"),
     ("NightPrintImported3mfProfile.kt", java / "NightPrintImported3mfProfile.kt"),
+    ("NightPrint3mfProcess.kt", java / "NightPrint3mfProcess.kt"),
     ("NightPrintStlTo3mf.kt", java / "NightPrintStlTo3mf.kt"),
     ("NightPrintStlTo3mfTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintStlTo3mfTest.kt")
 ]:
@@ -49,11 +50,11 @@ subprocess.run(
 
 patch("app/build.gradle",
     'applicationId "com.u1.slicer.orca"',
-    'applicationId "com.u1.slicer.orca.nightprint.v31"')
+    'applicationId "com.u1.slicer.orca.nightprint.v32"')
 
 patch("app/src/main/AndroidManifest.xml",
     'android:label="@string/app_name"',
-    'android:label="NIGHT PRINT V3.1 岡ちゃん"')
+    'android:label="NIGHT PRINT V3.2 岡ちゃん"')
 
 patch("app/src/main/AndroidManifest.xml",
     '            <!-- Known 3MF/STL MIME types — works with both content:// and file:// -->',
@@ -511,8 +512,22 @@ patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
                     // The app stores a default pose for even untouched models.
                     // F66 replays that pose after reload; it is NOT a hazard.
                     _copyCount.value == 1) {
-                    val imported = rawInputFile?.takeIf {
+                    // NIGHT PRINT V3.2: on a custom 3MF do NOT fall back to
+                    // the upstream profile composer, which loses PETG 235C.
+                    // Reconcile ONLY explicit process changes into a transient
+                    // copy of the exact original project; keep mesh/material.
+                    val original = rawInputFile?.takeIf {
                         it.isFile && it.extension.equals("3mf", ignoreCase = true)
+                    }
+                    val imported = original?.let { source ->
+                        val resolved = slicingOverrides.value.resolveInto(_config.value)
+                        NightPrint3mfProcess.prepare(
+                            source,
+                            java.io.File(transientWorkspaceDir(),
+                                "nightprint_verified_process.3mf"),
+                            slicingOverrides.value,
+                            resolved,
+                        )
                     }
                     if (imported != null) {
                         val profileJson = runCatching {
@@ -533,7 +548,7 @@ patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
                         ): Boolean = when (opt.mode) {
                             OverrideMode.USE_FILE -> true
                             OverrideMode.OVERRIDE -> embedded != null && opt.value == embedded
-                            OverrideMode.ORCA_DEFAULT -> false
+                            OverrideMode.ORCA_DEFAULT -> embedded != null
                         }
                         val mat = profileJson?.optJSONArray("filament_type")
                         val temp = profileJson?.optJSONArray("nozzle_temperature")
@@ -593,7 +608,7 @@ patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
                 }
 
                 // Re-embed before slicing when needed:''')
-print("NIGHT PRINT V3.0: imported single PETG 3MF direct-profile Android fix installed.")
+print("NIGHT PRINT V3.2: verified imported PETG 3MF process and material are reconciled before native slice.")
 
 # V2.9 G-code layer sanity: native Orca must emit all fixed 0.20mm
 # layers for a 20mm vertical tube, not merely report 100 layers in UI.
@@ -698,3 +713,56 @@ patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
                                 ?: targetAwareSliceConfig.nozzleTemp
                         )''')
 print("NIGHT PRINT V3.1: imported PETG project profile is authoritative for UI, history and executable code guard.")
+
+
+# V3.2 3MF-first import contract: do not leak NIGHT settings from model A
+# onto an unrelated 3MF model B. Clearing happens ONCE for a real new import,
+# not for silent/native re-embeds, and only for verified simple PETG project
+# profiles. A user may still apply explicit process overrides AFTER import.
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                rawInputFile = sourceFile
+                recoveryPlateId = -1''',
+    '''                rawInputFile = sourceFile
+                if (!silent &&
+                    filename.endsWith(".3mf", ignoreCase = true) &&
+                    effectiveSliceTarget.value == SlicerTarget.BambuA1Mini &&
+                    NightPrintImported3mfProfile.read(sourceFile) != null) {
+                    val inherited = slicingOverrides.value
+                    val fresh = inherited.copy(
+                        layerHeight = com.u1.slicer.data.OverrideValue(),
+                        wallCount = com.u1.slicer.data.OverrideValue(),
+                        infillDensity = com.u1.slicer.data.OverrideValue(),
+                        infillPattern = com.u1.slicer.data.OverrideValue(),
+                        topShellLayers = com.u1.slicer.data.OverrideValue(),
+                        bottomShellLayers = com.u1.slicer.data.OverrideValue(),
+                        bedTemp = com.u1.slicer.data.OverrideValue(),
+                    )
+                    settingsRepo.saveSlicingOverrides(fresh)
+                    Log.i("SlicerVM",
+                        "NIGHTPRINT_V32_NEW_3MF_USES_FILE_PROFILE")
+                }
+                recoveryPlateId = -1''')
+print("NIGHT PRINT V3.2: new 3MF resets only previous-model process overrides.")
+
+
+# V3.2: even if the native Orca engine reports SliceComplete, verify that
+# the ACTUAL emitted G-code matches the custom 3MF instructions. This closes
+# the gap where a preview/history says 4 walls/25%/0.16mm but native uses a
+# stale 5 walls/40%/0.20mm profile. No G-code rewrite. Stop on mismatch.
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                    val outputValidation = validateSliceOutput(''',
+    '''                    if (target == SlicerTarget.BambuA1Mini &&
+                        nightWrappedStlForThisSlice &&
+                        currentModelName.endsWith(".3mf", ignoreCase = true)) {
+                        val activeProfile = sourceModelFile
+                            ?: throw IllegalStateException("3MFの素材設定を確認できません。")
+                        val issue = NightPrint3mfProcess.checkOutput(
+                            activeProfile, result.gcodePath)
+                        if (issue != null) {
+                            diagnostics.clearSliceInProgress()
+                            _state.value = SlicerState.Error(issue)
+                            return@launch
+                        }
+                    }
+                    val outputValidation = validateSliceOutput(''')
+print("NIGHT PRINT V3.2: actual G-code audited against selected 3MF custom process, no silent fallback.")

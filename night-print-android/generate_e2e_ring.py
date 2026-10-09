@@ -112,6 +112,36 @@ with zipfile.ZipFile(three_mf,"w",compression=zipfile.ZIP_DEFLATED) as z:
 <Default Extension="config" ContentType="application/octet-stream"/></Types>""")
     z.writestr("Metadata/project_settings.config", json.dumps(profile,separators=(",",":")))
 
+
+# Regression fixture reproduces the user's 3MF: identical 1024-face mesh,
+# PETG 235C but an intentionally DIFFERENT embedded process, not just a
+# test method setting the process after load.
+fine_profile = dict(profile)
+fine_profile.update({
+    "layer_height": "0.16",
+    "initial_layer_print_height": "0.16",
+    "wall_loops": "4",
+    "top_shell_layers": "6",
+    "bottom_shell_layers": "4",
+    "sparse_infill_density": "25%",
+    "sparse_infill_pattern": "cubic",
+})
+fine_mf = dst / "nightprint_ring_petg235_fine016_4w_25cubic.3mf"
+with zipfile.ZipFile(three_mf, "r") as src, zipfile.ZipFile(
+        fine_mf, "w", compression=zipfile.ZIP_DEFLATED) as dest:
+    for item in src.infolist():
+        content = src.read(item.filename)
+        if item.filename == "Metadata/project_settings.config":
+            content = json.dumps(fine_profile, separators=(",",":")).encode("utf-8")
+        dest.writestr(item.filename, content)
+with zipfile.ZipFile(fine_mf) as z:
+    assert z.testzip() is None
+    actual = json.loads(z.read("Metadata/project_settings.config"))
+    assert actual["layer_height"] == "0.16"
+    assert actual["nozzle_temperature"] == ["235"]
+    assert z.read("3D/3dmodel.model") == zipfile.ZipFile(three_mf).read("3D/3dmodel.model")
+print(f"NIGHT PRINT fine 3MF regression fixture: {fine_mf}")
+
 assert len(verts)==512 and len(tris)==1024
 with zipfile.ZipFile(three_mf) as z:
     assert json.loads(z.read("Metadata/project_settings.config"))["nozzle_temperature"]==["235"]
