@@ -28,7 +28,9 @@ for src, dst in [
     ("NightPrintGcodeGuardTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintGcodeGuardTest.kt"),
     ("NightPrintOfflineA1MiniTarget.kt", java / "NightPrintOfflineA1MiniTarget.kt"),
     ("NightPrintOfflineA1MiniTargetTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintOfflineA1MiniTargetTest.kt"),
-    ("NightPrintNativeSliceE2ETest.kt", root / "app/src/androidTest/java/com/u1/slicer/NightPrintNativeSliceE2ETest.kt")
+    ("NightPrintNativeSliceE2ETest.kt", root / "app/src/androidTest/java/com/u1/slicer/NightPrintNativeSliceE2ETest.kt"),
+    ("NightPrintStlTo3mf.kt", java / "NightPrintStlTo3mf.kt"),
+    ("NightPrintStlTo3mfTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintStlTo3mfTest.kt")
 ]:
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(overlay / src, dst)
@@ -45,11 +47,11 @@ subprocess.run(
 
 patch("app/build.gradle",
     'applicationId "com.u1.slicer.orca"',
-    'applicationId "com.u1.slicer.orca.nightprint.v25"')
+    'applicationId "com.u1.slicer.orca.nightprint.v27"')
 
 patch("app/src/main/AndroidManifest.xml",
     'android:label="@string/app_name"',
-    'android:label="NIGHT PRINT V2.5 岡ちゃん"')
+    'android:label="NIGHT PRINT V2.7 岡ちゃん"')
 
 patch("app/src/main/AndroidManifest.xml",
     '            <!-- Known 3MF/STL MIME types — works with both content:// and file:// -->',
@@ -330,3 +332,80 @@ patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
                     if (target == SlicerTarget.BambuA1Mini &&
                         ftTypes.size == 1 && ftTypes[0].equals("PETG", ignoreCase = true)) {''')
 print("NIGHT PRINT v2.5: offline A1 mini target and G-code machine guard installed.")
+
+# V2.7: instead of feeding a bare STL into the native Bambu engine (which
+# hard-codes PLA/220C), generate a material-profile-bearing 3MF from the SAME
+# user's STL prior to slicing. Reuse the upstream pre-slice re-embed/reload
+# path so copy placement, geometry edits, print process and all native machine
+# safeguards stay active. Original STL is never modified.
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                val firstSliceThisLaunch = diagnostics.markSliceStart()
+
+                // Re-embed before slicing when needed:''',
+    '''                val firstSliceThisLaunch = diagnostics.markSliceStart()
+
+                // NIGHT PRINT: the upstream native Bambu STL code seeds PLA/220.
+                // The exact same geometry, when wrapped as a Bambu project 3MF
+                // with resolved user material, produces genuine PETG heat commands.
+                // This MUST run on every slice, not just the first import, so
+                // changing the material or temperature after model load is safe.
+                if (effectiveSliceTarget.value == SlicerTarget.BambuA1Mini &&
+                    currentModelName.endsWith(".stl", ignoreCase = true)) {
+                    if (_config.value.extruderCount != 1) {
+                        _state.value = SlicerState.Error(
+                            "ナイト検査: STLの複数フィラメント印刷はまだ未検証です。中止します。")
+                        return@launch
+                    }
+                    val originalStl = rawInputFile
+                        ?.takeIf { it.isFile && it.name.endsWith(".stl", ignoreCase = true) }
+                        ?: throw IllegalStateException("元のSTLを見つけられません。読み込み直してください。")
+                    val usedSlot = listOf(_selectedExtruder.value)
+                    val (resolvedTypes, resolvedTemps) = applyNonCanonicalOverride(
+                        slotTypes = resolveNonCanonicalHeaderPatchTypes(
+                            usedSlot, extruderPresets.value),
+                        slotTemps = resolveNonCanonicalHeaderPatchTemps(
+                            usedSlot, extruderPresets.value, filaments.value),
+                        override = _filamentOverrides.value[0],
+                    )
+                    val resolvedType = resolvedTypes.singleOrNull()
+                        ?: throw IllegalStateException("使用する素材を1種類に確定できません。")
+                    val resolvedTemp = resolvedTemps.singleOrNull()
+                        ?: throw IllegalStateException("使用するノズル温度を確定できません。")
+                    val effectiveProcess = slicingOverrides.value.resolveInto(_config.value)
+                    val converted = NightPrintStlTo3mf.wrap(
+                        originalStl,
+                        java.io.File(transientWorkspaceDir(), "nightprint_auto_stl_profile.3mf"),
+                        NightPrintStlTo3mf.Settings(
+                            filamentType = resolvedType,
+                            nozzleC = resolvedTemp,
+                            bedC = effectiveProcess.bedTemp,
+                            wallLoops = effectiveProcess.perimeters,
+                            fillDensityPercent = kotlin.math.round(
+                                effectiveProcess.fillDensity * 100f).toInt(),
+                            layerHeightMm = effectiveProcess.layerHeight,
+                            topLayers = effectiveProcess.topSolidLayers,
+                            bottomLayers = effectiveProcess.bottomSolidLayers,
+                            infillPattern = effectiveProcess.fillPattern,
+                        ),
+                    )
+                    val convertedInfo = com.u1.slicer.bambu.ThreeMfParser.parse(converted)
+                    check(convertedInfo.isBambu) {
+                        "3MFへの素材設定の埋め込みを認識できません。"
+                    }
+                    val confirmedProfile = java.util.zip.ZipFile(converted).use {
+                        profileEmbedder.parseSourceConfig(it)
+                    } ?: throw IllegalStateException("3MFからPETG設定を読み取れません。")
+                    sourceModelFile = converted
+                    sourceModelInfo = convertedInfo
+                    _fileThreeMfInfo = convertedInfo
+                    _sourceConfig.value = confirmedProfile
+                    diagnostics.recordEvent(
+                        "nightprint_stl_material_profile",
+                        mapOf("material" to resolvedType, "nozzleC" to resolvedTemp,
+                            "sourceTriangles" to originalStl.length(), "confirmed" to true),
+                    )
+                }
+
+                // Re-embed before slicing when needed:''')
+
+print("NIGHT PRINT V2.7: native STL slices now use generated PETG-profile-bearing 3MF, with fail-closed executable G-code audit.")
