@@ -24,6 +24,7 @@ def patch(path, before, after):
 for src, dst in [
     ("NightPrintPreset.kt", java / "NightPrintPreset.kt"),
     ("NightPrintPresetTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintPresetTest.kt"),
+    ("NightPrintGcodeParserTest.kt", root / "app/src/test/java/com/u1/slicer/gcode/NightPrintGcodeParserTest.kt"),
     ("NightPrintGcodeGuard.kt", java / "NightPrintGcodeGuard.kt"),
     ("NightPrintGcodeGuardTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintGcodeGuardTest.kt"),
     ("NightPrintOfflineA1MiniTarget.kt", java / "NightPrintOfflineA1MiniTarget.kt"),
@@ -773,3 +774,83 @@ patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
                     }
                     val outputValidation = validateSliceOutput(''')
 print("NIGHT PRINT V3.2: actual G-code audited against selected 3MF custom process, no silent fallback.")
+
+
+# Fix preview-layer accounting without changing generated G-code or slicing.
+patch("app/src/main/java/com/u1/slicer/gcode/GcodeParser.kt",
+    '''        var currentZ = 0f
+        var layerIndex = 0''',
+    '''        var currentZ = 0f
+        // Printable Z is separate from physical nozzle position. Z hops and
+        // end-of-print parking must not become display layers.
+        var printLayerZ = 0f
+        var hasPrintedOnLayer = false
+        var sawLayerMarker = false
+        var layerIndex = 0''')
+
+patch("app/src/main/java/com/u1/slicer/gcode/GcodeParser.kt",
+    '''                    if (startsWithAt(l, start, ";LAYER_CHANGE") || startsWithAt(l, start, "; layer_change")) {
+                        if (currentMoves.isNotEmpty() || hasUnflushedMoves) {
+                            layers.add(GcodeLayer(layerIndex++, currentZ, currentMoves.toList()))
+                            currentMoves.clear()
+                            hasUnflushedMoves = false
+                        }
+                    }''',
+    '''                    if (startsWithAt(l, start, ";LAYER_CHANGE") || startsWithAt(l, start, "; layer_change")) {
+                        // Slicer markers are authoritative. Drop pre-print purge
+                        // moves at the FIRST marker. Later markers only close
+                        // layers containing actual XY extrusion.
+                        if (sawLayerMarker && hasPrintedOnLayer) {
+                            layers.add(GcodeLayer(layerIndex++, printLayerZ, currentMoves.toList()))
+                        }
+                        currentMoves.clear()
+                        hasUnflushedMoves = false
+                        sawLayerMarker = true
+                        hasPrintedOnLayer = false
+                    }''')
+
+patch("app/src/main/java/com/u1/slicer/gcode/GcodeParser.kt",
+    '''                        if (newZ != currentZ) {
+                            if (currentMoves.isNotEmpty() || hasUnflushedMoves) {
+                                layers.add(GcodeLayer(layerIndex++, currentZ, currentMoves.toList()))
+                                currentMoves.clear()
+                                hasUnflushedMoves = false
+                            }
+                            currentZ = newZ
+                        }
+
+                        val hasE = !newE.isNaN()
+                        val eBefore = lastE
+                        val isExtrude = hasE && if (absoluteE) newE > eBefore else newE > 0f
+                        if (hasE) lastE = newE''',
+    '''                        // Physical nozzle Z changes do not, by themselves,
+                        // create a printable layer (Z hop / end parking).
+                        currentZ = newZ
+
+                        val hasE = !newE.isNaN()
+                        val eBefore = lastE
+                        val isExtrude = hasE && if (absoluteE) newE > eBefore else newE > 0f
+                        if (hasE) lastE = newE
+
+                        if (isExtrude && (newX != x || newY != y)) {
+                            // Fallback for G-code without ;LAYER_CHANGE markers:
+                            // only a different EXTRUSION height creates a layer.
+                            if (!sawLayerMarker && hasPrintedOnLayer &&
+                                kotlin.math.abs(currentZ - printLayerZ) > 0.01f) {
+                                layers.add(GcodeLayer(layerIndex++, printLayerZ, currentMoves.toList()))
+                                currentMoves.clear()
+                                hasUnflushedMoves = false
+                                hasPrintedOnLayer = false
+                            }
+                            if (!hasPrintedOnLayer) printLayerZ = currentZ
+                            hasPrintedOnLayer = true
+                        }''')
+
+patch("app/src/main/java/com/u1/slicer/gcode/GcodeParser.kt",
+    '''        if (currentMoves.isNotEmpty() || hasUnflushedMoves) {
+            layers.add(GcodeLayer(layerIndex, currentZ, currentMoves.toList()))
+        }''',
+    '''        // Never append a parking-only phantom layer after the last print.
+        if (hasPrintedOnLayer) {
+            layers.add(GcodeLayer(layerIndex, printLayerZ, currentMoves.toList()))
+        }''')
