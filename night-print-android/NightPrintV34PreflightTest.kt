@@ -13,7 +13,7 @@ import java.util.zip.ZipOutputStream
 
 /** Regression fixtures for the A1 mini PETG V4 cover, offline only. */
 class NightPrintV34PreflightTest {
-    private fun writeProject(support: Boolean): File {
+    private fun writeProject(support: Boolean, omitSupportKey: Boolean = false): File {
         val file = File.createTempFile("nightprint-v34", ".3mf")
         val json = """
         {"filament_type":["PETG"],
@@ -25,7 +25,12 @@ class NightPrintV34PreflightTest {
          "initial_layer_print_height":"0.20",
          "sparse_infill_density":"30%",
          "wall_loops":"5"}
-        """.trimIndent()
+        """.trimIndent().let { project ->
+            if (omitSupportKey) project.lineSequence()
+                .filterNot { it.contains("\\"enable_support\\"") }
+                .joinToString("\\n")
+            else project
+        }
         ZipOutputStream(file.outputStream()).use { out ->
             out.putNextEntry(ZipEntry("Metadata/project_settings.config"))
             out.write(json.toByteArray())
@@ -59,6 +64,14 @@ class NightPrintV34PreflightTest {
     @Test fun supportInSourceAndGcodeAgree() {
         val p = writeProject(true)
         val g = writeGcode(true)
+        try {
+            assertNull(NightPrintV34Preflight.checkSupport(p, g.path, SlicingOverrides()))
+        } finally { p.delete(); g.delete() }
+    }
+
+    @Test fun legacy3mfWithoutSupportKeyDefaultsToOff() {
+        val p = writeProject(false, omitSupportKey = true)
+        val g = writeGcode(false)
         try {
             assertNull(NightPrintV34Preflight.checkSupport(p, g.path, SlicingOverrides()))
         } finally { p.delete(); g.delete() }
