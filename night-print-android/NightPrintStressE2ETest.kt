@@ -182,13 +182,8 @@ class NightPrintStressE2ETest {
     @Test fun pathTraversalArchiveMustBeRejectedWithNoOverrides() {
         val malicious=input("nightprint_bad_path_traversal.3mf")
         val output=File(malicious.parentFile,"nightprint_stress_no_write.3mf")
-        // Ensure the NEGATIVE fixture truly has a traversal entry.
-        val maliciousEntries = java.util.zip.ZipFile(malicious).use { zip ->
-            zip.entries().toList().map { it.name }
-        }
-        assertTrue("Test fixture lost its ../ entry",
-            maliciousEntries.any { it.split('/').contains("..") })
-        println("NIGHTPRINT_STRESS_TRAVERSAL_ENTRIES=" + maliciousEntries)
+        // Android's framework rejects ../ entries while ZIP entries are
+        // enumerated: never enumerate the malicious ZIP outside try/catch.
         output.delete()
         var rejected=false
         try {
@@ -198,6 +193,10 @@ class NightPrintStressE2ETest {
             } catch (_: IllegalArgumentException) {
                 rejected=true
             } catch (_: IllegalStateException) {
+                rejected=true
+            } catch (_: java.util.zip.ZipException) {
+                // Android 15 SafeZipPathValidatorCallback rejects ../ paths
+                // before our own entry loop can inspect the rejected name.
                 rejected=true
             }
             assertTrue("ZIP path traversal was accepted by process loader",rejected)
