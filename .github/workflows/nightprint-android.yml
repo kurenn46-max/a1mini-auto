@@ -81,9 +81,17 @@ jobs:
       - name: Build isolated Android APK
         working-directory: /tmp/u1-nightprint
         run: bash ./gradlew :app:assembleDebug --no-daemon --stacktrace
+      - name: Verify signed V3.4 test APK and isolated identity
+        working-directory: /tmp/u1-nightprint
+        run: |
+          APK="$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' | head -n 1)"
+          test -n "$APK" && test -s "$APK"
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" | tee /tmp/nightprint-apk-info.txt
+          grep -F "package: name='com.u1.slicer.orca.nightprint.v34.safe20261010'" /tmp/nightprint-apk-info.txt
       - name: Save APK (test build only; not a release)
         uses: actions/upload-artifact@v4
         with:
-          name: NIGHT_PRINT_V3.3_unverified_build_only
+          name: NIGHT_PRINT_V3.4_A1MINI_safety_test_only
           path: /tmp/u1-nightprint/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
