@@ -27,8 +27,8 @@ class NightPrintV34PreflightTest {
          "wall_loops":"5"}
         """.trimIndent().let { project ->
             if (omitSupportKey) project.lineSequence()
-                .filterNot { it.contains("\\"enable_support\\"") }
-                .joinToString("\\n")
+                .filterNot { it.contains("enable_support") }
+                .joinToString("\n")
             else project
         }
         ZipOutputStream(file.outputStream()).use { out ->
