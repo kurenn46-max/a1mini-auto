@@ -86,7 +86,10 @@ internal object NightPrint3mfProcess {
         overrides: SlicingOverrides,
         effective: SliceConfig,
     ): File {
-        val before = NightPrintImported3mfProfile.read(input) ?: return input
+        // A potentially malformed archive must be validated BEFORE trying
+        // to read its material profile. Otherwise read() returning null can
+        // bypass archive checks through the USE_FILE fast path.
+        if (!input.extension.equals("3mf", ignoreCase = true)) return input
         require(input.canonicalPath != output.canonicalPath) {
             "元の3MFを上書きできません。"
         }
@@ -115,6 +118,7 @@ internal object NightPrint3mfProcess {
                 }
             }
         }
+        val before = NightPrintImported3mfProfile.read(input) ?: return input
         var changed = false
         val config = ZipFile(input).use { zip ->
             val entry = zip.getEntry("Metadata/project_settings.config")
