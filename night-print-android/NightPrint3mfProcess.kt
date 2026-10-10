@@ -59,8 +59,12 @@ internal object NightPrint3mfProcess {
             "enable_support"
         )
         for (key in exactKeys) {
+            // In Orca profiles, an omitted enable_support inherits the
+            // machine/process default OFF. Preserve V3.3 legacy projects
+            // while still rejecting an actual support ON/OFF mismatch.
             val wanted = expected.optString(key).takeIf { it.isNotBlank() }
-                ?: return@runCatching "ナイト検査: 3MFの" + key + "が不足しています。"
+                ?: if (key == "enable_support") "0"
+                   else return@runCatching "ナイト検査: 3MFの" + key + "が不足しています。"
             val actual = gcodeValue(key)
             if (actual != wanted) {
                 return@runCatching "ナイト検査: " + key +
