@@ -182,6 +182,13 @@ class NightPrintStressE2ETest {
     @Test fun pathTraversalArchiveMustBeRejectedWithNoOverrides() {
         val malicious=input("nightprint_bad_path_traversal.3mf")
         val output=File(malicious.parentFile,"nightprint_stress_no_write.3mf")
+        // Ensure the NEGATIVE fixture truly has a traversal entry.
+        val maliciousEntries = java.util.zip.ZipFile(malicious).use { zip ->
+            zip.entries().toList().map { it.name }
+        }
+        assertTrue("Test fixture lost its ../ entry",
+            maliciousEntries.any { it.split('/').contains("..") })
+        println("NIGHTPRINT_STRESS_TRAVERSAL_ENTRIES=" + maliciousEntries)
         output.delete()
         var rejected=false
         try {
