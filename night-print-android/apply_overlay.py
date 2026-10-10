@@ -30,6 +30,8 @@ for src, dst in [
     ("NightPrintOfflineA1MiniTargetTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintOfflineA1MiniTargetTest.kt"),
     ("NightPrintNativeSliceE2ETest.kt", root / "app/src/androidTest/java/com/u1/slicer/NightPrintNativeSliceE2ETest.kt"),
     ("NightPrintViewModelE2ETest.kt", root / "app/src/androidTest/java/com/u1/slicer/NightPrintViewModelE2ETest.kt"),
+    ("NightPrintStressE2ETest.kt", root / "app/src/androidTest/java/com/u1/slicer/NightPrintStressE2ETest.kt"),
+    ("NightPrintGcodeDepositionGuard.kt", java / "NightPrintGcodeDepositionGuard.kt"),
     ("NightPrintImported3mfProfile.kt", java / "NightPrintImported3mfProfile.kt"),
     ("NightPrint3mfProcess.kt", java / "NightPrint3mfProcess.kt"),
     ("NightPrintStlTo3mf.kt", java / "NightPrintStlTo3mf.kt"),
@@ -47,14 +49,19 @@ subprocess.run(
      str(root / "app/src/androidTest/assets")],
     check=True,
 )
+subprocess.run(
+    [sys.executable, str(overlay / "generate_stress_shapes.py"),
+     str(root / "app/src/androidTest/assets")],
+    check=True,
+)
 
 patch("app/build.gradle",
     'applicationId "com.u1.slicer.orca"',
-    'applicationId "com.u1.slicer.orca.nightprint.v32"')
+    'applicationId "com.u1.slicer.orca.nightprint.v33"')
 
 patch("app/src/main/AndroidManifest.xml",
     'android:label="@string/app_name"',
-    'android:label="NIGHT PRINT V3.2 岡ちゃん"')
+    'android:label="NIGHT PRINT V3.3 岡ちゃん"')
 
 patch("app/src/main/AndroidManifest.xml",
     '            <!-- Known 3MF/STL MIME types — works with both content:// and file:// -->',
