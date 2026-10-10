@@ -32,8 +32,6 @@ for src, dst in [
     ("NightPrintViewModelE2ETest.kt", root / "app/src/androidTest/java/com/u1/slicer/NightPrintViewModelE2ETest.kt"),
     ("NightPrintStressE2ETest.kt", root / "app/src/androidTest/java/com/u1/slicer/NightPrintStressE2ETest.kt"),
     ("NightPrintGcodeDepositionGuard.kt", java / "NightPrintGcodeDepositionGuard.kt"),
-    ("NightPrintStressE2ETest.kt", root / "app/src/androidTest/java/com/u1/slicer/NightPrintStressE2ETest.kt"),
-    ("NightPrintGcodeDepositionGuard.kt", java / "NightPrintGcodeDepositionGuard.kt"),
     ("NightPrintImported3mfProfile.kt", java / "NightPrintImported3mfProfile.kt"),
     ("NightPrint3mfProcess.kt", java / "NightPrint3mfProcess.kt"),
     ("NightPrintStlTo3mf.kt", java / "NightPrintStlTo3mf.kt"),
