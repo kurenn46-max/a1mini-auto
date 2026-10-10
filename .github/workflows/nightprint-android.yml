@@ -91,10 +91,11 @@ jobs:
           test -n "$APK" && test -s "$APK"
           "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose "$APK"
           "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" | tee /tmp/nightprint-apk-info.txt
-          grep -F "package: name='com.u1.slicer.orca.nightprint.v341.truth20261011'" /tmp/nightprint-apk-info.txt
-      - name: Save APK (test build only; not a release)
-        uses: actions/upload-artifact@v4
-        with:
-          name: NIGHT_PRINT_V3.4.1_A1MINI_display_truth_test_only
-          path: /tmp/u1-nightprint/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
+          grep -F "package: name='com.u1.slicer.orca.nightprint.v342.visual20261011'" /tmp/nightprint-apk-info.txt
+      # SECURITY RELEASE GATE: do not publish an APK from this JVM/build-only
+      # workflow. Only the native E2E workflow can publish the test APK,
+      # and only after the real Compose UI import/tap/swipe/screenshots pass.
+      - name: Hold APK until visual Android E2E passes
+        run: |
+          echo "Build succeeded, but publication is gated on nightprint-e2e.yml."
+          echo "This job intentionally does not upload an APK."
