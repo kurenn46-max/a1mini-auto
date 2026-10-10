@@ -67,7 +67,17 @@ internal object NightPrintGcodeDepositionGuard {
                         }
                         continue
                     }
-                    if (!absoluteXY) return bad("積層中に相対XY座標が使われています。")
+                    if (!absoluteXY) {
+                        // Bambu end-G-code may contain harmless G91 Z-only
+                        // travel after the final layer. Reject only actual
+                        // positive XY material deposition in relative mode.
+                        val eRelative = vals["E"] ?: 0.0
+                        if (s.startsWith("G1 ") && eRelative > 0.0 &&
+                            (vals.containsKey("X") || vals.containsKey("Y"))) {
+                            return bad("積層中に相対XY押出しが使われています。")
+                        }
+                        continue
+                    }
                     if (vals.containsKey("X")) x = vals["X"]
                     if (vals.containsKey("Y")) y = vals["Y"]
                     val e = vals["E"]
