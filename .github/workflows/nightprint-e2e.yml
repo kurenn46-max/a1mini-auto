@@ -1,4 +1,4 @@
-name: NIGHT PRINT V3.2 Real Android Native Slicing E2E
+name: NIGHT PRINT V3.3 Multi-Geometry Native E2E
 
 # Separate, fail-closed hardware-free test. Never treated as a release if the
 # ARM64-native generated G-code fails PETG or machine-specific checks.
@@ -77,7 +77,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: NIGHT_PRINT_V3.2_3MF_CUSTOM_PROCESS_verified_test_apk
+          name: NIGHT_PRINT_V3.3_GEOMETRY_STRESS_verified_test_apk
           path: /tmp/u1-nightprint/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 

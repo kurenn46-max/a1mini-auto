@@ -86,10 +86,39 @@ internal object NightPrint3mfProcess {
         overrides: SlicingOverrides,
         effective: SliceConfig,
     ): File {
-        val before = NightPrintImported3mfProfile.read(input) ?: return input
+        // A potentially malformed archive must be validated BEFORE trying
+        // to read its material profile. Otherwise read() returning null can
+        // bypass archive checks through the USE_FILE fast path.
+        if (!input.extension.equals("3mf", ignoreCase = true)) return input
         require(input.canonicalPath != output.canonicalPath) {
             "元の3MFを上書きできません。"
         }
+        // Never allow an untrusted archive entry to bypass inspection just
+        // because there are no explicit process overrides (USE_FILE mode).
+        // A verified PETG JSON alone does not make the surrounding ZIP safe.
+        ZipFile(input).use { zip ->
+            val seen = HashSet<String>()
+            val entries = zip.entries().toList()
+            require(entries.size in 1..2000) {
+                "3MF内のファイル数が不正です。"
+            }
+            var totalBytes = 0L
+            for (entry in entries) {
+                val parts = entry.name.replace('\\', '/').split('/')
+                require(seen.add(entry.name) &&
+                    !entry.name.startsWith("/") &&
+                    !entry.name.contains('\\') &&
+                    parts.none { it == ".." || it == "." } &&
+                    entry.size in 0..MAX_SINGLE_ENTRY) {
+                    "3MF内部に不正なファイル名・サイズがあります。"
+                }
+                totalBytes += entry.size
+                require(totalBytes <= MAX_UNCOMPRESSED) {
+                    "3MFの展開サイズが上限を超えています。"
+                }
+            }
+        }
+        val before = NightPrintImported3mfProfile.read(input) ?: return input
         var changed = false
         val config = ZipFile(input).use { zip ->
             val entry = zip.getEntry("Metadata/project_settings.config")
