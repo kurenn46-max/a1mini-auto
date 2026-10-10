@@ -98,6 +98,10 @@ class NightPrintStressE2ETest {
             val gcode = File((vm.state.value as SlicerViewModel.SlicerState.SliceComplete)
                 .result.gcodePath)
             assertTrue("No native G-code output",gcode.isFile && gcode.length()>1000)
+            // Preserve actual executable evidence for review, not just green UI.
+            val evidence = File(ins.targetContext.getExternalFilesDir(null),
+                "nightprint_stress_" + name.replace(".3mf",".gcode"))
+            gcode.copyTo(evidence,overwrite=true)
             val expectedLayers = round(height/layer).toInt()
             assertNull("Actual Z-layer corruption",
                 NightPrintGcodeGuard.checkA1MiniFixedLayers(
@@ -120,6 +124,13 @@ class NightPrintStressE2ETest {
             assertTrue(footer.contains("; top_shell_layers = " + top))
             assertTrue(footer.contains("; bottom_shell_layers = " + bottom))
             assertTrue(footer.contains("; filament_type = PETG"))
+            // Unlike legacy fixture's density=0, explicitly configured PETG
+            // density must remain meaningful for weight/consumption estimates.
+            val density = footer.lineSequence().lastOrNull {
+                it.startsWith("; filament_density = ")
+            }?.substringAfter(" = ")?.toDoubleOrNull()
+            assertTrue("PETG density from project was lost (weight is unreliable)",
+                density != null && density > 1.0 && density < 1.5)
             assertEquals("Input 3MF was changed",originalHash,digest(model))
             println("NIGHTPRINT_STRESS_PASS input=" + name +
                 " layers=" + expectedLayers +
