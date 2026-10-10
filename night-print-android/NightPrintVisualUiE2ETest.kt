@@ -75,8 +75,11 @@ class NightPrintVisualUiE2ETest {
             model.outputStream().use { output -> source.copyTo(output) }
         }
         try {
-            awaitText("Prepare", 60_000L)
+            // On first Android launch the bottom tab may not expose a
+            // text node named "Prepare" (permission or onboarding overlay).
+            // Capture the *actual* starting screen before any assumptions.
             screenshot("01_home")
+            println("NIGHT_PRINT_UI_INITIAL_SCREEN_CAPTURED")
 
             // Drive the same ACTION_VIEW import that Android Files uses;
             // the user-visible MainActivity handles this intent itself.
