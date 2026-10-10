@@ -34,7 +34,7 @@ internal object NightPrintV34Preflight {
             OverrideMode.ORCA_DEFAULT -> false
             OverrideMode.USE_FILE -> when (expectedInFile.lowercase()) {
                 "1", "true" -> true
-                "0", "false" -> false
+                "0", "false", "" -> false // Old Orca projects inherit default OFF
                 else -> return "ナイト検査: 3MFのサポート有無が不明です。"
             }
         }
