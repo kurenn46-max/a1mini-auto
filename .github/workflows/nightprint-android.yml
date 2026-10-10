@@ -56,7 +56,7 @@ jobs:
             -storepass android -keypass android -alias androiddebugkey \
             -keyalg RSA -keysize 2048 -validity 3650 \
             -dname "CN=Android Debug,O=Android,C=US"
-      - name: Verify V2.9 one-tap and accurate Job History patch landed
+      - name: Verify NIGHT PRINT V3.4.1 one-tap and accurate G-code-derived Job History
         working-directory: /tmp/u1-nightprint
         run: |
           grep -q 'Text("ナイト設定"' app/src/main/java/com/u1/slicer/MainActivity.kt
@@ -64,8 +64,11 @@ jobs:
           grep -q 'wall_loops.*5' app/src/main/java/com/u1/slicer/MainActivity.kt
           grep -q 'sparse_infill_density.*40' app/src/main/java/com/u1/slicer/MainActivity.kt
           grep -q 'val cfg = targetAwareSliceConfig' app/src/main/java/com/u1/slicer/SlicerViewModel.kt
-          grep -q 'nozzleTemp = jobNozzleTemp' app/src/main/java/com/u1/slicer/SlicerViewModel.kt
-          grep -q 'filamentType = jobMaterial' app/src/main/java/com/u1/slicer/SlicerViewModel.kt
+          grep -Fq 'nozzleTemp = nightActual?.nozzleTemp ?: jobNozzleTemp' app/src/main/java/com/u1/slicer/SlicerViewModel.kt
+          grep -Fq 'filamentType = nightActual?.filamentType ?: jobMaterial' app/src/main/java/com/u1/slicer/SlicerViewModel.kt
+          grep -Fq 'fillDensity = nightActual?.infillDensity ?: cfg.fillDensity' app/src/main/java/com/u1/slicer/SlicerViewModel.kt
+          grep -Fq 'NightPrintV341GcodeMetadata.read(job.gcodePath)' app/src/main/java/com/u1/slicer/ui/JobsScreen.kt
+          grep -Fq 'verifiedMaterial = verifiedGcode?.filamentType' app/src/main/java/com/u1/slicer/MainActivity.kt
           grep -q 'NightPrintGcodeGuard.checkA1MiniPetg' app/src/main/java/com/u1/slicer/SlicerViewModel.kt
           grep -q 'nightPrintOfflineA1MiniTarget' app/src/main/java/com/u1/slicer/SlicerViewModel.kt
           grep -q 'NightPrintGcodeGuard.checkA1MiniMachine' app/src/main/java/com/u1/slicer/SlicerViewModel.kt
@@ -88,10 +91,10 @@ jobs:
           test -n "$APK" && test -s "$APK"
           "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose "$APK"
           "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" | tee /tmp/nightprint-apk-info.txt
-          grep -F "package: name='com.u1.slicer.orca.nightprint.v34.safe20261010'" /tmp/nightprint-apk-info.txt
+          grep -F "package: name='com.u1.slicer.orca.nightprint.v341.truth20261011'" /tmp/nightprint-apk-info.txt
       - name: Save APK (test build only; not a release)
         uses: actions/upload-artifact@v4
         with:
-          name: NIGHT_PRINT_V3.4_A1MINI_safety_test_only
+          name: NIGHT_PRINT_V3.4.1_A1MINI_display_truth_test_only
           path: /tmp/u1-nightprint/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error

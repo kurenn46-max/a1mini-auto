@@ -35,6 +35,8 @@ for src, dst in [
     ("NightPrintV34Preflight.kt", java / "NightPrintV34Preflight.kt"),
     ("NightPrintV34PreflightTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintV34PreflightTest.kt"),
     ("NightPrintGcodeParserTest.kt", root / "app/src/test/java/com/u1/slicer/gcode/NightPrintGcodeParserTest.kt"),
+    ("NightPrintV341GcodeMetadata.kt", java / "NightPrintV341GcodeMetadata.kt"),
+    ("NightPrintV341GcodeMetadataTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintV341GcodeMetadataTest.kt"),
     ("NightPrintImported3mfProfile.kt", java / "NightPrintImported3mfProfile.kt"),
     ("NightPrint3mfProcess.kt", java / "NightPrint3mfProcess.kt"),
     ("NightPrintStlTo3mf.kt", java / "NightPrintStlTo3mf.kt"),
@@ -60,11 +62,11 @@ subprocess.run(
 
 patch("app/build.gradle",
     'applicationId "com.u1.slicer.orca"',
-    'applicationId "com.u1.slicer.orca.nightprint.v34.safe20261010"')
+    'applicationId "com.u1.slicer.orca.nightprint.v341.truth20261011"')
 
 patch("app/src/main/AndroidManifest.xml",
     'android:label="@string/app_name"',
-    'android:label="NIGHT PRINT V3.4 試験版"')
+    'android:label="NIGHT PRINT V3.4.1 検証版"')
 
 patch("app/src/main/AndroidManifest.xml",
     '            <!-- Known 3MF/STL MIME types — works with both content:// and file:// -->',
@@ -953,4 +955,109 @@ patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
                         }
                     }
                     val outputValidation = validateSliceOutput(''')
+
+
+# V3.4.1. Data source reconciliation. Saved config is NOT the actual
+# process for a verified imported PETG 3MF. G-code footer & printable
+# ;LAYER_CHANGE data are authoritative for summary/history labels.
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                    val jobNozzleTemp = ntTemps.firstOrNull() ?: cfg.nozzleTemp
+                    val jobId = sliceJobDao.insert(''',
+    '''                    val jobNozzleTemp = ntTemps.firstOrNull() ?: cfg.nozzleTemp
+                    // G-code output is authoritative for recorded process.
+                    val nightActual = NightPrintV341GcodeMetadata.read(result.gcodePath)
+                    val jobId = sliceJobDao.insert(''')
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                            totalLayers = result.totalLayers,
+                            estimatedTimeSeconds = result.estimatedTimeSeconds,''',
+    '''                            totalLayers = nightActual?.printedLayers ?: result.totalLayers,
+                            estimatedTimeSeconds = result.estimatedTimeSeconds,''')
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                            layerHeight = cfg.layerHeight,
+                            fillDensity = cfg.fillDensity,
+                            nozzleTemp = jobNozzleTemp,
+                            bedTemp = cfg.bedTemp,
+                            supportEnabled = cfg.supportEnabled,
+                            filamentType = jobMaterial,''',
+    '''                            layerHeight = nightActual?.layerHeight ?: cfg.layerHeight,
+                            fillDensity = nightActual?.infillDensity ?: cfg.fillDensity,
+                            nozzleTemp = nightActual?.nozzleTemp ?: jobNozzleTemp,
+                            bedTemp = cfg.bedTemp,
+                            supportEnabled = nightActual?.supportEnabled ?: cfg.supportEnabled,
+                            filamentType = nightActual?.filamentType ?: jobMaterial,''')
+
+# Preview material must name the filament encoded in the G-code; the
+# configured slot preset might still be PLA on an external-spool A1 mini.
+patch("app/src/main/java/com/u1/slicer/MainActivity.kt",
+    '''                    SliceCompleteSummaryCard(
+                        result = s.result,''',
+    '''                    val verifiedGcode by produceState<NightPrintV341GcodeMetadata.Result?>(
+                        initialValue = null,
+                        key1 = s.result.gcodePath
+                    ) {
+                        value = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            NightPrintV341GcodeMetadata.read(s.result.gcodePath)
+                        }
+                    }
+                    SliceCompleteSummaryCard(
+                        result = s.result,
+                        verifiedMaterial = verifiedGcode?.filamentType,
+                        verifiedLayerCount = verifiedGcode?.printedLayers,''')
+patch("app/src/main/java/com/u1/slicer/MainActivity.kt",
+    '''    result: SliceResult,
+    perExtruderFilamentMm: List<Float> = emptyList(),''',
+    '''    result: SliceResult,
+    verifiedMaterial: String? = null,
+    verifiedLayerCount: Int? = null,
+    perExtruderFilamentMm: List<Float> = emptyList(),''')
+patch("app/src/main/java/com/u1/slicer/MainActivity.kt",
+    '''            InfoRow("Layers", result.totalLayers.toString())''',
+    '''            InfoRow("Layers", (verifiedLayerCount ?: result.totalLayers).toString())''')
+patch("app/src/main/java/com/u1/slicer/MainActivity.kt",
+    '''                            // Material priority: slot preset (mix slices, tool i = slot i)
+                            // -> override -> mapped slot preset -> canonical.''',
+    '''                            // One-material G-code is authoritative for display.
+                            // Slot presets may still read PLA on external-spool A1 mini.
+                            // For physical tool-space mixes, preserve slot semantics.''')
+patch("app/src/main/java/com/u1/slicer/MainActivity.kt",
+    '''                            else override?.materialType
+                                ?: mappedMaterial
+                                ?: canonicalEntry?.materialType
+                                ?: ""''',
+    '''                            else verifiedMaterial
+                                ?: override?.materialType
+                                ?: canonicalEntry?.materialType
+                                ?: mappedMaterial
+                                ?: ""''')
+
+# Old Job History rows saved the wrong config. Prefer their durable G-code
+# without rewriting historical databases or blocking the main UI thread.
+patch("app/src/main/java/com/u1/slicer/ui/JobsScreen.kt",
+    '''    val dateFormat = remember { SimpleDateFormat("MMM d, yyyy HH:mm", Locale.getDefault()) }
+
+    Card(''',
+    '''    val dateFormat = remember { SimpleDateFormat("MMM d, yyyy HH:mm", Locale.getDefault()) }
+    val verifiedJob by produceState<com.u1.slicer.NightPrintV341GcodeMetadata.Result?>(
+        initialValue = null,
+        key1 = job.gcodePath
+    ) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            com.u1.slicer.NightPrintV341GcodeMetadata.read(job.gcodePath)
+        }
+    }
+
+    Card(''')
+patch("app/src/main/java/com/u1/slicer/ui/JobsScreen.kt",
+    '''                JobStat("Layers", job.totalLayers.toString())''',
+    '''                JobStat("Layers", (verifiedJob?.printedLayers ?: job.totalLayers).toString())''')
+patch("app/src/main/java/com/u1/slicer/ui/JobsScreen.kt",
+    '''                JobStat("Layer H", "%.2f mm".format(job.layerHeight))''',
+    '''                JobStat("Layer H", "%.2f mm".format(verifiedJob?.layerHeight ?: job.layerHeight))''')
+patch("app/src/main/java/com/u1/slicer/ui/JobsScreen.kt",
+    '''                JobStat("Infill", "%.0f%%".format(job.fillDensity * 100))
+                JobStat("Nozzle", "${job.nozzleTemp}\\u00B0C")
+                JobStat("Material", job.filamentType)''',
+    '''                JobStat("Infill", "%.0f%%".format((verifiedJob?.infillDensity ?: job.fillDensity) * 100))
+                JobStat("Nozzle", "${verifiedJob?.nozzleTemp ?: job.nozzleTemp}\\u00B0C")
+                JobStat("Material", verifiedJob?.filamentType ?: job.filamentType)''')
 
