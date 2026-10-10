@@ -961,11 +961,10 @@ patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
 # process for a verified imported PETG 3MF. G-code footer & printable
 # ;LAYER_CHANGE data are authoritative for summary/history labels.
 patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
-    '''                    val cfg = _config.value
+    '''                    val jobNozzleTemp = ntTemps.firstOrNull() ?: cfg.nozzleTemp
                     val jobId = sliceJobDao.insert(''',
-    '''                    val cfg = _config.value
-                    // Use exported G-code to persist actual job parameters,
-                    // not unrelated base U1 settings (15%/PLA).
+    '''                    val jobNozzleTemp = ntTemps.firstOrNull() ?: cfg.nozzleTemp
+                    // G-code output is authoritative for recorded process.
                     val nightActual = NightPrintV341GcodeMetadata.read(result.gcodePath)
                     val jobId = sliceJobDao.insert(''')
 patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
@@ -976,16 +975,16 @@ patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
 patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
     '''                            layerHeight = cfg.layerHeight,
                             fillDensity = cfg.fillDensity,
-                            nozzleTemp = cfg.nozzleTemp,
+                            nozzleTemp = jobNozzleTemp,
                             bedTemp = cfg.bedTemp,
                             supportEnabled = cfg.supportEnabled,
-                            filamentType = cfg.filamentType,''',
+                            filamentType = jobMaterial,''',
     '''                            layerHeight = nightActual?.layerHeight ?: cfg.layerHeight,
                             fillDensity = nightActual?.infillDensity ?: cfg.fillDensity,
-                            nozzleTemp = nightActual?.nozzleTemp ?: cfg.nozzleTemp,
+                            nozzleTemp = nightActual?.nozzleTemp ?: jobNozzleTemp,
                             bedTemp = cfg.bedTemp,
                             supportEnabled = nightActual?.supportEnabled ?: cfg.supportEnabled,
-                            filamentType = nightActual?.filamentType ?: cfg.filamentType,''')
+                            filamentType = nightActual?.filamentType ?: jobMaterial,''')
 
 # Preview material must name the filament encoded in the G-code; the
 # configured slot preset might still be PLA on an external-spool A1 mini.
