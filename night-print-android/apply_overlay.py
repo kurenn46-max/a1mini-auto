@@ -56,13 +56,19 @@ subprocess.run(
     check=True,
 )
 
+# Isolate this one-time test app: each GitHub Actions run currently generates
+# a new ephemeral debug signing key, so updating an installed v33 APK with a
+# differently signed v33 APK fails on Android.  Do not uninstall the user's
+# existing app/data.  Release builds need a persistent signing key in Actions
+# secrets; this separate package is only an installation compatibility fix.
+
 patch("app/build.gradle",
     'applicationId "com.u1.slicer.orca"',
-    'applicationId "com.u1.slicer.orca.nightprint.v33"')
+    'applicationId "com.u1.slicer.orca.nightprint.v33.preview20261010"')
 
 patch("app/src/main/AndroidManifest.xml",
     'android:label="@string/app_name"',
-    'android:label="NIGHT PRINT V3.3 岡ちゃん"')
+    'android:label="NIGHT PRINT V3.3 検証版"')
 
 patch("app/src/main/AndroidManifest.xml",
     '            <!-- Known 3MF/STL MIME types — works with both content:// and file:// -->',
