@@ -142,6 +142,26 @@ with zipfile.ZipFile(fine_mf) as z:
     assert z.read("3D/3dmodel.model") == zipfile.ZipFile(three_mf).read("3D/3dmodel.model")
 print(f"NIGHT PRINT fine 3MF regression fixture: {fine_mf}")
 
+# V3.4.2 UI regression fixture: reproduces the user's exact ring case:
+# single PETG on A1 mini, nozzle 235, bed 65, 0.20mm, 20% infill,
+# 100 actual layers, no supports. No external spool/AMS runtime needed.
+user_profile = dict(profile)
+user_profile.update({"sparse_infill_density": "20%", "enable_support": "0"})
+ui_mf = dst / "nightprint_ui_ring_petg235_20pct_100layers.3mf"
+with zipfile.ZipFile(three_mf, "r") as src, zipfile.ZipFile(
+        ui_mf, "w", compression=zipfile.ZIP_DEFLATED) as dest:
+    for item in src.infolist():
+        content = src.read(item.filename)
+        if item.filename == "Metadata/project_settings.config":
+            content = json.dumps(user_profile, separators=(",", ":")).encode("utf-8")
+        dest.writestr(item.filename, content)
+with zipfile.ZipFile(ui_mf, "r") as z:
+    assert z.testzip() is None
+    assert json.loads(z.read("Metadata/project_settings.config"))["sparse_infill_density"] == "20%"
+    assert json.loads(z.read("Metadata/project_settings.config"))["filament_type"] == ["PETG"]
+    assert z.read("3D/3dmodel.model") == zipfile.ZipFile(three_mf).read("3D/3dmodel.model")
+print(f"NIGHT PRINT visual UI fixture: {ui_mf}")
+
 assert len(verts)==512 and len(tris)==1024
 with zipfile.ZipFile(three_mf) as z:
     assert json.loads(z.read("Metadata/project_settings.config"))["nozzle_temperature"]==["235"]
