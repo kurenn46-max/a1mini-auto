@@ -55,11 +55,16 @@ internal object NightPrint3mfProcess {
             "top_shell_layers",
             "bottom_shell_layers",
             "sparse_infill_density",
-            "sparse_infill_pattern"
+            "sparse_infill_pattern",
+            "enable_support"
         )
         for (key in exactKeys) {
+            // In Orca profiles, an omitted enable_support inherits the
+            // machine/process default OFF. Preserve V3.3 legacy projects
+            // while still rejecting an actual support ON/OFF mismatch.
             val wanted = expected.optString(key).takeIf { it.isNotBlank() }
-                ?: return@runCatching "ナイト検査: 3MFの" + key + "が不足しています。"
+                ?: if (key == "enable_support") "0"
+                   else return@runCatching "ナイト検査: 3MFの" + key + "が不足しています。"
             val actual = gcodeValue(key)
             if (actual != wanted) {
                 return@runCatching "ナイト検査: " + key +
@@ -160,6 +165,16 @@ internal object NightPrint3mfProcess {
                 kotlin.math.round(effective.fillDensity * 100f).toInt().toString() + "%")
             setProcess("sparse_infill_pattern", overrides.infillPattern,
                 effective.fillPattern)
+            // V3.4: A support UI override must also reach the transient 3MF.
+            // V3.3 only applied walls/infill; support ON could be silently lost.
+            setProcess("enable_support", overrides.supports,
+                if (effective.supportEnabled) "1" else "0")
+            setProcess("support_type", overrides.supportType, effective.supportType)
+            setProcess("support_on_build_plate_only", overrides.supportBuildPlateOnly,
+                if (overrides.supportBuildPlateOnly.mode == OverrideMode.OVERRIDE)
+                    if (overrides.supportBuildPlateOnly.value == true) "1" else "0"
+                else if (overrides.supportBuildPlateOnly.mode == OverrideMode.ORCA_DEFAULT)
+                    "0" else settings.optString("support_on_build_plate_only", "0"))
             if (overrides.bedTemp.mode != OverrideMode.USE_FILE) {
                 for (key in arrayOf(
                     "textured_plate_temp", "textured_plate_temp_initial_layer",
