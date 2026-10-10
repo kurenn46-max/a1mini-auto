@@ -1,6 +1,10 @@
 name: Build NIGHT PRINT for Android
 
 on:
+  pull_request:
+    paths:
+      - 'night-print-android/**'
+      - '.github/workflows/nightprint-android.yml'
   workflow_dispatch:
 
 permissions:
@@ -26,9 +30,13 @@ jobs:
         uses: android-actions/setup-android@v3
       - name: Install Android SDK 34
         run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
-      - name: Test preset parser and override mapping
+      - name: Test preset mapping and printable-layer preview regression
         working-directory: /tmp/u1-nightprint
-        run: bash ./gradlew :app:testDebugUnitTest --tests 'com.u1.slicer.NightPrintPresetTest' --no-daemon --stacktrace
+        run: |
+          bash ./gradlew :app:testDebugUnitTest \
+            --tests 'com.u1.slicer.NightPrintPresetTest' \
+            --tests 'com.u1.slicer.gcode.NightPrintGcodeParserTest' \
+            --no-daemon --stacktrace
       - name: Build isolated Android APK
         working-directory: /tmp/u1-nightprint
         run: bash ./gradlew :app:assembleDebug --no-daemon --stacktrace
