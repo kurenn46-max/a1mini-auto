@@ -81,6 +81,15 @@ jobs:
       - name: Build isolated Android APK
         working-directory: /tmp/u1-nightprint
         run: bash ./gradlew :app:assembleDebug --no-daemon --stacktrace
+      - name: Verify APK identity and signing before user download
+        working-directory: /tmp/u1-nightprint
+        run: |
+          APK="$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' | head -n 1)"
+          test -n "$APK" && test -s "$APK"
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" | tee /tmp/nightprint-apk-badging.txt
+          grep -F "package: name='com.u1.slicer.orca.nightprint.v33.preview20261010'" /tmp/nightprint-apk-badging.txt
+          grep -F "sdkVersion:" /tmp/nightprint-apk-badging.txt
       - name: Save APK (test build only; not a release)
         uses: actions/upload-artifact@v4
         with:
