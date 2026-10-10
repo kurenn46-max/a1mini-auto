@@ -3,7 +3,6 @@ package com.u1.slicer
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
-import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
@@ -81,13 +80,16 @@ class NightPrintVisualUiE2ETest {
 
             // Drive the same ACTION_VIEW import that Android Files uses;
             // the user-visible MainActivity handles this intent itself.
-            screen.runOnUiThread {
-                screen.activity.onNewIntent(
-                    Intent(Intent.ACTION_VIEW).apply {
-                        setDataAndType(Uri.fromFile(model), "model/3mf")
-                    }
-                )
-            }
+            // MainActivity.onNewIntent is protected; launch it via Android
+            // ActivityManager, same route as a real Files-app ACTION_VIEW.
+            // MainActivity is singleTask so this delivers onNewIntent.
+            ins.targetContext.startActivity(
+                Intent(ins.targetContext, MainActivity::class.java).apply {
+                    action = Intent.ACTION_VIEW
+                    setDataAndType(Uri.fromFile(model), "model/3mf")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                }
+            )
             awaitText("Slice Model", 90_000L)
             screenshot("02_prepare_petg_ring")
 
