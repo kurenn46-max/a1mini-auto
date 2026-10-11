@@ -89,6 +89,13 @@ check("02b_prepare_petg235_chip_verified" in runner and
       "05_jobs_100layers_20pct_petg" in runner and
       "06_jobs_after_swipe" in runner,
       "real on-device screenshots required before APK publication")
+check("streaming_android_logcat.txt" in runner and
+      "host_emulator_memory_monitor.txt" in runner and
+      "LOGCAT_PID" in runner,
+      "emulator crash preserves streaming logs and host memory diagnostics")
+check('Log.i("NightPrintUiGate"' in ui and
+      'Log.e("NightPrintUiGate"' in ui,
+      "real Compose test exports phase/failure markers to persisted Android logcat")
 check("OK (1 test)" in runner and "INSTRUMENTATION_CODE: -1" in runner,
       "instrumentation exit code alone cannot release APK")
 
@@ -114,7 +121,7 @@ check("NightPrintNativeSliceE2ETest" in runner and
       "NightPrintViewModelE2ETest" in runner and
       "NightPrintStressE2ETest" in runner,
       "native and stress instrumented regressions required")
-check("gpu software" in native_ci and "timeout-minutes:" in native_ci,
+check("-gpu swiftshader -feature -Vulkan" in native_ci and "timeout-minutes:" in native_ci,
       "emulator uses software GPU and bounded run")
 
 publish = native_ci.find("- name: Publish test APK ONLY")
