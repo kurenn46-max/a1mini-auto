@@ -22,6 +22,7 @@ STEPS = (
     "02b_prepare_petg235_chip_verified",
     "03_preview_after_real_native_slice",
     "04_preview_petg_metadata_verified",
+    "04b_preview_3d_render_ready",
     "05_jobs_100layers_20pct_petg",
     "06_jobs_after_swipe",
 )
@@ -63,8 +64,15 @@ def main() -> None:
         log = (EVIDENCE / f"{phase}_instrumentation.txt")
         require(log.exists(), f"no raw instrumentation log for {phase}")
         txt = log.read_text(encoding="utf-8")
-        require("OK (1 test)" in txt and "INSTRUMENTATION_CODE: -1" in txt,
+        require("OK (1 test)" in txt and not any(marker in txt for marker in (
+                    "FAILURES!!!", "INSTRUMENTATION_FAILED",
+                    "INSTRUMENTATION_ABORTED", "shortMsg=Process crashed")),
                 f"Android JUnit did not genuinely pass: {phase}")
+        # Some Android emulators omit the optional instrumentation success code.
+        # Any code that IS emitted must indicate success (-1).
+        codes = re.findall(r"INSTRUMENTATION_CODE:\\s*(-?\\d+)", txt)
+        require(not codes or all(code == "-1" for code in codes),
+                f"Android instrumentation failed or emitted an invalid code: {phase}")
 
     # Gradle exit zero alone is insufficient: require JUnit XML containing
     # ACTUALLY EXECUTED tests in each of the three native Android suites.
