@@ -1173,3 +1173,13 @@ patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
                     }
                 }''')
 print("NIGHT PRINT V3.4.2: native slice progress safely marshalled onto Android main thread.")
+
+
+# Do not reset the G-code renderer when a user pans/orbits the 3D camera.
+# Camera state synchronization already occurs separately in AndroidView.update.
+# This fixes a likely feedback-loop cause of persistent "Preparing preview…".
+patch("app/src/main/java/com/u1/slicer/MainActivity.kt",
+    '''    LaunchedEffect(parsedGcode, previewColors, viewerView, cameraState, bedSizeMm, bedSizeYMm) {''',
+    '''    // NIGHT PRINT: camera changes must not restart G-code upload/loading.
+    LaunchedEffect(parsedGcode, previewColors, viewerView, bedSizeMm, bedSizeYMm) {''')
+print("NIGHT PRINT: 3D G-code Preview camera changes no longer restart native renderer.")
