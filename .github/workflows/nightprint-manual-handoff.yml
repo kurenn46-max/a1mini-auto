@@ -105,6 +105,7 @@ jobs:
           path: |
             /tmp/u1-nightprint/app/build/outputs/apk/debug/*.apk
             /tmp/u1-nightprint/app/build/outputs/apk/debug/NIGHT_PRINT_V3.4.2_MANUAL_PHONE_UI_TEST_NOT_RELEASE.json
+            /tmp/u1-nightprint/app/src/androidTest/assets/nightprint_ui_ring_petg235_20pct_100layers.3mf
           if-no-files-found: error
           retention-days: 14
       - name: Save native Android failure details without an APK on failure
@@ -116,3 +117,33 @@ jobs:
             /tmp/u1-nightprint/app/build/outputs/androidTest-results/connected/
             /tmp/nightprint_e2e_artifacts/
           if-no-files-found: warn
+
+  # GitHub notification on SUCCESS and FAILURE; this is a MANUAL UI test
+  # handoff, not confirmation that the Android app is ready for real printing.
+  notify-manual-handoff:
+    name: Notify owner of manual APK handoff readiness
+    needs: [native-phone-handoff]
+    if: ${{ always() && github.event_name == 'pull_request' && github.event.pull_request.number == 27 && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    continue-on-error: true
+    permissions:
+      issues: write
+    steps:
+      - name: Post APK handoff result to PR #27
+        uses: actions/github-script@v7
+        env:
+          HANDOFF_RESULT: ${{ needs.native-phone-handoff.result }}
+        with:
+          script: |
+            const outcome = process.env.HANDOFF_RESULT;
+            const url = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const success = outcome === 'success';
+            const msg = success
+              ? '✅ **手動テスト用APKの準備完了**。ActionsのArtifactsから `NIGHT_PRINT_V3.4.2_MANUAL_PHONE_UI_TEST_NOT_RELEASE` をダウンロードして、3MFをスマホで読み込んでください。**これは正式版ではなく、画面テストも未認証。実機印刷はまだ行わないでください。**'
+              : '❌ **手動テスト用APKは未公開**。19件の実G-code検証やAPK検査が完了しなかったためです。';
+            const body = `@kurenn46-max NIGHT PRINT V3.4.2 スマホ検証用APKの結果\n\n${msg}\n\n[テスト・ダウンロード画面](${url})\nコミット: ${context.payload.pull_request.head.sha}\n\n※合格済みはG-codeの安全検証のみ。UIの操作検証はスマホで行います。`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: 27, body
+            });
