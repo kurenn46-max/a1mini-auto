@@ -87,4 +87,7 @@ echo "NIGHT PRINT visible UI gates PASSED; beginning native G-code safety E2E"
 adb shell am force-stop com.u1.slicer.orca.nightprint.v342.integrated20261011 || true
 bash ./gradlew :app:connectedDebugAndroidTest --no-daemon --stacktrace \
   '-Pandroid.testInstrumentationRunnerArguments.class=com.u1.slicer.NightPrintNativeSliceE2ETest,com.u1.slicer.NightPrintViewModelE2ETest,com.u1.slicer.NightPrintStressE2ETest'
+# Fail CLOSED on missing screenshots, test outputs or APK checksum;
+# evidence JSON is written ONLY after both visual phases AND native E2E pass.
+python3 "$GITHUB_WORKSPACE/night-print-android/release_evidence.py"
 echo "NIGHT PRINT both UI and native G-code safety release gates PASSED"
