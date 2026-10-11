@@ -65,6 +65,10 @@ def main() -> None:
     require(("NightPrintViewModelE2ETest", CRITICAL) in executed,
             "exact 3MF PETG235, bed65, 20%-infill and 100-layer native test not executed")
 
+    fixture = Path("/tmp/u1-nightprint/app/src/androidTest/assets/nightprint_ui_ring_petg235_20pct_100layers.3mf")
+    require(fixture.is_file() and fixture.stat().st_size > 1000,
+            "exact PETG235 20%-infill 100-layer 3MF fixture absent for user test")
+    fixture_sha = hashlib.sha256(fixture.read_bytes()).hexdigest()
     sha = hashlib.sha256(apk.read_bytes()).hexdigest()
     manifest = {
         "status": "MANUAL_PHONE_UI_TEST_CANDIDATE_NOT_RELEASE",
@@ -89,6 +93,7 @@ def main() -> None:
             "Open Job History; inspect PETG and 100-layer/20% records; swipe screen.",
             "Send screenshots and failure stage to NIGHT PRINT development chat.",
         ],
+        "manual_test_3mf": {"file": fixture.name, "sha256": fixture_sha},
         "physical_printer_tested": False,
         "real_android_ui_test_passed": False,
         "apk": {"file": apk.name, "bytes": apk.stat().st_size, "sha256": sha},
