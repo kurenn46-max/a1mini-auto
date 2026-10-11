@@ -99,6 +99,20 @@ class NightPrintVisualUiE2ETest {
             println("NIGHT_PRINT_UI_STAGE=prepare-import")
             awaitText("Slice Model", 90_000L)
             screenshot("02_prepare_petg_ring")
+            stage = "prepare-filament-petg235"
+            // User's 2026-10-11 screenshot showed PLA/220C here, despite
+            // correct PETG/235C in the G-code and Job History.
+            // Check exact visible chip text, not file name (which has PETG).
+            screen.waitUntil(30_000L) {
+                screen.onAllNodesWithText("PETG").fetchSemanticsNodes().isNotEmpty() &&
+                    screen.onAllNodesWithText("235°C").fetchSemanticsNodes().isNotEmpty()
+            }
+            assertTrue(
+                "Prepare still shows the stale PLA slot for an imported PETG file",
+                screen.onAllNodesWithText("PLA").fetchSemanticsNodes().isEmpty()
+            )
+            assertTrue("Prepare still shows the stale PLA 220°C nozzle", !containsText("220°C"))
+            screenshot("02b_prepare_petg235_chip_verified")
 
             // Simulates user actually tapping the Compose button.
             stage = "tap-slice"
