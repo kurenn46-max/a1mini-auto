@@ -1117,3 +1117,21 @@ patch("app/src/main/java/com/u1/slicer/MainActivity.kt",
                             }
                             val materialType = resolved?.first''')
 print("NIGHT PRINT V3.4.2: imported PETG235 now takes precedence over stale PLA220 slot chip in Prepare.")
+
+# Diagnostic only: reveal the actual imported Compose inputs in emulator logs.
+# This remains read-only (no mutation of the profile, mapping or G-code).
+patch("app/src/main/java/com/u1/slicer/MainActivity.kt",
+    '''                        PrintSetupSection(
+                            detectedColors = threeMfInfo?.detectedColors ?: emptyList(),''',
+    '''                        if (currentModelName.endsWith(".3mf", ignoreCase = true)) {
+                            android.util.Log.i("NightPrintPrepare",
+                                "model=" + currentModelName +
+                                " target=" + effectiveSliceTarget +
+                                " configMaterial=" + config.filamentType +
+                                " configNozzle=" + config.nozzleTemp +
+                                " extruderCount=" + config.extruderCount +
+                                " canonical=" + filamentMaterials +
+                                " detectedColors=" + (threeMfInfo?.detectedColors?.size ?: 0))
+                        }
+                        PrintSetupSection(
+                            detectedColors = threeMfInfo?.detectedColors ?: emptyList(),''')
