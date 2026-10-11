@@ -5,8 +5,11 @@ set -euo pipefail
 mkdir -p /tmp/nightprint_e2e_artifacts
 function save_evidence() {
   # A dead emulator must not hang diagnostics for the rest of the CI timeout.
-  timeout 25s adb pull /sdcard/Android/data/com.u1.slicer.orca.nightprint.v342.integrated20261011/files/ /tmp/nightprint_e2e_artifacts/app_files/ >/dev/null 2>&1 || true
-  timeout 15s adb logcat -d -t 12000 > /tmp/nightprint_e2e_artifacts/logcat.txt 2>/dev/null || true
+  # Streaming logs and host-memory samples are captured BEFORE it dies.
+  [ -z "${MONITOR_PID:-}" ] || kill "$MONITOR_PID" 2>/dev/null || true
+  [ -z "${LOGCAT_PID:-}" ] || kill "$LOGCAT_PID" 2>/dev/null || true
+  timeout 10s adb pull /sdcard/Android/data/com.u1.slicer.orca.nightprint.v342.integrated20261011/files/ /tmp/nightprint_e2e_artifacts/app_files/ >/dev/null 2>&1 || true
+  timeout 6s adb logcat -d -t 12000 > /tmp/nightprint_e2e_artifacts/logcat.txt 2>/dev/null || true
 }
 trap save_evidence EXIT
 
@@ -31,6 +34,25 @@ adb install -r -t "$TEST_APK"
 RUNNER="$APP_ID.test/androidx.test.runner.AndroidJUnitRunner"
 adb shell pm list instrumentation | tr -d '\r' | tee /tmp/nightprint_e2e_artifacts/instrumentation_packages.txt
 grep -F "$APP_ID.test/androidx.test.runner.AndroidJUnitRunner" /tmp/nightprint_e2e_artifacts/instrumentation_packages.txt
+
+# The emulator previously died before the short-lived Android instrumentation
+# process returned; post-failure adb logcat was therefore empty. Begin
+# host-side logs BEFORE any 3MF import or native slicing. Both are artifacts
+# even if the emulator process is killed by Linux OOM or graphics failure.
+adb logcat -c >/dev/null 2>&1 || true
+timeout 1500s adb logcat -v threadtime -b main -b system -b crash \
+  > /tmp/nightprint_e2e_artifacts/streaming_android_logcat.txt 2>&1 &
+LOGCAT_PID=$!
+(
+  while true; do
+    date -u '+HOST_MONITOR %Y-%m-%dT%H:%M:%SZ'
+    free -m || true
+    ps -eo pid,comm,rss,%cpu | grep -E '(^ *PID|qemu-system|emulator|java|adb)' || true
+    timeout 4s adb get-state 2>&1 || true
+    sleep 10
+  done
+) > /tmp/nightprint_e2e_artifacts/host_emulator_memory_monitor.txt 2>&1 &
+MONITOR_PID=$!
 
 run_visible_phase() {
   local cls="$1" phase="$2"
