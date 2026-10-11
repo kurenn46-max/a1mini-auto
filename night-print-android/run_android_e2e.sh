@@ -16,8 +16,16 @@ if ! grep -q 'arm64-v8a' /tmp/nightprint_emulator_abis.txt; then
 fi
 
 cd /tmp/u1-nightprint
-bash ./gradlew :app:connectedDebugAndroidTest --no-daemon --stacktrace \
-  '-Pandroid.testInstrumentationRunnerArguments.class=com.u1.slicer.NightPrintNativeSliceE2ETest,com.u1.slicer.NightPrintViewModelE2ETest,com.u1.slicer.NightPrintStressE2ETest,com.u1.slicer.NightPrintVisualUiE2ETest'
+# Stage 1: run a dedicated real UI session first and preserve the visible
+# evidence before heavier multi-geometry engine tests stress the emulator.
+echo "NIGHT PRINT: visual UI tap/swipe 3MF->Slice->Preview->Jobs test"
+if ! bash ./gradlew :app:connectedDebugAndroidTest --no-daemon --stacktrace \
+  '-Pandroid.testInstrumentationRunnerArguments.class=com.u1.slicer.NightPrintVisualUiE2ETest'; then
+  echo "::error::Visual UI test failed; inspect the stage-tagged UI log and screenshots."
+  adb pull /sdcard/Android/data/com.u1.slicer.orca.nightprint.v342.visual20261011/files/nightprint_visual_ui_evidence/ \
+    /tmp/nightprint_e2e_artifacts/visible_ui/ >/dev/null 2>&1 || true
+  exit 1
+fi
 
 # Fail CLOSED: even if all native slicer tests pass, do not publish an APK
 # unless the real Compose screen tapping/swiping test captured its evidence.
@@ -29,4 +37,11 @@ for step in 01_home 02_prepare_petg_ring 03_preview_after_real_native_slice 04_p
     exit 1
   fi
 done
-echo "NIGHT PRINT visible UI gate PASSED — APK eligible as test artifact"
+echo "NIGHT PRINT visible UI gate PASSED; beginning real native G-code safety E2E"
+
+# Stage 2: independently verify the Orca ARM64 slicer, Bambu PETG machine
+# profile, actual 100-layer G-code, plus multiple test geometries.
+adb shell am force-stop com.u1.slicer.orca.nightprint.v342.visual20261011 || true
+bash ./gradlew :app:connectedDebugAndroidTest --no-daemon --stacktrace \
+  '-Pandroid.testInstrumentationRunnerArguments.class=com.u1.slicer.NightPrintNativeSliceE2ETest,com.u1.slicer.NightPrintViewModelE2ETest,com.u1.slicer.NightPrintStressE2ETest'
+echo "NIGHT PRINT both UI and native G-code safety release gates PASSED"
