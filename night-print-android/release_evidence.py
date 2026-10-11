@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 import sys
 from datetime import datetime, timezone
+import xml.etree.ElementTree as ET
 
 APP_ID = "com.u1.slicer.orca.nightprint.v342.integrated20261011"
 STEPS = (
@@ -65,6 +66,36 @@ def main() -> None:
         require("OK (1 test)" in txt and "INSTRUMENTATION_CODE: -1" in txt,
                 f"Android JUnit did not genuinely pass: {phase}")
 
+    # Gradle exit zero alone is insufficient: require JUnit XML containing
+    # ACTUALLY EXECUTED tests in each of the three native Android suites.
+    junit_root = Path("/tmp/u1-nightprint/app/build/outputs/androidTest-results/connected")
+    junit_files = sorted(junit_root.rglob("*.xml")) if junit_root.is_dir() else []
+    require(bool(junit_files), "no connected Android JUnit XML files: native run is not verified")
+    mandatory = (
+        "NightPrintNativeSliceE2ETest",
+        "NightPrintViewModelE2ETest",
+        "NightPrintStressE2ETest",
+    )
+    observed = {name: 0 for name in mandatory}
+    for xml in junit_files:
+        try:
+            root = ET.parse(xml).getroot()
+        except ET.ParseError as exc:
+            raise SystemExit(f"::error::Unparseable Android JUnit report {xml}: {exc}")
+        for test in root.iter("testcase"):
+            cls = test.get("classname", "") or test.get("class", "")
+            name = test.get("name", "")
+            if test.find("failure") is not None or test.find("error") is not None:
+                raise SystemExit(f"::error::Android native JUnit assertion failed: {cls}.{name}")
+            if test.find("skipped") is not None:
+                continue
+            for mandatory_class in mandatory:
+                if mandatory_class in cls:
+                    observed[mandatory_class] += 1
+    for mandatory_class, count in observed.items():
+        require(count > 0, f"{mandatory_class} had zero verified executed tests")
+    print("NIGHT PRINT NATIVE ANDROID SUITES VERIFIED=" + repr(observed))
+
     manifest = {
         "status": "EMULATOR_NATIVE_AND_VISIBLE_UI_GATES_PASSED",
         "disclaimer": "Not tested on the owner's phone or physical Bambu A1 mini. Do not infer printing safety from emulator-only results.",
@@ -87,6 +118,7 @@ def main() -> None:
             "PR26_prepare_PETG235_chip": True,
             "persisted_real_job_history": True,
             "real_arm64_native_slice_regression": True,
+            "native_junit_executed_tests": observed,
             "real_gcode_startup_material_nozzle_bed_and_layer_checks": True,
             "android_emulator_only": True,
             "physical_print_tested": False,
