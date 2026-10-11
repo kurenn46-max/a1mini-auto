@@ -32,6 +32,7 @@ for src, dst in [
     ("NightPrintViewModelE2ETest.kt", root / "app/src/androidTest/java/com/u1/slicer/NightPrintViewModelE2ETest.kt"),
     ("NightPrintStressE2ETest.kt", root / "app/src/androidTest/java/com/u1/slicer/NightPrintStressE2ETest.kt"),
     ("NightPrintVisualUiE2ETest.kt", root / "app/src/androidTest/java/com/u1/slicer/NightPrintVisualUiE2ETest.kt"),
+    ("NightPrintHistoryUiE2ETest.kt", root / "app/src/androidTest/java/com/u1/slicer/NightPrintHistoryUiE2ETest.kt"),
     ("NightPrintGcodeDepositionGuard.kt", java / "NightPrintGcodeDepositionGuard.kt"),
     ("NightPrintV34Preflight.kt", java / "NightPrintV34Preflight.kt"),
     ("NightPrintV34PreflightTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintV34PreflightTest.kt"),
