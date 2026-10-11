@@ -49,6 +49,8 @@ jobs:
             -storepass android -keypass android -alias androiddebugkey \
             -keyalg RSA -keysize 2048 -validity 3650 \
             -dname "CN=Android Debug,O=Android,C=US"
+      - name: Verify NIGHT PRINT PR25+PR26 integration release contract (STATIC ONLY)
+        run: python3 night-print-android/validate_release_contract.py
       - name: All JVM regression tests (release gate)
         working-directory: /tmp/u1-nightprint
         run: bash ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
