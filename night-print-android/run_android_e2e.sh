@@ -86,8 +86,16 @@ run_visible_phase() {
     echo "::error::${phase}: Android instrumentation failed or timed out"
     exit 1
   fi
-  if ! grep -Fq 'OK (1 test)' "$evidence" || ! grep -Fq 'INSTRUMENTATION_CODE: -1' "$evidence"; then
-    echo "::error::${phase}: missing explicit Android JUnit success; no release APK"
+  # Some Android emulators print 'OK (1 test)' without INSTRUMENTATION_CODE.
+  # Accept genuine JUnit success, reject crashes and any explicit failure code.
+  if ! grep -Fq 'OK (1 test)' "$evidence" || \
+     grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|INSTRUMENTATION_ABORTED|shortMsg=Process crashed' "$evidence"; then
+    echo "::error::${phase}: Android JUnit did not pass"
+    exit 1
+  fi
+  if grep -Fq 'INSTRUMENTATION_CODE:' "$evidence" && \
+     ! grep -Fq 'INSTRUMENTATION_CODE: -1' "$evidence"; then
+    echo "::error::${phase}: Android instrumentation returned failure code"
     exit 1
   fi
 }
@@ -101,7 +109,7 @@ run_visible_phase com.u1.slicer.NightPrintVisualUiE2ETest preview
 # Download preview screenshots BEFORE leaving the preview process. This
 # catches failures to produce actual screen evidence rather than unit mocks.
 adb pull /sdcard/Android/data/com.u1.slicer.orca.nightprint.v342.integrated20261011/files/nightprint_visual_ui_evidence/ /tmp/nightprint_e2e_artifacts/visible_ui/ >/dev/null
-for step in 01_home 02_prepare_petg_ring 02b_prepare_petg235_chip_verified 03_preview_after_real_native_slice 04_preview_petg_metadata_verified; do
+for step in 01_home 02_prepare_petg_ring 02b_prepare_petg235_chip_verified 03_preview_after_real_native_slice 04_preview_petg_metadata_verified 04b_preview_3d_render_ready; do
   if ! find /tmp/nightprint_e2e_artifacts/visible_ui -name "ui_${step}.png" -size +2000c | grep -q .; then
     echo "::error::Phase 1 missing real screenshot ${step}; no release APK"
     exit 1
@@ -118,7 +126,7 @@ run_visible_phase com.u1.slicer.NightPrintHistoryUiE2ETest history
 
 # Fail CLOSED until BOTH phases have pixel evidence and correct job history.
 adb pull /sdcard/Android/data/com.u1.slicer.orca.nightprint.v342.integrated20261011/files/nightprint_visual_ui_evidence/ /tmp/nightprint_e2e_artifacts/visible_ui/ >/dev/null
-for step in 01_home 02_prepare_petg_ring 02b_prepare_petg235_chip_verified 03_preview_after_real_native_slice 04_preview_petg_metadata_verified 05_jobs_100layers_20pct_petg 06_jobs_after_swipe; do
+for step in 01_home 02_prepare_petg_ring 02b_prepare_petg235_chip_verified 03_preview_after_real_native_slice 04_preview_petg_metadata_verified 04b_preview_3d_render_ready 05_jobs_100layers_20pct_petg 06_jobs_after_swipe; do
   if ! find /tmp/nightprint_e2e_artifacts/visible_ui -name "ui_${step}.png" -size +2000c | grep -q .; then
     echo "::error::Missing visible UI screenshot for ${step}, APK release gate failed"
     exit 1
