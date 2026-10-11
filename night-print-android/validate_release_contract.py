@@ -99,8 +99,17 @@ check("streaming_android_logcat.txt" in runner and
 check('Log.i("NightPrintUiGate"' in ui and
       'Log.e("NightPrintUiGate"' in ui,
       "real Compose test exports phase/failure markers to persisted Android logcat")
-check("OK (1 test)" in runner and "INSTRUMENTATION_CODE: -1" in runner,
-      "instrumentation exit code alone cannot release APK")
+check("OK (1 test)" in runner and "INSTRUMENTATION_CODE: -1" in runner and
+      "FAILURES!!!" in runner and "INSTRUMENTATION_ABORTED" in runner,
+      "JUnit OK accepted if result code absent; explicit Android errors still blocked")
+check('stage = "preview-render-ready"' in ui and
+      '!containsText("Preparing preview")' in ui and
+      "04b_preview_3d_render_ready" in ui and
+      "04b_preview_3d_render_ready" in runner and
+      "04b_preview_3d_render_ready" in evidence,
+      "Preview no longer treated as PASS while 3D renderer is still loading")
+check('LaunchedEffect(parsedGcode, previewColors, viewerView, bedSizeMm, bedSizeYMm)' in overlay,
+      "G-code renderer no longer reinitializes on camera state changes")
 
 check('nightprint_ui_ring_petg235_20pct_100layers.3mf' in fixture and
       '"sparse_infill_density": "20%"' in fixture and
