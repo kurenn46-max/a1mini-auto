@@ -7,6 +7,12 @@ on:
       - 'night-print-android/**'
       - '.github/workflows/nightprint-android.yml'
 
+# New commits invalidate previous test attempts for the same pull request.
+# Cancel stale runs so only the most recent source can publish a test APK.
+concurrency:
+  group: nightprint-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -45,6 +51,8 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0"
       - name: Validate Python patch syntax
         run: python3 -m py_compile night-print-android/apply_overlay.py
+      - name: Verify NIGHT PRINT PR25+PR26 integration release contract (STATIC ONLY)
+        run: python3 night-print-android/validate_release_contract.py
       - name: Test full JVM unit suite (incl NIGHT PRINT)
         working-directory: /tmp/u1-nightprint
         run: bash ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
@@ -91,7 +99,7 @@ jobs:
           test -n "$APK" && test -s "$APK"
           "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose "$APK"
           "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" | tee /tmp/nightprint-apk-info.txt
-          grep -F "package: name='com.u1.slicer.orca.nightprint.v342.visual20261011'" /tmp/nightprint-apk-info.txt
+          grep -F "package: name='com.u1.slicer.orca.nightprint.v342.integrated20261011'" /tmp/nightprint-apk-info.txt
       # SECURITY RELEASE GATE: do not publish an APK from this JVM/build-only
       # workflow. Only the native E2E workflow can publish the test APK,
       # and only after the real Compose UI import/tap/swipe/screenshots pass.

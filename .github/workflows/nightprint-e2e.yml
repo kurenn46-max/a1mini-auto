@@ -9,6 +9,12 @@ on:
       - 'night-print-android/**'
       - '.github/workflows/nightprint-e2e.yml'
 
+# New commits invalidate previous test attempts for the same pull request.
+# Cancel stale runs so only the most recent source can publish a test APK.
+concurrency:
+  group: nightprint-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -49,6 +55,8 @@ jobs:
             -storepass android -keypass android -alias androiddebugkey \
             -keyalg RSA -keysize 2048 -validity 3650 \
             -dname "CN=Android Debug,O=Android,C=US"
+      - name: Verify NIGHT PRINT PR25+PR26 integration release contract (STATIC ONLY)
+        run: python3 night-print-android/validate_release_contract.py
       - name: All JVM regression tests (release gate)
         working-directory: /tmp/u1-nightprint
         run: bash ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
@@ -62,7 +70,7 @@ jobs:
           test -s "$APK"
           "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose "$APK"
           "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" | tee /tmp/nightprint_v342_package.txt
-          grep -F "package: name='com.u1.slicer.orca.nightprint.v342.visual20261011'" /tmp/nightprint_v342_package.txt
+          grep -F "package: name='com.u1.slicer.orca.nightprint.v342.integrated20261011'" /tmp/nightprint_v342_package.txt
       - name: Enable KVM for fast Android emulator
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -78,18 +86,20 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_5
-          ram-size: 4096M
-          heap-size: 512M
+          ram-size: 3072M
+          heap-size: 384M
           emulator-boot-timeout: 600
-          emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          emulator-options: -no-snapshot -no-window -gpu swiftshader -feature -Vulkan -noaudio -no-boot-anim -camera-back none -camera-front none
           disable-animations: true
           script: bash "$GITHUB_WORKSPACE/night-print-android/run_android_e2e.sh"
       - name: Publish test APK ONLY after real UI taps/swipes/screenshots + native E2E pass
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: NIGHT_PRINT_V3.4.2_VISUAL_UI_GATE_PASS_test_apk
-          path: /tmp/u1-nightprint/app/build/outputs/apk/debug/*.apk
+          name: NIGHT_PRINT_V3.4.2_INTEGRATED_ALL_GATES_PASS_test_apk
+          path: |
+            /tmp/u1-nightprint/app/build/outputs/apk/debug/*.apk
+            /tmp/u1-nightprint/app/build/outputs/apk/debug/NIGHT_PRINT_V3.4.2_INTEGRATED_EVIDENCE.json
           if-no-files-found: error
 
       - name: Save device test reports even if G-code fails
@@ -103,3 +113,70 @@ jobs:
             /tmp/u1-nightprint/app/build/outputs/androidTest-results/connected/
             /tmp/nightprint_emulator_abis.txt
             /tmp/nightprint_e2e_artifacts/
+
+  # GitHub-first result notification; runs once this exact V3.4.2
+  # release-gate job completes (SUCCESS or FAILURE), regardless of the
+  # hourly ChatGPT backup watcher. Runs on an isolated least-privilege job.
+  # A failed notification must NEVER change native slicing or APK safety gates.
+  notify-pr27:
+    name: Notify owner on PR #27 of completed test result
+    needs: [native-slice-e2e]
+    if: ${{ always() && github.event_name == 'pull_request' && github.event.pull_request.number == 27 && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    continue-on-error: true
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Post pass/fail result and direct mention to the PR thread
+        uses: actions/github-script@v7
+        env:
+          NIGHT_GATE_RESULT: ${{ needs.native-slice-e2e.result }}
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            if (!pr || pr.number !== 27) {
+              core.setFailed('Missing expected PR #27 context');
+              return;
+            }
+            const result = process.env.NIGHT_GATE_RESULT;
+            const isSuccess = result === 'success';
+            const label = isSuccess ? '✅ 自動テスト全合格' :
+              result === 'failure' ? '❌ 自動テスト不合格' :
+              result === 'cancelled' ? '⏹️ 自動テスト中断' : '⚠️ 自動テスト未完了';
+            const artifactLine = isSuccess
+              ? '検証用APK：**全ゲート合格でActionsのArtifactsに公開**（ただし実機印刷は未確認）。'
+              : '検証用APK：**公開禁止／未合格**。通常ビルド成功だけでは配布しません。';
+            const run = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const marker = `<!-- NIGHT_PRINT_V342_PR27_RESULT_RUN_${context.runId}_ATTEMPT_${context.runAttempt} -->`;
+            const body = [
+              marker,
+              '@kurenn46-max NIGHT PRINT V3.4.2 のGitHubテストが終了しました。',
+              '',
+              `**結果：${label}**`,
+              `検査：Native + Visual UI Release Gate（${result}）`,
+              `検査対象コミット：${pr.head.sha}`,
+              `実行結果・失敗工程・Artifacts：[GitHub Actionsの結果を開く](${run})`,
+              artifactLine,
+              '',
+              '※これはGitHubの検証通知です。A1 miniへの印刷や実機接続は行っていません。',
+              '※スマホのプッシュ表示にはGitHub Mobileの通知許可が必要です。'
+            ].join('\n');
+            // Retry/manual re-runs must not create identical notification
+            // comments. Preserve one notification per (run, attempt).
+            const {owner, repo} = context.repo;
+            const issue_number = pr.number;
+            const all = await github.paginate(github.rest.issues.listComments,
+              {owner, repo, issue_number, per_page: 100});
+            const previous = all.find(c => (c.body || '').includes(marker));
+            if (previous) {
+              await github.rest.issues.updateComment({
+                owner, repo, comment_id: previous.id, body
+              });
+              core.notice('Updated existing NIGHT PRINT result comment: ' + run);
+            } else {
+              const response = await github.rest.issues.createComment({
+                owner, repo, issue_number, body
+              });
+              core.notice('Posted NIGHT PRINT result comment: ' + response.data.html_url);
+            }

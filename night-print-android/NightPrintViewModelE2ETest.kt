@@ -179,6 +179,20 @@ class NightPrintViewModelE2ETest {
                     gcode.absolutePath, expectedLayerMm, expectedLayerCount = expectedLayers))
             assertTrue("Expected ${expectedWalls} wall loops", footer.contains("; wall_loops = ${expectedWalls}"))
             assertTrue("Expected PETG filament", footer.contains("; filament_type = PETG"))
+            // Actual executable first-layer heating, not a 3MF config label.
+            if (fixtureName == "nightprint_ui_ring_petg235_20pct_100layers.3mf") {
+                val bedHeaterLines = gcode.useLines { lines ->
+                    lines.takeWhile { it.trim() != ";LAYER_CHANGE" }
+                        .map { it.trim() }
+                        .filter { it.startsWith("M140 ") || it.startsWith("M190 ") }
+                        .take(50).toList()
+                }
+                println("NIGHT_PRINT_UI_REAL_BED_HEATING=" + bedHeaterLines.joinToString(" | "))
+                val bed65 = Regex("""^M(?:140|190)\s+S65(?:\.0+)?(?:\s|;|$)""")
+                assertTrue("User 3MF asks bed 65C but executable startup does not set 65C",
+                    bedHeaterLines.any { bed65.containsMatchIn(it) })
+            }
+
             assertEquals(SlicerTarget.BambuA1Mini, vm.effectiveSliceTarget.value)
             println("NIGHT_PRINT_REAL_UI_TEST_PASSED")
         } finally {
@@ -188,6 +202,19 @@ class NightPrintViewModelE2ETest {
 
     @Test fun prepareFlowRawStlPetgMustProduceExecutable235C() {
         checkedPrepareFlow("nightprint_ring_20x24x20.stl")
+    }
+
+
+    @Test fun exactUser3mf20Percent100LayersPetg235Bed65MustMatchRealGcode() {
+        // Identical to the visible Compose E2E fixture. This verifies the
+        // underlying executable G-code, not just correct Prepare chip text.
+        checkedPrepareFlow(
+            "nightprint_ui_ring_petg235_20pct_100layers.3mf",
+            configureMaterial = false, applyNightPreset = false,
+            expectedLayerMm = 0.20f, expectedWalls = 5,
+            expectedInfill = 20, expectedTop = 5, expectedBottom = 5,
+            expectedPattern = "gyroid"
+        )
     }
 
     @Test fun prepareFlowImported3mfPetgMustProduceExecutable235C() {

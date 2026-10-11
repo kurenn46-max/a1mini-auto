@@ -80,6 +80,7 @@ class NightPrintVisualUiE2ETest {
             // text node named "Prepare" (permission or onboarding overlay).
             // Capture the *actual* starting screen before any assumptions.
             println("NIGHT_PRINT_UI_STAGE=home")
+            android.util.Log.i("NightPrintUiGate", "stage=home")
             screenshot("01_home")
             println("NIGHT_PRINT_UI_INITIAL_SCREEN_CAPTURED")
 
@@ -96,15 +97,34 @@ class NightPrintVisualUiE2ETest {
                 }
             )
             stage = "prepare-import"
+            android.util.Log.i("NightPrintUiGate", "stage=prepare-import")
             println("NIGHT_PRINT_UI_STAGE=prepare-import")
             awaitText("Slice Model", 90_000L)
             screenshot("02_prepare_petg_ring")
+            stage = "prepare-filament-petg235"
+            android.util.Log.i("NightPrintUiGate", "stage=prepare-filament-petg235")
+            // User's 2026-10-11 screenshot showed PLA/220C here, despite
+            // correct PETG/235C in the G-code and Job History.
+            // Check exact visible chip text, not file name (which has PETG).
+            screen.waitUntil(30_000L) {
+                screen.onAllNodesWithText("PETG").fetchSemanticsNodes().isNotEmpty() &&
+                    screen.onAllNodesWithText("235°C").fetchSemanticsNodes().isNotEmpty()
+            }
+            assertTrue(
+                "Prepare still shows the stale PLA slot for an imported PETG file",
+                screen.onAllNodesWithText("PLA").fetchSemanticsNodes().isEmpty()
+            )
+            assertTrue("Prepare still shows the stale PLA 220°C nozzle", !containsText("220°C"))
+            screenshot("02b_prepare_petg235_chip_verified")
+
 
             // Simulates user actually tapping the Compose button.
             stage = "tap-slice"
+            android.util.Log.i("NightPrintUiGate", "stage=tap-slice")
             println("NIGHT_PRINT_UI_STAGE=tap-slice")
             tapText("Slice Model")
             stage = "preview-summary"
+            android.util.Log.i("NightPrintUiGate", "stage=preview-summary")
             println("NIGHT_PRINT_UI_STAGE=preview-summary")
             awaitText("Slice Summary", 240_000L)
             screenshot("03_preview_after_real_native_slice")
@@ -119,33 +139,44 @@ class NightPrintVisualUiE2ETest {
                 !containsText("Filament 1 · PLA")
             )
             assertTrue("Preview has no 100-layer evidence", containsText("100"))
+
             screenshot("04_preview_petg_metadata_verified")
 
-            stage = "tap-jobs"
-            println("NIGHT_PRINT_UI_STAGE=tap-jobs")
-            // Diagnostic: report precisely what is on-screen, rather than
-            // assuming a Jobs tab is clickable based on labels alone.
-            println("NIGHT_PRINT_UI_JOBS_NODE_COUNT=" +
-                screen.onAllNodesWithText("Jobs", substring = true).fetchSemanticsNodes().size)
-            tapText("Jobs")
-            stage = "jobs-open"
-            println("NIGHT_PRINT_UI_STAGE=jobs-open")
-            awaitText("Job History", 30_000L)
-            stage = "jobs-values"
-            println("NIGHT_PRINT_UI_STAGE=jobs-values")
-            screenshot("05_jobs_header_before_value_wait")
-            screen.waitUntil(45_000L) {
-                containsText("100") && containsText("20%") && containsText("PETG")
-            }
-            assertTrue("Job History still incorrectly shows 15% infill", !containsText("15%"))
-            screenshot("05_jobs_100layers_20pct_petg")
-            // Real touchscreen gesture, to catch broken scrolling/navigation.
-            screen.onRoot().performTouchInput { swipeUp() }
-            awaitText("Job History", 10_000L)
-            screenshot("06_jobs_after_swipe")
-            println("NIGHT_PRINT_VISIBLE_UI_GATE_PASS")
+            // 100-layer metadata is not proof of 3D geometry on screen.
+            // CI 38181398349 showed "Preparing preview…" indefinitely
+            // with the summary already present. Wait for renderer readiness.
+            stage = "preview-render-ready"
+            android.util.Log.i("NightPrintUiGate", "stage=preview-render-ready")
+            screen.waitUntil(90_000L) { !containsText("Preparing preview") }
+            assertTrue("G-code 3D preview is still preparing", !containsText("Preparing preview"))
+            screenshot("04b_preview_3d_render_ready")
+            android.util.Log.i("NightPrintUiGate", "stage=preview-render-ready PASS")
+
+            // Finish this instrumentation session after checking the real
+            // native slice, preview, filament, layer count and screenshots.
+            // Re-enter Jobs in a SEPARATE cold Activity process to release
+            // preview/3D renderer resources before accessibility traversal.
+            // A failed/absent later history session still BLOCKS the APK.
+            stage = "preview-complete"
+            android.util.Log.i("NightPrintUiGate", "stage=preview-complete")
+            println("NIGHT_PRINT_VISIBLE_PREVIEW_GATE_PASS")
+
+            // All screen assertions and pixel evidence are complete. Previous
+            // Android emulator logs then stalled during ComposeRule/Activity
+            // teardown while the heavyweight 3D Preview Surface was foreground.
+            // Put the app in background *after* proof is captured, allowing
+            // graphics buffers to quiesce before instrumentation finalization.
+            // This is never a print command and changes no real app behavior.
+            val sentHome = runCatching {
+                ins.uiAutomation.performGlobalAction(
+                    android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME
+                )
+            }.getOrDefault(false)
+            android.util.Log.i("NightPrintUiGate", "stage=preview-backgrounded home=${sentHome}")
+            Thread.sleep(750L)
         } catch (err: Throwable) {
             println("NIGHT_PRINT_UI_FAILED_AT=" + stage + " error=" + err)
+            android.util.Log.e("NightPrintUiGate", "failed at " + stage, err)
             runCatching {
                 val tree = screen.onRoot().fetchSemanticsNode().toString()
                 println("NIGHT_PRINT_UI_SEMANTICS_BEGIN\\n" + tree.take(14000) +

@@ -32,6 +32,7 @@ for src, dst in [
     ("NightPrintViewModelE2ETest.kt", root / "app/src/androidTest/java/com/u1/slicer/NightPrintViewModelE2ETest.kt"),
     ("NightPrintStressE2ETest.kt", root / "app/src/androidTest/java/com/u1/slicer/NightPrintStressE2ETest.kt"),
     ("NightPrintVisualUiE2ETest.kt", root / "app/src/androidTest/java/com/u1/slicer/NightPrintVisualUiE2ETest.kt"),
+    ("NightPrintHistoryUiE2ETest.kt", root / "app/src/androidTest/java/com/u1/slicer/NightPrintHistoryUiE2ETest.kt"),
     ("NightPrintGcodeDepositionGuard.kt", java / "NightPrintGcodeDepositionGuard.kt"),
     ("NightPrintV34Preflight.kt", java / "NightPrintV34Preflight.kt"),
     ("NightPrintV34PreflightTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintV34PreflightTest.kt"),
@@ -63,11 +64,11 @@ subprocess.run(
 
 patch("app/build.gradle",
     'applicationId "com.u1.slicer.orca"',
-    'applicationId "com.u1.slicer.orca.nightprint.v342.visual20261011"')
+    'applicationId "com.u1.slicer.orca.nightprint.v342.integrated20261011"')
 
 patch("app/src/main/AndroidManifest.xml",
     'android:label="@string/app_name"',
-    'android:label="NIGHT PRINT V3.4.2 UI検証版"')
+    'android:label="NIGHT PRINT V3.4.2 統合検証版"')
 
 patch("app/src/main/AndroidManifest.xml",
     '            <!-- Known 3MF/STL MIME types — works with both content:// and file:// -->',
@@ -1062,3 +1063,123 @@ patch("app/src/main/java/com/u1/slicer/ui/JobsScreen.kt",
                 JobStat("Nozzle", "${verifiedJob?.nozzleTemp ?: job.nozzleTemp}\\u00B0C")
                 JobStat("Material", verifiedJob?.filamentType ?: job.filamentType)''')
 
+
+# V3.4.2 Prepare regression: the user's single-material configured 3MF
+# correctly sliced PETG235, yet the Filament chip showed PLA220. For a
+# non-canonical single-filament file, upstream displayedFilamentMaterials
+# may be empty OR resolve a stale printer PLA220 slot. The imported
+# project's _config profile must take priority for a one-material 3MF.
+#
+# This is a display fix only: DO NOT adjust the G-code, file profile, spool
+# mapping, or override behavior. Respect an explicitly selected user material.
+patch("app/src/main/java/com/u1/slicer/MainActivity.kt",
+    '''                            filamentMaterials = filamentMaterials,
+                            anyMixAssigned = anyMixAssigned,''',
+    '''                            filamentMaterials = filamentMaterials,
+                            nightImportedSingleFilament = if (
+                                effectiveSliceTarget == SlicerTarget.BambuA1Mini &&
+                                config.extruderCount == 1 &&
+                                currentModelName.endsWith(".3mf", ignoreCase = true)
+                            ) config.filamentType to config.nozzleTemp else null,
+                            anyMixAssigned = anyMixAssigned,''')
+patch("app/src/main/java/com/u1/slicer/MainActivity.kt",
+    '''    filamentMaterials: List<Pair<String, Int>> = emptyList(),
+    onMappingChange: (List<Int>) -> Unit,''',
+    '''    filamentMaterials: List<Pair<String, Int>> = emptyList(),
+    // A1 mini single 3MF importer has already resolved this from the
+    // embedded process profile; fallback only when no canonical metadata.
+    nightImportedSingleFilament: Pair<String, Int>? = null,
+    onMappingChange: (List<Int>) -> Unit,''')
+patch("app/src/main/java/com/u1/slicer/MainActivity.kt",
+    '''                            val resolved = filamentMaterials.getOrNull(colorIdx)
+                            val materialType = resolved?.first''',
+    '''                            val singleImportedSource = if (
+                                colorIdx == 0 && detectedColors.size <= 1 &&
+                                override?.materialType == null
+                            ) nightImportedSingleFilament else null
+                            // The imported profile is the source of truth for a
+                            // single-material A1 mini 3MF. A stale canonical
+                            // material/preset may still say PLA220: do not let it
+                            // override the imported PETG235 chip. Explicit user
+                            // material choices still win (only this single 3MF).
+                            val hasExplicitSingleChoice =
+                                nightImportedSingleFilament != null && colorIdx == 0 &&
+                                detectedColors.size <= 1 && override?.materialType != null
+                            val resolved = if (hasExplicitSingleChoice) null else
+                                singleImportedSource ?: filamentMaterials.getOrNull(colorIdx)
+                            if (singleImportedSource != null ||
+                                (nightImportedSingleFilament != null && colorIdx == 0)) {
+                                android.util.Log.i("NightPrintPrepare",
+                                    "source=" + nightImportedSingleFilament +
+                                    " canonical=" + filamentMaterials.getOrNull(colorIdx) +
+                                    " override=" + override?.materialType +
+                                    " displayed=" + resolved)
+                            }
+                            val materialType = resolved?.first''')
+print("NIGHT PRINT V3.4.2: imported PETG235 now takes precedence over stale PLA220 slot chip in Prepare.")
+
+# Diagnostic only: reveal the actual imported Compose inputs in emulator logs.
+# This remains read-only (no mutation of the profile, mapping or G-code).
+patch("app/src/main/java/com/u1/slicer/MainActivity.kt",
+    '''                        PrintSetupSection(
+                            detectedColors = threeMfInfo?.detectedColors ?: emptyList(),''',
+    '''                        if (currentModelName.endsWith(".3mf", ignoreCase = true)) {
+                            android.util.Log.i("NightPrintPrepare",
+                                "model=" + currentModelName +
+                                " target=" + effectiveSliceTarget +
+                                " configMaterial=" + config.filamentType +
+                                " configNozzle=" + config.nozzleTemp +
+                                " extruderCount=" + config.extruderCount +
+                                " canonical=" + filamentMaterials +
+                                " detectedColors=" + (threeMfInfo?.detectedColors?.size ?: 0))
+                        }
+                        PrintSetupSection(
+                            detectedColors = threeMfInfo?.detectedColors ?: emptyList(),''')
+
+# NIGHT PRINT V3.4.2 native progress callback threading.
+# Confirmed Android instrumentation failure, CI 38146633467:
+# ViewRootImpl$CalledFromWrongThreadException from NativeLibrary.onSliceProgress
+# -> SlicerViewModel.startSlicing listener -> Compose state recomposition.
+# Native slicing callbacks are called on worker threads. NEVER let them
+# update Compose-visible StateFlow or LongOpService there. Dispatch onto the
+# main thread and ignore late events once the slice state has changed.
+# This does not modify native geometry, material profile or G-code.
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                var maxPct = 0
+                native.progressListener = { pct, stage ->
+                    // Guard: don't override Loading — selectPlate() may have set it to initiate
+                    // a plate switch while this slice was still running. Overriding Loading would
+                    // remount InlineModelPreview against the stale native state and produce
+                    // wrong preview colours on the new plate.
+                    val cur = _state.value
+                    if (cur !is SlicerState.Loading && cur !is SlicerState.Idle) {
+                        if (pct > maxPct) maxPct = pct
+                        _state.value = SlicerState.Slicing(maxPct, stage)
+                        LongOpService.update(context, maxPct, stage)
+                    }
+                }''',
+    '''                var maxPct = 0
+                native.progressListener = { pct, stage ->
+                    // NativeLibrary invokes this on worker threads; Compose
+                    // StateFlow collection must recompose on Android main.
+                    // Also ignore late callbacks after slice completion or a
+                    // plate transition. Do not regress into stale Preview.
+                    viewModelScope.launch(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                        if (_state.value is SlicerState.Slicing) {
+                            if (pct > maxPct) maxPct = pct
+                            _state.value = SlicerState.Slicing(maxPct, stage)
+                            LongOpService.update(context, maxPct, stage)
+                        }
+                    }
+                }''')
+print("NIGHT PRINT V3.4.2: native slice progress safely marshalled onto Android main thread.")
+
+
+# Do not reset the G-code renderer when a user pans/orbits the 3D camera.
+# Camera state synchronization already occurs separately in AndroidView.update.
+# This fixes a likely feedback-loop cause of persistent "Preparing preview…".
+patch("app/src/main/java/com/u1/slicer/MainActivity.kt",
+    '''    LaunchedEffect(parsedGcode, previewColors, viewerView, cameraState, bedSizeMm, bedSizeYMm) {''',
+    '''    // NIGHT PRINT: camera changes must not restart G-code upload/loading.
+    LaunchedEffect(parsedGcode, previewColors, viewerView, bedSizeMm, bedSizeYMm) {''')
+print("NIGHT PRINT: 3D G-code Preview camera changes no longer restart native renderer.")
