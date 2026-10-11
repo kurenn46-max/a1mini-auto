@@ -70,7 +70,7 @@ def main() -> None:
                 f"Android JUnit did not genuinely pass: {phase}")
         # Some Android emulators omit the optional instrumentation success code.
         # Any code that IS emitted must indicate success (-1).
-        codes = re.findall(r"INSTRUMENTATION_CODE:\\s*(-?\\d+)", txt)
+        codes = re.findall(r"INSTRUMENTATION_CODE:\s*(-?\d+)", txt)
         require(not codes or all(code == "-1" for code in codes),
                 f"Android instrumentation failed or emitted an invalid code: {phase}")
 
