@@ -147,7 +147,7 @@ class NightPrintVisualUiE2ETest {
         } catch (err: Throwable) {
             println("NIGHT_PRINT_UI_FAILED_AT=" + stage + " error=" + err)
             runCatching {
-                val tree = screen.onRoot().printToString(maxDepth = 12)
+                val tree = screen.onRoot().fetchSemanticsNode().toString()
                 println("NIGHT_PRINT_UI_SEMANTICS_BEGIN\\n" + tree.take(14000) +
                     "\\nNIGHT_PRINT_UI_SEMANTICS_END")
             }.onFailure { println("NIGHT_PRINT_UI_SEMANTICS_UNAVAILABLE=" + it) }
