@@ -1,4 +1,4 @@
-name: Build NIGHT PRINT V3.3 for Android
+name: NIGHT PRINT V3.4.2 USER HANDS-ON BETA (not validated)
 
 on:
   workflow_dispatch:
@@ -92,10 +92,13 @@ jobs:
           "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose "$APK"
           "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" | tee /tmp/nightprint-apk-info.txt
           grep -F "package: name='com.u1.slicer.orca.nightprint.v342.visual20261011'" /tmp/nightprint-apk-info.txt
-      # SECURITY RELEASE GATE: do not publish an APK from this JVM/build-only
-      # workflow. Only the native E2E workflow can publish the test APK,
-      # and only after the real Compose UI import/tap/swipe/screenshots pass.
-      - name: Hold APK until visual Android E2E passes
-        run: |
-          echo "Build succeeded, but publication is gated on nightprint-e2e.yml."
-          echo "This job intentionally does not upload an APK."
+      # USER-REQUESTED EARLY ACCESS: build is verified and JVM-tested, but
+      # native emulator UI E2E has NOT passed. Keep this artifact explicitly
+      # labelled UNVERIFIED and never treat it as a production release.
+      # The other native+visual E2E workflow still enforces its safety gate.
+      - name: Publish USER-TEST-ONLY unverified APK (no production claim)
+        uses: actions/upload-artifact@v4
+        with:
+          name: NIGHT_PRINT_V3.4.2_USER_TEST_UNVERIFIED_APK
+          path: /tmp/u1-nightprint/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
