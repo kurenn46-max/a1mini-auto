@@ -80,6 +80,7 @@ class NightPrintVisualUiE2ETest {
             // text node named "Prepare" (permission or onboarding overlay).
             // Capture the *actual* starting screen before any assumptions.
             println("NIGHT_PRINT_UI_STAGE=home")
+            android.util.Log.i("NightPrintUiGate", "stage=home")
             screenshot("01_home")
             println("NIGHT_PRINT_UI_INITIAL_SCREEN_CAPTURED")
 
@@ -96,10 +97,12 @@ class NightPrintVisualUiE2ETest {
                 }
             )
             stage = "prepare-import"
+            android.util.Log.i("NightPrintUiGate", "stage=prepare-import")
             println("NIGHT_PRINT_UI_STAGE=prepare-import")
             awaitText("Slice Model", 90_000L)
             screenshot("02_prepare_petg_ring")
             stage = "prepare-filament-petg235"
+            android.util.Log.i("NightPrintUiGate", "stage=prepare-filament-petg235")
             // User's 2026-10-11 screenshot showed PLA/220C here, despite
             // correct PETG/235C in the G-code and Job History.
             // Check exact visible chip text, not file name (which has PETG).
@@ -117,9 +120,11 @@ class NightPrintVisualUiE2ETest {
 
             // Simulates user actually tapping the Compose button.
             stage = "tap-slice"
+            android.util.Log.i("NightPrintUiGate", "stage=tap-slice")
             println("NIGHT_PRINT_UI_STAGE=tap-slice")
             tapText("Slice Model")
             stage = "preview-summary"
+            android.util.Log.i("NightPrintUiGate", "stage=preview-summary")
             println("NIGHT_PRINT_UI_STAGE=preview-summary")
             awaitText("Slice Summary", 240_000L)
             screenshot("03_preview_after_real_native_slice")
@@ -142,9 +147,11 @@ class NightPrintVisualUiE2ETest {
             // preview/3D renderer resources before accessibility traversal.
             // A failed/absent later history session still BLOCKS the APK.
             stage = "preview-complete"
+            android.util.Log.i("NightPrintUiGate", "stage=preview-complete")
             println("NIGHT_PRINT_VISIBLE_PREVIEW_GATE_PASS")
         } catch (err: Throwable) {
             println("NIGHT_PRINT_UI_FAILED_AT=" + stage + " error=" + err)
+            android.util.Log.e("NightPrintUiGate", "failed at " + stage, err)
             runCatching {
                 val tree = screen.onRoot().fetchSemanticsNode().toString()
                 println("NIGHT_PRINT_UI_SEMANTICS_BEGIN\\n" + tree.take(14000) +
