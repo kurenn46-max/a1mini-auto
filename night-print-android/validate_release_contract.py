@@ -54,6 +54,10 @@ check("nightImportedSingleFilament" in overlay and
 check("singleImportedSource ?: filamentMaterials.getOrNull(colorIdx)" in overlay and
       "hasExplicitSingleChoice" in overlay,
       "confirmed Prepare PLA220 regression: imported source precedes stale resolver and respects explicit choice")
+check("native.progressListener = { pct, stage ->" in overlay and
+      "viewModelScope.launch(kotlinx.coroutines.Dispatchers.Main.immediate)" in overlay and
+      "if (_state.value is SlicerState.Slicing)" in overlay,
+      "Android progress callback posts Compose-visible state on main thread and ignores late callbacks")
 check("config.extruderCount == 1" in overlay and
       'currentModelName.endsWith(".3mf"' in overlay,
       "Prepare profile fallback limited to 1-filament 3MF")
