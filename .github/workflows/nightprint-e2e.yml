@@ -91,7 +91,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: NIGHT_PRINT_V3.4.2_INTEGRATED_ALL_GATES_PASS_test_apk
-          path: /tmp/u1-nightprint/app/build/outputs/apk/debug/*.apk
+          path: |
+            /tmp/u1-nightprint/app/build/outputs/apk/debug/*.apk
+            /tmp/u1-nightprint/app/build/outputs/apk/debug/NIGHT_PRINT_V3.4.2_INTEGRATED_EVIDENCE.json
           if-no-files-found: error
 
       - name: Save device test reports even if G-code fails
