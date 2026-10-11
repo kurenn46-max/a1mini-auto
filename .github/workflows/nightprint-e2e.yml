@@ -9,6 +9,12 @@ on:
       - 'night-print-android/**'
       - '.github/workflows/nightprint-e2e.yml'
 
+# New commits invalidate previous test attempts for the same pull request.
+# Cancel stale runs so only the most recent source can publish a test APK.
+concurrency:
+  group: nightprint-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
