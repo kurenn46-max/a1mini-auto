@@ -1067,8 +1067,8 @@ patch("app/src/main/java/com/u1/slicer/ui/JobsScreen.kt",
 # V3.4.2 Prepare regression: the user's single-material configured 3MF
 # correctly sliced PETG235, yet the Filament chip showed PLA220. For a
 # non-canonical single-filament file, upstream displayedFilamentMaterials
-# is intentionally empty, so PrintSetupSection falls back to stale printer
-# slot presets instead of the imported project's actual _config profile.
+# may be empty OR resolve a stale printer PLA220 slot. The imported
+# project's _config profile must take priority for a one-material 3MF.
 #
 # This is a display fix only: DO NOT adjust the G-code, file profile, spool
 # mapping, or override behavior. Respect an explicitly selected user material.
@@ -1097,7 +1097,23 @@ patch("app/src/main/java/com/u1/slicer/MainActivity.kt",
                                 colorIdx == 0 && detectedColors.size <= 1 &&
                                 override?.materialType == null
                             ) nightImportedSingleFilament else null
-                            val resolved = filamentMaterials.getOrNull(colorIdx)
-                                ?: singleImportedSource
+                            // The imported profile is the source of truth for a
+                            // single-material A1 mini 3MF. A stale canonical
+                            // material/preset may still say PLA220: do not let it
+                            // override the imported PETG235 chip. Explicit user
+                            // material choices still win (only this single 3MF).
+                            val hasExplicitSingleChoice =
+                                nightImportedSingleFilament != null && colorIdx == 0 &&
+                                detectedColors.size <= 1 && override?.materialType != null
+                            val resolved = if (hasExplicitSingleChoice) null else
+                                singleImportedSource ?: filamentMaterials.getOrNull(colorIdx)
+                            if (singleImportedSource != null ||
+                                (nightImportedSingleFilament != null && colorIdx == 0)) {
+                                android.util.Log.i("NightPrintPrepare",
+                                    "source=" + nightImportedSingleFilament +
+                                    " canonical=" + filamentMaterials.getOrNull(colorIdx) +
+                                    " override=" + override?.materialType +
+                                    " displayed=" + resolved)
+                            }
                             val materialType = resolved?.first''')
 print("NIGHT PRINT V3.4.2: imported PETG235 now takes precedence over stale PLA220 slot chip in Prepare.")
