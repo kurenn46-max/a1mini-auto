@@ -149,6 +149,20 @@ class NightPrintVisualUiE2ETest {
             stage = "preview-complete"
             android.util.Log.i("NightPrintUiGate", "stage=preview-complete")
             println("NIGHT_PRINT_VISIBLE_PREVIEW_GATE_PASS")
+
+            // All screen assertions and pixel evidence are complete. Previous
+            // Android emulator logs then stalled during ComposeRule/Activity
+            // teardown while the heavyweight 3D Preview Surface was foreground.
+            // Put the app in background *after* proof is captured, allowing
+            // graphics buffers to quiesce before instrumentation finalization.
+            // This is never a print command and changes no real app behavior.
+            val sentHome = runCatching {
+                ins.uiAutomation.performGlobalAction(
+                    android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME
+                )
+            }.getOrDefault(false)
+            android.util.Log.i("NightPrintUiGate", "stage=preview-backgrounded home=${sentHome}")
+            Thread.sleep(750L)
         } catch (err: Throwable) {
             println("NIGHT_PRINT_UI_FAILED_AT=" + stage + " error=" + err)
             android.util.Log.e("NightPrintUiGate", "failed at " + stage, err)
