@@ -34,6 +34,14 @@ echo "NIGHT PRINT: stage 0, imported 3MF -> REAL executable G-code audit"
 bash ./gradlew :app:connectedDebugAndroidTest --no-daemon --stacktrace \
   '-Pandroid.testInstrumentationRunnerArguments.class=com.u1.slicer.NightPrintNativeSliceE2ETest,com.u1.slicer.NightPrintViewModelE2ETest,com.u1.slicer.NightPrintStressE2ETest'
 echo "NIGHT PRINT: stage 0 native + executable 3MF G-code suites PASSED"
+if [[ "${NIGHT_PRINT_GATE_MODE:-release}" == "manual-handoff" ]]; then
+  # User explicitly owns the interactive physical-phone UI test. This is
+  # a HANDOFF TEST CANDIDATE, never a release, never a printing certificate.
+  # A separate verifier MUST inspect all Android JUnit XML and APK SHA256
+  # before GitHub Actions will publish this manual-install-only artifact.
+  echo "NIGHT PRINT: MANUAL HANDOFF after real native 3MF/G-code gate; UI not certified"
+  exit 0
+fi
 fi
 
 # Avoid Gradle UTP's automatic uninstall/clear between UI phases. The UI
