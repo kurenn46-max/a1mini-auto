@@ -188,7 +188,7 @@ class NightPrintViewModelE2ETest {
                         .take(50).toList()
                 }
                 println("NIGHT_PRINT_UI_REAL_BED_HEATING=" + bedHeaterLines.joinToString(" | "))
-                val bed65 = Regex("""^M(?:140|190)\\s+S65(?:\\.0+)?(?:\\s|;|$)""")
+                val bed65 = Regex("""^M(?:140|190)\s+S65(?:\.0+)?(?:\s|;|$)""")
                 assertTrue("User 3MF asks bed 65C but executable startup does not set 65C",
                     bedHeaterLines.any { bed65.containsMatchIn(it) })
             }
