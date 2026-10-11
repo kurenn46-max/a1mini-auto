@@ -64,11 +64,11 @@ subprocess.run(
 
 patch("app/build.gradle",
     'applicationId "com.u1.slicer.orca"',
-    'applicationId "com.u1.slicer.orca.nightprint.v342.visual20261011"')
+    'applicationId "com.u1.slicer.orca.nightprint.v342.integrated20261011"')
 
 patch("app/src/main/AndroidManifest.xml",
     'android:label="@string/app_name"',
-    'android:label="NIGHT PRINT V3.4.2 UI検証版"')
+    'android:label="NIGHT PRINT V3.4.2 統合検証版"')
 
 patch("app/src/main/AndroidManifest.xml",
     '            <!-- Known 3MF/STL MIME types — works with both content:// and file:// -->',
