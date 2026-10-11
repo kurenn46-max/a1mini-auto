@@ -147,6 +147,17 @@ check("NightPrintNativeSliceE2ETest" in evidence and
       "NightPrintStressE2ETest" in evidence and
       "junit_root.rglob" in evidence,
       "release evidence checks actual executed native Android JUnit reports")
+check("notify-pr27:" in native_ci and
+      "needs: [native-slice-e2e]" in native_ci and
+      "github.event.pull_request.number == 27" in native_ci and
+      "github.rest.issues.createComment" in native_ci and
+      "@kurenn46-max" in native_ci,
+      "GitHub immediately posts PR #27 notification after final native+UI gate")
+check("always()" in native_ci and
+      "NIGHT_GATE_RESULT" in native_ci and
+      "NIGHT_PRINT_V342_PR27_RESULT_RUN_" in native_ci and
+      "continue-on-error: true" in native_ci,
+      "GitHub notifies pass or fail without making notification delivery an APK safety gate")
 check("actions/upload-artifact@v4" not in build_ci and
       "Hold APK until visual Android E2E passes" in build_ci,
       "JVM-only CI never publishes an unverified APK")
