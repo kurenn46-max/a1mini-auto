@@ -21,6 +21,17 @@ fi
 
 cd /tmp/u1-nightprint
 
+# STAGE 0 (mandatory): execute real native Android slicing and file-driven
+# G-code checks FIRST. Previous preview graphics crashes masked whether the
+# imported 3MF truly produced PETG235 / bed65 / 20% / 100 layers.
+# No UI gate can be credited until these real Android JUnit suites pass.
+# Gradle UTP may clear app data: visual UI tests install a fresh app AFTER
+# this stage, then preserve real Room data between preview and history.
+echo "NIGHT PRINT: stage 0, imported 3MF -> REAL executable G-code audit"
+bash ./gradlew :app:connectedDebugAndroidTest --no-daemon --stacktrace \
+  '-Pandroid.testInstrumentationRunnerArguments.class=com.u1.slicer.NightPrintNativeSliceE2ETest,com.u1.slicer.NightPrintViewModelE2ETest,com.u1.slicer.NightPrintStressE2ETest'
+echo "NIGHT PRINT: stage 0 native + executable 3MF G-code suites PASSED"
+
 # Avoid Gradle UTP's automatic uninstall/clear between UI phases. The UI
 # tests MUST share the real Room job history across two app processes.
 # APKs are already compiled and signature-verified by the workflow.
@@ -102,13 +113,8 @@ for step in 01_home 02_prepare_petg_ring 02b_prepare_petg235_chip_verified 03_pr
   fi
 done
 echo "phase2_history_swipe_pass" >> /tmp/nightprint_e2e_artifacts/stages.txt
-echo "NIGHT PRINT visible UI gates PASSED; beginning native G-code safety E2E"
+echo "NIGHT PRINT visible UI gates PASSED; confirming native G-code evidence for signed release"
 
-# Stage 2: independently verify the Orca ARM64 slicer, Bambu PETG machine
-# profile, actual 100-layer G-code, plus multiple test geometries.
-adb shell am force-stop com.u1.slicer.orca.nightprint.v342.integrated20261011 || true
-bash ./gradlew :app:connectedDebugAndroidTest --no-daemon --stacktrace \
-  '-Pandroid.testInstrumentationRunnerArguments.class=com.u1.slicer.NightPrintNativeSliceE2ETest,com.u1.slicer.NightPrintViewModelE2ETest,com.u1.slicer.NightPrintStressE2ETest'
 # Fail CLOSED on missing screenshots, test outputs or APK checksum;
 # evidence JSON is written ONLY after both visual phases AND native E2E pass.
 python3 "$GITHUB_WORKSPACE/night-print-android/release_evidence.py"
