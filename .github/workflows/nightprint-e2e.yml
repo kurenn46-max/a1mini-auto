@@ -86,10 +86,10 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_5
-          ram-size: 4096M
-          heap-size: 512M
+          ram-size: 3072M
+          heap-size: 384M
           emulator-boot-timeout: 600
-          emulator-options: -no-snapshot -no-window -gpu software -noaudio -no-boot-anim -camera-back none -camera-front none
+          emulator-options: -no-snapshot -no-window -gpu swiftshader -feature -Vulkan -noaudio -no-boot-anim -camera-back none -camera-front none
           disable-animations: true
           script: bash "$GITHUB_WORKSPACE/night-print-android/run_android_e2e.sh"
       - name: Publish test APK ONLY after real UI taps/swipes/screenshots + native E2E pass
