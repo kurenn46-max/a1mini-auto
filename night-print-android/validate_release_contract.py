@@ -40,6 +40,8 @@ runner = content("night-print-android/run_android_e2e.sh")
 native_ci = content(".github/workflows/nightprint-e2e.yml")
 build_ci = content(".github/workflows/nightprint-android.yml")
 visual_ci = content(".github/workflows/nightprint-visual-diagnostics.yml")
+manual_ci = content(".github/workflows/nightprint-manual-handoff.yml")
+manual_evidence = content("night-print-android/verify_manual_handoff.py")
 instructions = content("AGENTS.md")
 
 for name, txt in (("overlay", overlay), ("emulator script", runner),
@@ -169,6 +171,22 @@ check("NIGHT_PRINT_GATE_MODE: visual-diagnostic" in visual_ci and
       "INTEGRATED_ALL_GATES_PASS_test_apk" not in visual_ci and
       "release_evidence.py" not in visual_ci,
       "fast UI diagnosis workflow publishes logs, never an unverified APK")
+check('NIGHT_PRINT_GATE_MODE: manual-handoff' in manual_ci and
+      'verify_manual_handoff.py' in manual_ci and
+      'NIGHT_PRINT_V3.4.2_MANUAL_PHONE_UI_TEST_NOT_RELEASE' in manual_ci and
+      'NIGHT_PRINT_V3.4.2_INTEGRATED_EVIDENCE.json' not in manual_ci and
+      'NIGHT_PRINT_V3.4.2_INTEGRATED_ALL_GATES_PASS_test_apk' not in manual_ci,
+      "user-phone APK artifact is explicitly NON-RELEASE and gated on separate 19-test verifier")
+check('NIGHT_PRINT_GATE_MODE' in manual_evidence and
+      'len(executed) >= 19' in manual_evidence and
+      'exactUser3mf20Percent100LayersPetg235Bed65MustMatchRealGcode' in manual_evidence and
+      'Android emulator visual end-to-end test FAILED or is NOT VERIFIED' in manual_evidence and
+      'sha256' in manual_evidence,
+      "manual handoff requires 19 native Android G-code testcases and SHA256; never certifies UI/printing")
+check('if [[ "${NIGHT_PRINT_GATE_MODE:-release}" == "manual-handoff" ]]' in runner and
+      runner.index("NIGHT PRINT: MANUAL HANDOFF") < runner.index("run_visible_phase com.u1.slicer.NightPrintVisualUiE2ETest") and
+      runner.index("NIGHT PRINT: MANUAL HANDOFF") > runner.index('connectedDebugAndroidTest'),
+      "manual phone handoff happens ONLY after actual native tests, before fragile emulator UI")
 check("actions/upload-artifact@v4" not in build_ci and
       "Hold APK until visual Android E2E passes" in build_ci,
       "JVM-only CI never publishes an unverified APK")
