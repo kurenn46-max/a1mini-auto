@@ -34,6 +34,7 @@ ui = content("night-print-android/NightPrintVisualUiE2ETest.kt")
 history = content("night-print-android/NightPrintHistoryUiE2ETest.kt")
 gcode = content("night-print-android/NightPrintViewModelE2ETest.kt")
 guard = content("night-print-android/NightPrintGcodeGuard.kt")
+evidence = content("night-print-android/release_evidence.py")
 fixture = content("night-print-android/generate_e2e_ring.py")
 runner = content("night-print-android/run_android_e2e.sh")
 native_ci = content(".github/workflows/nightprint-e2e.yml")
@@ -115,6 +116,17 @@ check(publish >= 0 and
       "actions/upload-artifact@v4" in native_ci[publish:publish+330] and
       "INTEGRATED_ALL_GATES_PASS_test_apk" in native_ci,
       "test APK artifact exists only after the complete native gate succeeds")
+check("release_evidence.py" in runner and
+      runner.index("release_evidence.py") > runner.index("connectedDebugAndroidTest"),
+      "APK manifest only generated after all native Android tests")
+check("NIGHT_PRINT_V3.4.2_INTEGRATED_EVIDENCE.json" in native_ci and
+      "NIGHT_PRINT_V3.4.2_INTEGRATED_EVIDENCE.json" in evidence,
+      "published APK must carry its provenance manifest")
+check("NightPrintNativeSliceE2ETest" in evidence and
+      "NightPrintViewModelE2ETest" in evidence and
+      "NightPrintStressE2ETest" in evidence and
+      "junit_root.rglob" in evidence,
+      "release evidence checks actual executed native Android JUnit reports")
 check("actions/upload-artifact@v4" not in build_ci and
       "Hold APK until visual Android E2E passes" in build_ci,
       "JVM-only CI never publishes an unverified APK")
