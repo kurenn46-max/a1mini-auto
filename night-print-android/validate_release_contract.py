@@ -121,6 +121,12 @@ check("NightPrintNativeSliceE2ETest" in runner and
       "NightPrintViewModelE2ETest" in runner and
       "NightPrintStressE2ETest" in runner,
       "native and stress instrumented regressions required")
+check(runner.index("connectedDebugAndroidTest") <
+      runner.index("run_visible_phase com.u1.slicer.NightPrintVisualUiE2ETest") and
+      runner.index("connectedDebugAndroidTest") <
+      runner.index("adb install -r -t"),
+      "real native imported 3MF/G-code checks execute BEFORE emulator UI renderer")
+
 check("-gpu swiftshader -feature -Vulkan" in native_ci and "timeout-minutes:" in native_ci,
       "emulator uses software GPU and bounded run")
 
