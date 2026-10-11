@@ -91,7 +91,7 @@ jobs:
           test -n "$APK" && test -s "$APK"
           "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose "$APK"
           "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" | tee /tmp/nightprint-apk-info.txt
-          grep -F "package: name='com.u1.slicer.orca.nightprint.v342.visual20261011'" /tmp/nightprint-apk-info.txt
+          grep -F "package: name='com.u1.slicer.orca.nightprint.v342.integrated20261011'" /tmp/nightprint-apk-info.txt
       # SECURITY RELEASE GATE: do not publish an APK from this JVM/build-only
       # workflow. Only the native E2E workflow can publish the test APK,
       # and only after the real Compose UI import/tap/swipe/screenshots pass.
