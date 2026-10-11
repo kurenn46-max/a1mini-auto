@@ -1,0 +1,91 @@
+name: NIGHT PRINT V3.4.2 Public Phone Preview Publish
+
+# Publish the already audited installable Android candidate, not a certified
+# printer release. Do NOT change or bypass the full native+UI release gate.
+on:
+  push:
+    branches:
+      - release/nightprint-v3.4.2-phone-preview
+    paths:
+      - .github/workflows/nightprint-public-phone-preview.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish-phone-preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Retrieve 19-native-test-passed Android artifact only
+        uses: actions/download-artifact@v4
+        with:
+          repository: kurenn46-max/a1mini-auto
+          run-id: 38182781270
+          name: NIGHT_PRINT_V3.4.2_MANUAL_PHONE_UI_TEST_NOT_RELEASE
+          path: staged
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify native evidence and APK/3MF SHA256; block mismatches
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,hashlib,pathlib,shutil
+          d=pathlib.Path("staged")
+          p=d/"build/outputs/apk/debug/NIGHT_PRINT_V3.4.2_MANUAL_PHONE_UI_TEST_NOT_RELEASE.json"
+          a=d/"build/outputs/apk/debug/app-debug.apk"
+          f=d/"src/androidTest/assets/nightprint_ui_ring_petg235_20pct_100layers.3mf"
+          assert all(q.is_file() for q in (p,a,f)), "missing source artifact"
+          manifest=json.loads(p.read_text())
+          assert manifest["status"] == "MANUAL_PHONE_UI_TEST_CANDIDATE_NOT_RELEASE"
+          assert manifest["native_android_test_count"] == 19
+          assert manifest["real_android_ui_test_passed"] is False
+          assert manifest["physical_printer_tested"] is False
+          assert manifest["github_sha"] == "1c408e59aa1ead033ad837849ff2dd732454421f", "unexpected PR merge commit"
+          assert manifest["apk"]["sha256"] == hashlib.sha256(a.read_bytes()).hexdigest()
+          assert manifest["apk"]["sha256"] == "f07294a89785fc838cc28a726b9fd70572f53160484aaf6e6187f44e42e7a37c"
+          assert manifest["manual_test_3mf"]["sha256"] == hashlib.sha256(f.read_bytes()).hexdigest()
+          assert manifest["manual_test_3mf"]["sha256"] == "49d096a68dd542851ad306ce5db994a1a840c8613043f05b2ca3db37ff8582af"
+          out=pathlib.Path("release");out.mkdir()
+          shutil.copy2(a,out/"NIGHT_PRINT_V3.4.2_Phone_Preview.apk")
+          shutil.copy2(f,out/"NIGHT_PRINT_V3.4.2_PETG235_100Layer_Test.3mf")
+          shutil.copy2(p,out/"NIGHT_PRINT_V3.4.2_test_evidence.json")
+          print("PASS: exact 19-test gated APK & 3MF verified.")
+          PY
+      - name: Write prominent unverified-UI warnings for public preview
+        shell: bash
+        run: |
+          cat > /tmp/nightprint_release_notes.md <<'EOF'
+          ## NIGHT PRINT V3.4.2 — Android phone preview
+
+          This public **phone UI preview** is installable but **NOT the certified production release**.
+          The package was built from PR #27 (source commit ee2e651abbaa3a79e50247bab2e54cbcfa00bfd2)
+          and verified by 19 real native Android G-code instrumentation tests.
+          Source run: https://github.com/kurenn46-max/a1mini-auto/actions/runs/38182781270
+
+          - Confirmed: isolated Android APK signature, 19 native G-code tests, real PETG235C 3MF sample
+          - Not confirmed: 3D renderer ready on the phone, saved Job History end-to-end, actual A1 mini printing
+          - Emulator GUI E2E **FAILED** with graphics buffer / emulator disconnect errors
+          - **Do not upload G-code to the printer, start printing, or use unattended printing with this preview.**
+          - Keep your existing working version; this APK uses a separate Android application ID.
+          - Included: Android APK, PETG235C/100-layer/20% test ring 3MF, integrity manifest
+          - Test flow: Install APK → import test 3MF → verify Prepare PETG 235C → Slice Model → visual Preview → Job History → report screenshots or failure stages.
+
+          Improvements will be based on real phone results; this preview must not be confused with a final stable release.
+          EOF
+      - name: Publish explicit PRE-RELEASE (no stable or production certification)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create nightprint-v3.4.2-phone-preview-20261012 \
+            release/NIGHT_PRINT_V3.4.2_Phone_Preview.apk \
+            release/NIGHT_PRINT_V3.4.2_PETG235_100Layer_Test.3mf \
+            release/NIGHT_PRINT_V3.4.2_test_evidence.json \
+            --repo kurenn46-max/a1mini-auto \
+            --target ee2e651abbaa3a79e50247bab2e54cbcfa00bfd2 \
+            --title "NIGHT PRINT v3.4.2 - Phone Preview (UI NOT CERTIFIED)" \
+            --notes-file /tmp/nightprint_release_notes.md \
+            --prerelease --latest=false
+          gh release view nightprint-v3.4.2-phone-preview-20261012 \
+            --repo kurenn46-max/a1mini-auto --json url,isPrerelease,assets
