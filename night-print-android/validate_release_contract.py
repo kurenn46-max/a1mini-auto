@@ -51,6 +51,9 @@ check("nightImportedSingleFilament" in overlay and
       "override?.materialType == null" in overlay and
       "config.filamentType to config.nozzleTemp" in overlay,
       "PR26 display fallback retains original imported profile and user override")
+check("singleImportedSource ?: filamentMaterials.getOrNull(colorIdx)" in overlay and
+      "hasExplicitSingleChoice" in overlay,
+      "confirmed Prepare PLA220 regression: imported source precedes stale resolver and respects explicit choice")
 check("config.extruderCount == 1" in overlay and
       'currentModelName.endsWith(".3mf"' in overlay,
       "Prepare profile fallback limited to 1-filament 3MF")
