@@ -39,6 +39,7 @@ fixture = content("night-print-android/generate_e2e_ring.py")
 runner = content("night-print-android/run_android_e2e.sh")
 native_ci = content(".github/workflows/nightprint-e2e.yml")
 build_ci = content(".github/workflows/nightprint-android.yml")
+visual_ci = content(".github/workflows/nightprint-visual-diagnostics.yml")
 instructions = content("AGENTS.md")
 
 for name, txt in (("overlay", overlay), ("emulator script", runner),
@@ -158,6 +159,16 @@ check("always()" in native_ci and
       "NIGHT_PRINT_V342_PR27_RESULT_RUN_" in native_ci and
       "continue-on-error: true" in native_ci,
       "GitHub notifies pass or fail without making notification delivery an APK safety gate")
+check("visual-diagnostic" in runner and
+      'if [[ "${NIGHT_PRINT_GATE_MODE:-release}" == "visual-diagnostic" ]]' in runner and
+      "APK release is forbidden" in runner,
+      "fast visual-only branch bypasses native only in a named diagnostic mode and never creates a release manifest")
+check("NIGHT_PRINT_GATE_MODE: visual-diagnostic" in visual_ci and
+      "name: NIGHT PRINT V3.4.2 Quick Visual Diagnostics (NOT A RELEASE)" in visual_ci and
+      "NIGHT_PRINT_V3.4.2_visual_only_diagnostics_NOT_APK" in visual_ci and
+      "INTEGRATED_ALL_GATES_PASS_test_apk" not in visual_ci and
+      "release_evidence.py" not in visual_ci,
+      "fast UI diagnosis workflow publishes logs, never an unverified APK")
 check("actions/upload-artifact@v4" not in build_ci and
       "Hold APK until visual Android E2E passes" in build_ci,
       "JVM-only CI never publishes an unverified APK")
