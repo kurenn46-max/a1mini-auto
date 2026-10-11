@@ -1,0 +1,105 @@
+name: NIGHT PRINT V3.4.2 Quick Visual Diagnostics (NOT A RELEASE)
+
+# This is a targeted diagnostic runner, NOT a slicer safety certificate.
+# It performs real Compose taps and real native UI slicing, but deliberately
+# skips the separate 19-case native G-code audit to avoid wasting full-cycle
+# runtime on emulator/Compose teardown investigation.
+on:
+  pull_request:
+    paths:
+      - 'night-print-android/**'
+      - '.github/workflows/nightprint-visual-diagnostics.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: nightprint-visual-diag-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  visual-diagnostics-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      NIGHT_PRINT_GATE_MODE: visual-diagnostic
+    steps:
+      - name: Checkout NIGHT PRINT diagnostics
+        uses: actions/checkout@v4
+      - name: Prepare pinned real Android Orca sources
+        run: |
+          git clone --depth 1 https://github.com/taylormadearmy/u1-slicer-for-android.git /tmp/u1-nightprint
+          cd /tmp/u1-nightprint
+          git fetch --depth 1 origin 712d9fc41e8d35b328a87cfd8144434049f77ae7
+          git checkout --detach 712d9fc41e8d35b328a87cfd8144434049f77ae7
+          mkdir -p app/src/main/cpp/orcaslicer/src/libslic3r
+          curl --fail --silent --show-error --location --retry 3 \
+            "https://raw.githubusercontent.com/taylormadearmy/OrcaSlicer/2535da4cbd89430cb3f3b31f42673b98cf4bc041/src/libslic3r/PrintObject.cpp" \
+            --output app/src/main/cpp/orcaslicer/src/libslic3r/PrintObject.cpp
+          test -s app/src/main/cpp/orcaslicer/src/libslic3r/PrintObject.cpp
+      - name: Apply unchanged NIGHT PRINT feature overlay
+        run: python3 night-print-android/apply_overlay.py /tmp/u1-nightprint
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android SDK 34
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0"
+      - name: Create isolated debug signing key
+        run: |
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair -noprompt \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android -keypass android -alias androiddebugkey \
+            -keyalg RSA -keysize 2048 -validity 3650 \
+            -dname "CN=Android Debug,O=Android,C=US"
+      - name: Static contract check (not evidence of native G-code pass)
+        run: python3 night-print-android/validate_release_contract.py
+      - name: Compile Android screen-test APK without costly 19-test execution
+        working-directory: /tmp/u1-nightprint
+        run: bash ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --stacktrace
+      - name: Ensure signed isolated test app identity
+        working-directory: /tmp/u1-nightprint
+        run: |
+          APK="$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' | head -n 1)"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify "$APK"
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" \
+            | grep -F "package: name='com.u1.slicer.orca.nightprint.v342.integrated20261011'"
+      - name: Enable KVM on hosted Ubuntu
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm || true
+          test -e /dev/kvm
+      - name: Real Compose visible UI taps and persisted Jobs (DIAGNOSTIC ONLY)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          ram-size: 3072M
+          heap-size: 384M
+          emulator-boot-timeout: 600
+          emulator-options: -no-snapshot -no-window -gpu swiftshader -feature -Vulkan -noaudio -no-boot-anim -camera-back none -camera-front none
+          disable-animations: true
+          script: bash "$GITHUB_WORKSPACE/night-print-android/run_android_e2e.sh"
+      - name: Save screen and crash diagnostics even if emulator disconnects
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NIGHT_PRINT_V3.4.2_visual_only_diagnostics_NOT_APK
+          path: |
+            /tmp/nightprint_e2e_artifacts/
+            /tmp/nightprint_emulator_abis.txt
+          if-no-files-found: warn
+
+# SECURITY RELEASE RULE:
+# NEVER upload an APK here, never generate release_evidence.json here.
+# Only the separate full Native + Visual UI Release Gate may publish an APK
+# after its 19 native G-code tests AND JUnit-successful UI screenshot checks.
