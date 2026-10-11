@@ -1135,3 +1135,41 @@ patch("app/src/main/java/com/u1/slicer/MainActivity.kt",
                         }
                         PrintSetupSection(
                             detectedColors = threeMfInfo?.detectedColors ?: emptyList(),''')
+
+# NIGHT PRINT V3.4.2 native progress callback threading.
+# Confirmed Android instrumentation failure, CI 38146633467:
+# ViewRootImpl$CalledFromWrongThreadException from NativeLibrary.onSliceProgress
+# -> SlicerViewModel.startSlicing listener -> Compose state recomposition.
+# Native slicing callbacks are called on worker threads. NEVER let them
+# update Compose-visible StateFlow or LongOpService there. Dispatch onto the
+# main thread and ignore late events once the slice state has changed.
+# This does not modify native geometry, material profile or G-code.
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                var maxPct = 0
+                native.progressListener = { pct, stage ->
+                    // Guard: don't override Loading — selectPlate() may have set it to initiate
+                    // a plate switch while this slice was still running. Overriding Loading would
+                    // remount InlineModelPreview against the stale native state and produce
+                    // wrong preview colours on the new plate.
+                    val cur = _state.value
+                    if (cur !is SlicerState.Loading && cur !is SlicerState.Idle) {
+                        if (pct > maxPct) maxPct = pct
+                        _state.value = SlicerState.Slicing(maxPct, stage)
+                        LongOpService.update(context, maxPct, stage)
+                    }
+                }''',
+    '''                var maxPct = 0
+                native.progressListener = { pct, stage ->
+                    // NativeLibrary invokes this on worker threads; Compose
+                    // StateFlow collection must recompose on Android main.
+                    // Also ignore late callbacks after slice completion or a
+                    // plate transition. Do not regress into stale Preview.
+                    viewModelScope.launch(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                        if (_state.value is SlicerState.Slicing) {
+                            if (pct > maxPct) maxPct = pct
+                            _state.value = SlicerState.Slicing(maxPct, stage)
+                            LongOpService.update(context, maxPct, stage)
+                        }
+                    }
+                }''')
+print("NIGHT PRINT V3.4.2: native slice progress safely marshalled onto Android main thread.")
