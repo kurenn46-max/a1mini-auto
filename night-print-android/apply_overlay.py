@@ -1063,3 +1063,41 @@ patch("app/src/main/java/com/u1/slicer/ui/JobsScreen.kt",
                 JobStat("Nozzle", "${verifiedJob?.nozzleTemp ?: job.nozzleTemp}\\u00B0C")
                 JobStat("Material", verifiedJob?.filamentType ?: job.filamentType)''')
 
+
+# V3.4.2 Prepare regression: the user's single-material configured 3MF
+# correctly sliced PETG235, yet the Filament chip showed PLA220. For a
+# non-canonical single-filament file, upstream displayedFilamentMaterials
+# is intentionally empty, so PrintSetupSection falls back to stale printer
+# slot presets instead of the imported project's actual _config profile.
+#
+# This is a display fix only: DO NOT adjust the G-code, file profile, spool
+# mapping, or override behavior. Respect an explicitly selected user material.
+patch("app/src/main/java/com/u1/slicer/MainActivity.kt",
+    '''                            filamentMaterials = filamentMaterials,
+                            anyMixAssigned = anyMixAssigned,''',
+    '''                            filamentMaterials = filamentMaterials,
+                            nightImportedSingleFilament = if (
+                                effectiveSliceTarget == SlicerTarget.BambuA1Mini &&
+                                config.extruderCount == 1 &&
+                                currentModelName.endsWith(".3mf", ignoreCase = true)
+                            ) config.filamentType to config.nozzleTemp else null,
+                            anyMixAssigned = anyMixAssigned,''')
+patch("app/src/main/java/com/u1/slicer/MainActivity.kt",
+    '''    filamentMaterials: List<Pair<String, Int>> = emptyList(),
+    onMappingChange: (List<Int>) -> Unit,''',
+    '''    filamentMaterials: List<Pair<String, Int>> = emptyList(),
+    // A1 mini single 3MF importer has already resolved this from the
+    // embedded process profile; fallback only when no canonical metadata.
+    nightImportedSingleFilament: Pair<String, Int>? = null,
+    onMappingChange: (List<Int>) -> Unit,''')
+patch("app/src/main/java/com/u1/slicer/MainActivity.kt",
+    '''                            val resolved = filamentMaterials.getOrNull(colorIdx)
+                            val materialType = resolved?.first''',
+    '''                            val singleImportedSource = if (
+                                colorIdx == 0 && detectedColors.size <= 1 &&
+                                override?.materialType == null
+                            ) nightImportedSingleFilament else null
+                            val resolved = filamentMaterials.getOrNull(colorIdx)
+                                ?: singleImportedSource
+                            val materialType = resolved?.first''')
+print("NIGHT PRINT V3.4.2: imported PETG235 now takes precedence over stale PLA220 slot chip in Prepare.")
