@@ -31,6 +31,7 @@ for src, dst in [
     ("NightPrintNativeSliceE2ETest.kt", root / "app/src/androidTest/java/com/u1/slicer/NightPrintNativeSliceE2ETest.kt"),
     ("NightPrintViewModelE2ETest.kt", root / "app/src/androidTest/java/com/u1/slicer/NightPrintViewModelE2ETest.kt"),
     ("NightPrintStressE2ETest.kt", root / "app/src/androidTest/java/com/u1/slicer/NightPrintStressE2ETest.kt"),
+    ("NightPrintVisualUiE2ETest.kt", root / "app/src/androidTest/java/com/u1/slicer/NightPrintVisualUiE2ETest.kt"),
     ("NightPrintGcodeDepositionGuard.kt", java / "NightPrintGcodeDepositionGuard.kt"),
     ("NightPrintV34Preflight.kt", java / "NightPrintV34Preflight.kt"),
     ("NightPrintV34PreflightTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintV34PreflightTest.kt"),
@@ -62,11 +63,11 @@ subprocess.run(
 
 patch("app/build.gradle",
     'applicationId "com.u1.slicer.orca"',
-    'applicationId "com.u1.slicer.orca.nightprint.v341.truth20261011"')
+    'applicationId "com.u1.slicer.orca.nightprint.v342.visual20261011"')
 
 patch("app/src/main/AndroidManifest.xml",
     'android:label="@string/app_name"',
-    'android:label="NIGHT PRINT V3.4.1 検証版"')
+    'android:label="NIGHT PRINT V3.4.2 UI検証版"')
 
 patch("app/src/main/AndroidManifest.xml",
     '            <!-- Known 3MF/STL MIME types — works with both content:// and file:// -->',
