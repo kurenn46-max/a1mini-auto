@@ -121,29 +121,13 @@ class NightPrintVisualUiE2ETest {
             assertTrue("Preview has no 100-layer evidence", containsText("100"))
             screenshot("04_preview_petg_metadata_verified")
 
-            stage = "tap-jobs"
-            println("NIGHT_PRINT_UI_STAGE=tap-jobs")
-            // Diagnostic: report precisely what is on-screen, rather than
-            // assuming a Jobs tab is clickable based on labels alone.
-            println("NIGHT_PRINT_UI_JOBS_NODE_COUNT=" +
-                screen.onAllNodesWithText("Jobs", substring = true).fetchSemanticsNodes().size)
-            tapText("Jobs")
-            stage = "jobs-open"
-            println("NIGHT_PRINT_UI_STAGE=jobs-open")
-            awaitText("Job History", 30_000L)
-            stage = "jobs-values"
-            println("NIGHT_PRINT_UI_STAGE=jobs-values")
-            screenshot("05_jobs_header_before_value_wait")
-            screen.waitUntil(45_000L) {
-                containsText("100") && containsText("20%") && containsText("PETG")
-            }
-            assertTrue("Job History still incorrectly shows 15% infill", !containsText("15%"))
-            screenshot("05_jobs_100layers_20pct_petg")
-            // Real touchscreen gesture, to catch broken scrolling/navigation.
-            screen.onRoot().performTouchInput { swipeUp() }
-            awaitText("Job History", 10_000L)
-            screenshot("06_jobs_after_swipe")
-            println("NIGHT_PRINT_VISIBLE_UI_GATE_PASS")
+            // Finish this instrumentation session after checking the real
+            // native slice, preview, filament, layer count and screenshots.
+            // Re-enter Jobs in a SEPARATE cold Activity process to release
+            // preview/3D renderer resources before accessibility traversal.
+            // A failed/absent later history session still BLOCKS the APK.
+            stage = "preview-complete"
+            println("NIGHT_PRINT_VISIBLE_PREVIEW_GATE_PASS")
         } catch (err: Throwable) {
             println("NIGHT_PRINT_UI_FAILED_AT=" + stage + " error=" + err)
             runCatching {
