@@ -27,10 +27,14 @@ cd /tmp/u1-nightprint
 # No UI gate can be credited until these real Android JUnit suites pass.
 # Gradle UTP may clear app data: visual UI tests install a fresh app AFTER
 # this stage, then preserve real Room data between preview and history.
+if [[ "${NIGHT_PRINT_GATE_MODE:-release}" == "visual-diagnostic" ]]; then
+  echo "::notice::DIAGNOSTIC ONLY: native G-code stage bypassed for fast visual regression. APK release is forbidden."
+else
 echo "NIGHT PRINT: stage 0, imported 3MF -> REAL executable G-code audit"
 bash ./gradlew :app:connectedDebugAndroidTest --no-daemon --stacktrace \
   '-Pandroid.testInstrumentationRunnerArguments.class=com.u1.slicer.NightPrintNativeSliceE2ETest,com.u1.slicer.NightPrintViewModelE2ETest,com.u1.slicer.NightPrintStressE2ETest'
 echo "NIGHT PRINT: stage 0 native + executable 3MF G-code suites PASSED"
+fi
 
 # Avoid Gradle UTP's automatic uninstall/clear between UI phases. The UI
 # tests MUST share the real Room job history across two app processes.
@@ -117,5 +121,9 @@ echo "NIGHT PRINT visible UI gates PASSED; confirming native G-code evidence for
 
 # Fail CLOSED on missing screenshots, test outputs or APK checksum;
 # evidence JSON is written ONLY after both visual phases AND native E2E pass.
-python3 "$GITHUB_WORKSPACE/night-print-android/release_evidence.py"
-echo "NIGHT PRINT both UI and native G-code safety release gates PASSED"
+if [[ "${NIGHT_PRINT_GATE_MODE:-release}" == "visual-diagnostic" ]]; then
+  echo "::notice::VISUAL DIAGNOSTIC PASS ONLY: no release manifest or APK, real native suite not run in this job"
+else
+  python3 "$GITHUB_WORKSPACE/night-print-android/release_evidence.py"
+  echo "NIGHT PRINT both UI and native G-code safety release gates PASSED"
+fi
