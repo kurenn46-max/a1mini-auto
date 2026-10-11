@@ -139,7 +139,18 @@ class NightPrintVisualUiE2ETest {
                 !containsText("Filament 1 · PLA")
             )
             assertTrue("Preview has no 100-layer evidence", containsText("100"))
+
             screenshot("04_preview_petg_metadata_verified")
+
+            // 100-layer metadata is not proof of 3D geometry on screen.
+            // CI 38181398349 showed "Preparing preview…" indefinitely
+            // with the summary already present. Wait for renderer readiness.
+            stage = "preview-render-ready"
+            android.util.Log.i("NightPrintUiGate", "stage=preview-render-ready")
+            screen.waitUntil(90_000L) { !containsText("Preparing preview") }
+            assertTrue("G-code 3D preview is still preparing", !containsText("Preparing preview"))
+            screenshot("04b_preview_3d_render_ready")
+            android.util.Log.i("NightPrintUiGate", "stage=preview-render-ready PASS")
 
             // Finish this instrumentation session after checking the real
             // native slice, preview, filament, layer count and screenshots.
