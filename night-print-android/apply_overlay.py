@@ -24,6 +24,8 @@ def patch(path, before, after):
 for src, dst in [
     ("NightPrintPreset.kt", java / "NightPrintPreset.kt"),
     ("NightPrintPresetTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintPresetTest.kt"),
+    ("NightPrintSupportModes.kt", java / "NightPrintSupportModes.kt"),
+    ("NightPrintSupportModesTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintSupportModesTest.kt"),
     ("NightPrintGcodeGuard.kt", java / "NightPrintGcodeGuard.kt"),
     ("NightPrintGcodeGuardTest.kt", root / "app/src/test/java/com/u1/slicer/NightPrintGcodeGuardTest.kt"),
     ("NightPrintOfflineA1MiniTarget.kt", java / "NightPrintOfflineA1MiniTarget.kt"),
@@ -1183,3 +1185,58 @@ patch("app/src/main/java/com/u1/slicer/MainActivity.kt",
     '''    // NIGHT PRINT: camera changes must not restart G-code upload/loading.
     LaunchedEffect(parsedGcode, previewColors, viewerView, bedSizeMm, bedSizeYMm) {''')
 print("NIGHT PRINT: 3D G-code Preview camera changes no longer restart native renderer.")
+
+
+# V4.1 PREVIEW — support quantity controls on the Prepare screen.
+# Preserve the user's current V4 app and change only the separately built preview APK.
+patch("app/src/main/java/com/u1/slicer/MainActivity.kt",
+    '''    var nightPresetDialogVisible by remember { mutableStateOf(false) }''',
+    '''    var nightPresetDialogVisible by remember { mutableStateOf(false) }
+    var nightSupportLevel by remember { mutableStateOf(NightPrintSupportLevel.STANDARD) }''')
+
+patch("app/src/main/java/com/u1/slicer/MainActivity.kt",
+    '''            text = { Text(preset.summary()) },''',
+    '''            text = {
+                Column {
+                    Text(preset.summary())
+                    Spacer(Modifier.height(8.dp))
+                    Text("サポート量（次のスライスに反映）",
+                        fontWeight = FontWeight.Bold)
+                    NightPrintSupportLevel.values().forEach { option ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(
+                                selected = nightSupportLevel == option,
+                                onClick = { nightSupportLevel = option }
+                            )
+                            TextButton(onClick = { nightSupportLevel = option }) {
+                                Text(option.title)
+                            }
+                        }
+                    }
+                    Text(nightSupportLevel.description,
+                        style = MaterialTheme.typography.bodySmall)
+                    Text("変更後は必ず再スライスしてサポートを確認。印刷は自動開始しません。",
+                        style = MaterialTheme.typography.labelSmall)
+                }
+            },''')
+
+patch("app/src/main/java/com/u1/slicer/MainActivity.kt",
+    '''                        preset.applyTo(viewModel.slicingOverrides.value)
+                    )
+                    nightPresetDialogVisible = false''',
+    '''                        NightPrintSupportModes.apply(
+                            nightSupportLevel,
+                            preset.applyTo(viewModel.slicingOverrides.value)
+                        )
+                    )
+                    nightPresetDialogVisible = false''')
+
+patch("app/src/main/java/com/u1/slicer/MainActivity.kt",
+    '''TextButton(onClick = { nightPresetDialogVisible = true }) {
+                            Text("ナイト設定", fontSize = 13.sp''',
+    '''TextButton(onClick = {
+                            nightSupportLevel = NightPrintSupportLevel.STANDARD
+                            nightPresetDialogVisible = true
+                        }) {
+                            Text("ナイト設定", fontSize = 13.sp''')
+print("NIGHT PRINT V4.1 preview: support mode selector wired to native SlicingOverrides; no auto-print.")
