@@ -70,6 +70,16 @@ jobs:
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0"
 
+      - name: Create local temporary signing key (test APK only)
+        run: |
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair -noprompt \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android -keypass androiddebugkey -alias androiddebugkey \
+            -keyalg RSA -keysize 2048 -validity 3650 \
+            -dname "CN=Android Debug,O=Android,C=US"
+          test -s "$HOME/.android/debug.keystore"
+
       - name: Run support-mode and existing JVM regression tests
         working-directory: /tmp/u1-nightprint
         run: bash ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
