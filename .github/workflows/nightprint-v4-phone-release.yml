@@ -1,0 +1,228 @@
+name: NIGHT PRINT V4.0.0 Phone Field Release (19 Native G-code Tests)
+
+on:
+  push:
+    branches:
+      - release/nightprint-v4.0.0-prep
+    paths:
+      - .github/workflows/nightprint-v4-phone-release.yml
+  workflow_dispatch:
+
+concurrency:
+  group: nightprint-v4-first-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  v4-native-gcode-and-package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    env:
+      NIGHT_PRINT_GATE_MODE: manual-handoff
+    steps:
+      - name: Checkout controlled V4 build
+        uses: actions/checkout@v4
+      - name: Retrieve pinned native Android slicer sources
+        run: |
+          git clone --depth 1 https://github.com/taylormadearmy/u1-slicer-for-android.git /tmp/u1-nightprint
+          cd /tmp/u1-nightprint
+          git fetch --depth 1 origin 712d9fc41e8d35b328a87cfd8144434049f77ae7
+          git checkout --detach 712d9fc41e8d35b328a87cfd8144434049f77ae7
+          mkdir -p app/src/main/cpp/orcaslicer/src/libslic3r
+          curl --fail --silent --show-error --location --retry 3 \
+            "https://raw.githubusercontent.com/taylormadearmy/OrcaSlicer/2535da4cbd89430cb3f3b31f42673b98cf4bc041/src/libslic3r/PrintObject.cpp" \
+            -o app/src/main/cpp/orcaslicer/src/libslic3r/PrintObject.cpp
+          test -s app/src/main/cpp/orcaslicer/src/libslic3r/PrintObject.cpp
+      - name: Prepare verified V3.4.2 source overlay and static regression checks
+        run: |
+          python3 night-print-android/validate_release_contract.py
+          python3 night-print-android/apply_overlay.py /tmp/u1-nightprint
+      - name: Brand actually compiled application as NIGHT PRINT V4
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path("/tmp/u1-nightprint")
+          old_id="com.u1.slicer.orca.nightprint.v342.integrated20261011"
+          new_id="com.u1.slicer.orca.nightprint.v4"
+          def replace_once(file,old,new):
+              s=file.read_text()
+              assert s.count(old)==1,(file.name,old,s.count(old))
+              file.write_text(s.replace(old,new))
+          replace_once(root/"app/build.gradle", 'applicationId "'+old_id+'"',
+                       'applicationId "'+new_id+'"')
+          replace_once(root/"app/build.gradle", "versionCode 401", "versionCode 40000")
+          replace_once(root/"app/build.gradle", 'versionName "4.0.1"', 'versionName "4.0.0"')
+          replace_once(root/"app/src/main/AndroidManifest.xml",
+                       'android:label="NIGHT PRINT V3.4.2 統合検証版"',
+                       'android:label="NIGHT PRINT V4"')
+          # The native test runner/verifier must match the actual installed
+          # app ID, not the old V3 name. All test thresholds remain unchanged.
+          runner=Path("night-print-android/run_android_e2e.sh").read_text()
+          assert runner.count(old_id)>=2
+          Path("/tmp/nightprint_v4_native_runner.sh").write_text(
+              runner.replace(old_id,new_id))
+          verifier=Path("night-print-android/verify_manual_handoff.py").read_text()
+          assert verifier.count(old_id)==1
+          verifier=verifier.replace(old_id,new_id)
+          verifier=verifier.replace("/tmp/nightprint_v342_package.txt",
+                                    "/tmp/nightprint_v4_package.txt")
+          verifier=verifier.replace(
+              "NIGHT_PRINT_V3.4.2_MANUAL_PHONE_UI_TEST_NOT_RELEASE.json",
+              "NIGHT_PRINT_V4.0.0_NATIVE_TEST_EVIDENCE.json")
+          Path("/tmp/nightprint_v4_verify.py").write_text(verifier)
+          print("V4 app ID/name/version and unchanged native safety gate verified")
+          PY
+      - name: Generate 55.5mm inner diameter 3MF (OD 59.5, H20, PETG235)
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path("night-print-android/generate_e2e_ring.py").read_text()
+          for old,new in [("outer = 12.0","outer = 29.75"),
+                          ("inner = 10.0","inner = 27.75")]:
+              assert s.count(old)==1,old
+              s=s.replace(old,new)
+          Path("/tmp/nightprint_v4_ring_generator.py").write_text(s)
+          PY
+          python3 /tmp/nightprint_v4_ring_generator.py /tmp/nightprint_v4_ring
+          python3 - <<'PY'
+          import zipfile,xml.etree.ElementTree as ET,json
+          from pathlib import Path
+          p=Path("/tmp/nightprint_v4_ring/nightprint_ui_ring_petg235_20pct_100layers.3mf")
+          with zipfile.ZipFile(p) as z:
+              assert z.testzip() is None
+              root=ET.fromstring(z.read("3D/3dmodel.model"))
+              ns="{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}"
+              verts=list(root.iter(ns+"vertex"))
+              assert len(verts)==512,len(verts)
+              rad=sorted(set(round((float(v.get("x"))**2+float(v.get("y"))**2)**0.5,2) for v in verts))
+              assert rad==[27.75,29.75],rad
+              zs={round(float(v.get("z")),2) for v in verts}
+              assert zs=={0.0,20.0},zs
+              setting=json.loads(z.read("Metadata/project_settings.config"))
+              assert setting["filament_type"]==["PETG"]
+              assert setting["nozzle_temperature"]==["235"]
+              assert setting["textured_plate_temp"]==["65"]
+              assert setting["layer_height"]=="0.20"
+              assert setting["sparse_infill_density"]=="20%"
+          print("Verified ID 55.50mm OD 59.50mm H 20.00mm PETG 235/65")
+          PY
+      - name: Set up Java 17 and Android SDK 34
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install build tools
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0"
+      - name: Create per-build TEST debug key (not permanent production signature)
+        run: |
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair -noprompt \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android -keypass android -alias androiddebugkey \
+            -keyalg RSA -keysize 2048 -validity 3650 \
+            -dname "CN=Android Debug,O=Android,C=US"
+      - name: JVM regression tests
+        working-directory: /tmp/u1-nightprint
+        run: bash ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
+      - name: Build actual V4 signed debug APK plus native test APK
+        working-directory: /tmp/u1-nightprint
+        run: bash ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --stacktrace
+      - name: Verify signed V4 ID, version and label
+        working-directory: /tmp/u1-nightprint
+        run: |
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" | tee /tmp/nightprint_v4_package.txt
+          grep -F "package: name='com.u1.slicer.orca.nightprint.v4' versionCode='40000' versionName='4.0.0'" /tmp/nightprint_v4_package.txt
+          grep -F "application-label:'NIGHT PRINT V4'" /tmp/nightprint_v4_package.txt
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm || true
+          test -e /dev/kvm
+      - name: 19 native Android G-code tests (mandatory; no printer connected)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          ram-size: 3072M
+          heap-size: 384M
+          emulator-boot-timeout: 600
+          emulator-options: -no-snapshot -no-window -gpu swiftshader -feature -Vulkan -noaudio -no-boot-anim -camera-back none -camera-front none
+          disable-animations: true
+          script: bash /tmp/nightprint_v4_native_runner.sh
+      - name: Validate 19 native JUnit passes and exact V4 APK SHA256
+        run: python3 /tmp/nightprint_v4_verify.py
+      - name: Package V4 phone field-test with clear safety evidence
+        run: |
+          python3 - <<'PY'
+          import pathlib,json,hashlib,shutil
+          origin=pathlib.Path("/tmp/u1-nightprint/app/build/outputs/apk/debug")
+          m=json.loads((origin/"NIGHT_PRINT_V4.0.0_NATIVE_TEST_EVIDENCE.json").read_text())
+          assert m["native_android_test_count"]>=19
+          assert m["package_id"]=="com.u1.slicer.orca.nightprint.v4"
+          assert m["physical_printer_tested"] is False
+          a=origin/"app-debug.apk"
+          assert hashlib.sha256(a.read_bytes()).hexdigest()==m["apk"]["sha256"]
+          d=pathlib.Path("v4-release");d.mkdir()
+          shutil.copy2(a,d/"NIGHT_PRINT_V4.0.0_Android.apk")
+          shutil.copy2("/tmp/nightprint_v4_ring/nightprint_ui_ring_petg235_20pct_100layers.3mf",
+                       d/"NIGHT_PRINT_V4_Ring_ID55.5_OD59.5_H20_PETG235.3mf")
+          m["release_version"]="4.0.0"
+          m["release_stage"]="INITIAL_PHONE_FIELD_TEST_NOT_PRINT_CERTIFIED"
+          m["included_55_5mm_3mf_sha256"]=hashlib.sha256(
+              (d/"NIGHT_PRINT_V4_Ring_ID55.5_OD59.5_H20_PETG235.3mf").read_bytes()).hexdigest()
+          (d/"NIGHT_PRINT_V4.0.0_SAFETY_TEST_EVIDENCE.json").write_text(
+              json.dumps(m,ensure_ascii=False,indent=2)+"\n")
+          PY
+      - name: Publish V4 phone field-test GitHub prerelease after all native tests
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cat > /tmp/v4_notes.txt <<'EOF'
+          # NIGHT PRINT V4.0.0 — Initial Android field-test release
+
+          **This is an actual V4.0.0 Android APK, not a renamed V3 APK.**
+          Display name: NIGHT PRINT V4.
+          App ID: com.u1.slicer.orca.nightprint.v4 (installs alongside V3).
+          Tested: build/JVM, APK signature, 19 Android native G-code safety tests.
+          User previously verified V3.4.2 phone UI, 3D orbit/zoom and layers;
+          the V4 app ID and branding changed and therefore must be retested.
+
+          **Real printer test has NOT been confirmed.**
+          This is the initial field-test release, NOT certified for unattended printing.
+          Avoid unattended printing and stop immediately for any unsafe moves.
+          The APK uses a one-time debug signing key. It cannot be updated in
+          place by a future differently signed build: keep the current app and
+          history until a permanent signing method is established.
+
+          Includes an exact ID 55.5mm, OD 59.5mm, height 20mm PETG ring
+          (235C nozzle/65C bed; 0.20mm layers/20% infill).
+          Inspect the slicer's actual generated G-code and temperatures
+          before any supervised print. A1 mini physical printing is unverified.
+          EOF
+          gh release create nightprint-v4.0.0-first-field-test \
+            v4-release/NIGHT_PRINT_V4.0.0_Android.apk \
+            v4-release/NIGHT_PRINT_V4_Ring_ID55.5_OD59.5_H20_PETG235.3mf \
+            v4-release/NIGHT_PRINT_V4.0.0_SAFETY_TEST_EVIDENCE.json \
+            --repo kurenn46-max/a1mini-auto --target "$GITHUB_SHA" \
+            --title "NIGHT PRINT V4.0.0 - Android First Field Test" \
+            --notes-file /tmp/v4_notes.txt \
+            --prerelease --latest=false
+      - name: Upload diagnostics on test failure (never APK)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NIGHT_PRINT_V4_NATIVE_TEST_FAILURE_DIAGNOSTICS
+          path: |
+            /tmp/u1-nightprint/app/build/outputs/androidTest-results/connected/
+            /tmp/nightprint_e2e_artifacts/
+          if-no-files-found: warn
