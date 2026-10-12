@@ -16,6 +16,20 @@ enum class NightPrintSupportLevel(val title: String, val description: String) {
 }
 
 object NightPrintSupportModes {
+    /**
+     * The pinned Android native Bambu bridge assigns support_threshold_angle as a
+     * ConfigOptionFloat, but Orca defines it as ConfigOptionInt. Passing this
+     * key in bambuExplicitOverrides throws "ConfigOptionSingle: Assigning an
+     * incompatible type" when a support amount preset is selected.
+     *
+     * Keep the angle in the embedded process profile. ONLY remove the unsafe
+     * JNI repeat-write; do not remove it from the profile map.
+     */
+    fun safeBambuNativeOverrideKeys(keys: Set<String>): String =
+        keys.asSequence()
+            .filterNot { it == "support_threshold_angle" }
+            .joinToString(separator = "|", prefix = "|", postfix = "|")
+
     fun apply(level: NightPrintSupportLevel, old: SlicingOverrides): SlicingOverrides {
         fun <T> set(value: T) = OverrideValue(OverrideMode.OVERRIDE, value)
         fun <T> file() = OverrideValue<T>(OverrideMode.USE_FILE)
