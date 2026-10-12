@@ -1,0 +1,48 @@
+name: NIGHT PRINT V4 Android APK Direct-Download Mirror
+
+on:
+  push:
+    branches:
+      - release/nightprint-v4.0.0-prep
+    paths:
+      - .github/workflows/nightprint-v4-direct-download.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mirror-verified-v4-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Fetch existing V4 release assets without rebuilding Android
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p /tmp/phone-download
+          gh release download nightprint-v4.0.0-first-field-test \
+            --repo kurenn46-max/a1mini-auto --dir /tmp/phone-download
+      - name: Verify SHA256 of installed V4 APK and 55.5mm ring
+        run: |
+          python3 - <<'PY'
+          import json,hashlib,pathlib
+          d=pathlib.Path("/tmp/phone-download")
+          a=d/"NIGHT_PRINT_V4.0.0_Android.apk"
+          m=json.loads((d/"NIGHT_PRINT_V4.0.0_SAFETY_TEST_EVIDENCE.json").read_text())
+          t=d/"NIGHT_PRINT_V4_Ring_ID55.5_OD59.5_H20_PETG235.3mf"
+          assert a.is_file() and a.stat().st_size > 40_000_000
+          assert t.is_file()
+          assert m["native_android_test_count"]>=19
+          assert m["package_id"]=="com.u1.slicer.orca.nightprint.v4"
+          assert m["apk"]["sha256"]==hashlib.sha256(a.read_bytes()).hexdigest()
+          assert m["included_55_5mm_3mf_sha256"]==hashlib.sha256(t.read_bytes()).hexdigest()
+          print("Verified already-released APK and ring SHA256; no rebuild performed.")
+          PY
+      - name: Upload standalone APK for simple Android phone download
+        uses: actions/upload-artifact@v4
+        with:
+          name: NIGHT_PRINT_V4_Android_One_Tap_Download
+          path: /tmp/phone-download/NIGHT_PRINT_V4.0.0_Android.apk
+          if-no-files-found: error
+          retention-days: 14
