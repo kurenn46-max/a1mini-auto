@@ -66,4 +66,7 @@ kotlin.write_text((src/"NightPrintA1MiniMaterialPacket.kt").read_text())
 test=root/"app/src/androidTest/java/com/u1/slicer/NightPrintV401PacketMaterialTest.kt"
 assert not test.exists()
 test.write_text((src/"NightPrintV401PacketMaterialTest.kt").read_text())
+# Upgrade old skeletal A1 mini tests, not safety checks.
+import subprocess
+subprocess.run(["python3", str(src/"fix_v401_legacy_test_fixtures.py"), str(root)], check=True)
 print("Applied fail-closed A1 mini single-material direct-print metadata guard")
