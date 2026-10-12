@@ -35,6 +35,7 @@ internal object NightPrintA1MiniMaterialPacket {
         val commands = linkedSetOf<String>()
         var beforeFirstLayer = true
         var hasFirstLayer = false
+        var finalCommand: String? = null
         lines.forEach { raw ->
             val line = raw.trim()
             headerMaterial.matchEntire(line)?.groupValues?.get(1)?.let { rawType ->
@@ -47,7 +48,13 @@ internal object NightPrintA1MiniMaterialPacket {
                 hasFirstLayer = true
             }
             if (beforeFirstLayer) {
-                execMaterial.find(line)?.let { commands += normalize(it.groupValues[1]) }
+                execMaterial.find(line)?.let {
+                    val selected = normalize(it.groupValues[1])
+                    // A1 mini startup transiently marks its purge as UNKNOWN.
+                    // Require the FINAL material-selection command to match.
+                    finalCommand = selected
+                    if (selected != "UNKNOWN") commands += selected
+                }
             }
         }
         if (!hasFirstLayer) fail("積層開始命令がありません")
@@ -56,6 +63,9 @@ internal object NightPrintA1MiniMaterialPacket {
         }
         val declared = headers.single()
         val executable = commands.single()
+        if (finalCommand != executable) {
+            fail("印刷直前の材料命令が異なります (last=$finalCommand expected=$executable)")
+        }
         if (declared != executable) {
             fail("G-code内で材料が一致しません ($declared / $executable)")
         }
