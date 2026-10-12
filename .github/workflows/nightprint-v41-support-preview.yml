@@ -1,4 +1,4 @@
-name: NIGHT PRINT V4.1 Support Controls - isolated beta APK
+name: NIGHT PRINT V4.1.1 Support Type Fix - isolated beta APK
 
 on:
   pull_request:
@@ -49,14 +49,14 @@ jobs:
               file.write_text(text.replace(old, new))
           replace_once(root/"app/build.gradle",
               'applicationId "com.u1.slicer.orca.nightprint.v342.integrated20261011"',
-              'applicationId "com.u1.slicer.orca.nightprint.v41.supportpreview"')
+              'applicationId "com.u1.slicer.orca.nightprint.v411.supportpreview"')
           replace_once(root/"app/build.gradle",
-              'versionCode 401', 'versionCode 41001')
+              'versionCode 401', 'versionCode 41101')
           replace_once(root/"app/build.gradle",
-              'versionName "4.0.1"', 'versionName "4.1.0-beta1"')
+              'versionName "4.0.1"', 'versionName "4.1.1-beta2"')
           replace_once(root/"app/src/main/AndroidManifest.xml",
               'android:label="NIGHT PRINT V3.4.2 統合検証版"',
-              'android:label="NIGHT PRINT V4.1 試験版"')
+              'android:label="NIGHT PRINT V4.1.1 試験版"')
           print("Working V4.0.1 package ID remains untouched.")
           PY
 
@@ -95,12 +95,12 @@ jobs:
           test -s "$APK"
           "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose "$APK"
           "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" | tee /tmp/nightprint_v41_package.txt
-          grep -F "package: name='com.u1.slicer.orca.nightprint.v41.supportpreview' versionCode='41001' versionName='4.1.0-beta1'" /tmp/nightprint_v41_package.txt
-          grep -F "application-label:'NIGHT PRINT V4.1 試験版'" /tmp/nightprint_v41_package.txt
+          grep -F "package: name='com.u1.slicer.orca.nightprint.v411.supportpreview' versionCode='41001' versionName='4.1.0-beta1'" /tmp/nightprint_v41_package.txt
+          grep -F "application-label:'NIGHT PRINT V4.1.1 試験版'" /tmp/nightprint_v41_package.txt
 
       - name: Save test APK only; never replace V4 or publish a release
         uses: actions/upload-artifact@v4
         with:
-          name: NIGHT_PRINT_V4_1_SUPPORT_PREVIEW_DEBUG_APK
+          name: NIGHT_PRINT_V4_1_1_SUPPORT_FIXED_DEBUG_APK
           path: /tmp/u1-nightprint/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
