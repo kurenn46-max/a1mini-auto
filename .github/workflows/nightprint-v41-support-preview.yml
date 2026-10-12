@@ -1,0 +1,106 @@
+name: NIGHT PRINT V4.1.1 Support Type Fix - isolated beta APK
+
+on:
+  pull_request:
+    branches: [release/nightprint-v4.0.0-prep]
+    paths:
+      - night-print-android/**
+      - .github/workflows/nightprint-v41-support-preview.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    steps:
+      - name: Check out isolated feature branch
+        uses: actions/checkout@v4
+
+      - name: Get exact upstream native slicer revision
+        run: |
+          git clone --depth 1 https://github.com/taylormadearmy/u1-slicer-for-android.git /tmp/u1-nightprint
+          cd /tmp/u1-nightprint
+          git fetch --depth 1 origin 712d9fc41e8d35b328a87cfd8144434049f77ae7
+          git checkout --detach 712d9fc41e8d35b328a87cfd8144434049f77ae7
+          mkdir -p app/src/main/cpp/orcaslicer/src/libslic3r
+          curl --fail --silent --show-error --location --retry 3 \
+            "https://raw.githubusercontent.com/taylormadearmy/OrcaSlicer/2535da4cbd89430cb3f3b31f42673b98cf4bc041/src/libslic3r/PrintObject.cpp" \
+            -o app/src/main/cpp/orcaslicer/src/libslic3r/PrintObject.cpp
+          test -s app/src/main/cpp/orcaslicer/src/libslic3r/PrintObject.cpp
+
+      - name: Apply V4.0.1 fixes and new support controls
+        run: |
+          python3 night-print-android/apply_overlay.py /tmp/u1-nightprint
+          python3 night-print-android/apply_v401_material_fix.py /tmp/u1-nightprint
+          test -s /tmp/u1-nightprint/app/src/main/java/com/u1/slicer/NightPrintSupportModes.kt
+          test -s /tmp/u1-nightprint/app/src/test/java/com/u1/slicer/NightPrintSupportModesTest.kt
+
+      - name: Ensure APK cannot replace the working V4.0.1
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path("/tmp/u1-nightprint")
+          def replace_once(file, old, new):
+              text = file.read_text()
+              assert text.count(old) == 1, (file, old, text.count(old))
+              file.write_text(text.replace(old, new))
+          replace_once(root/"app/build.gradle",
+              'applicationId "com.u1.slicer.orca.nightprint.v342.integrated20261011"',
+              'applicationId "com.u1.slicer.orca.nightprint.v411.supportpreview"')
+          replace_once(root/"app/build.gradle",
+              'versionCode 401', 'versionCode 41101')
+          replace_once(root/"app/build.gradle",
+              'versionName "4.0.1"', 'versionName "4.1.1-beta2"')
+          replace_once(root/"app/src/main/AndroidManifest.xml",
+              'android:label="NIGHT PRINT V3.4.2 統合検証版"',
+              'android:label="NIGHT PRINT V4.1.1 試験版"')
+          print("Working V4.0.1 package ID remains untouched.")
+          PY
+
+      - name: Setup JDK 17 and Android SDK 34
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android build tools
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Create local temporary signing key (test APK only)
+        run: |
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair -noprompt \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android -keypass androiddebugkey -alias androiddebugkey \
+            -keyalg RSA -keysize 2048 -validity 3650 \
+            -dname "CN=Android Debug,O=Android,C=US"
+          test -s "$HOME/.android/debug.keystore"
+
+      - name: Run support-mode and existing JVM regression tests
+        working-directory: /tmp/u1-nightprint
+        run: bash ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Compile isolated preview APK
+        working-directory: /tmp/u1-nightprint
+        run: bash ./gradlew :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Verify package, signature and preview version
+        working-directory: /tmp/u1-nightprint
+        run: |
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" | tee /tmp/nightprint_v41_package.txt
+          grep -F "package: name='com.u1.slicer.orca.nightprint.v411.supportpreview' versionCode='41001' versionName='4.1.0-beta1'" /tmp/nightprint_v41_package.txt
+          grep -F "application-label:'NIGHT PRINT V4.1.1 試験版'" /tmp/nightprint_v41_package.txt
+
+      - name: Save test APK only; never replace V4 or publish a release
+        uses: actions/upload-artifact@v4
+        with:
+          name: NIGHT_PRINT_V4_1_1_SUPPORT_FIXED_DEBUG_APK
+          path: /tmp/u1-nightprint/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
