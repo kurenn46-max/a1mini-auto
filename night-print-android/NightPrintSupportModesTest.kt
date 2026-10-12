@@ -7,6 +7,31 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class NightPrintSupportModesTest {
+    @Test fun excludesNativeIntAngleFromUnsafeFloatBridge() {
+        val keys = linkedSetOf("wall_loops", "enable_support", "support_threshold_angle", "support_type")
+        val nativeKeys = NightPrintSupportModes.safeBambuNativeOverrideKeys(keys)
+        assertEquals("|wall_loops|enable_support|support_type|", nativeKeys)
+        assertFalse(nativeKeys.contains("|support_threshold_angle|"))
+    }
+
+    @Test fun embeddedProcessStillDeclaresSupportAngle() {
+        val overrides = NightPrintSupportModes.apply(NightPrintSupportLevel.LIGHT, SlicingOverrides())
+        val embedded = buildProfileOverridesImpl(
+            cfg = com.u1.slicer.data.SliceConfig(),
+            ov = overrides,
+            slotCount = 1,
+            hasSourceConfig = true
+        )
+        assertEquals("55", embedded["support_threshold_angle"])
+        assertEquals("1", embedded["enable_support"])
+        assertEquals("tree(auto)", embedded["support_type"])
+        val native = NightPrintSupportModes.safeBambuNativeOverrideKeys(
+            buildExplicitBambuProfileOverrides(embedded, overrides, false).keys
+        )
+        assertFalse(native.contains("|support_threshold_angle|"))
+        assertTrue(native.contains("|enable_support|"))
+    }
+
     @Test fun standardRestoresImported3mfSettings() {
         val previous = NightPrintSupportModes.apply(NightPrintSupportLevel.LIGHT, SlicingOverrides())
         val normal = NightPrintSupportModes.apply(NightPrintSupportLevel.STANDARD, previous)
