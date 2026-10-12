@@ -1240,3 +1240,20 @@ patch("app/src/main/java/com/u1/slicer/MainActivity.kt",
                         }) {
                             Text("ナイト設定", fontSize = 13.sp''')
 print("NIGHT PRINT V4.1 preview: support mode selector wired to native SlicingOverrides; no auto-print.")
+
+
+# V4.1.1: bypass a confirmed native Orca type mismatch on Bambu A1 mini.
+# Upstream applyBambuConfigToPrusa() writes support_threshold_angle with
+# ConfigOptionFloat, even though Orca expects ConfigOptionInt. Keep the
+# override in the embedded process config; exclude ONLY its JNI repeat-write.
+# This makes the native bridge avoid ConfigOptionSingle incompatible type.
+patch("app/src/main/java/com/u1/slicer/SlicerViewModel.kt",
+    '''                        ).keys.joinToString(separator = "|", prefix = "|", postfix = "|")
+                    } else {
+                        ""
+                    },''',
+    '''                        ).keys.let(NightPrintSupportModes::safeBambuNativeOverrideKeys)
+                    } else {
+                        ""
+                    },''')
+print("NIGHT PRINT V4.1.1: native Bambu support-angle float/int collision bypassed; embedded 3MF angle remains authoritative.")
