@@ -44,6 +44,22 @@ replacement='''        // Independently inspect actual bytes of the zipped trans
 assert s.count(needle)==1,"unexpected archive anchor; STOP"
 s=s.replace(needle,replacement)
 target.write_text(s)
+# If Bambu packing failed, never fall back to printing raw G-code or an
+# embedded stale project from the source file. A printer upload must use the
+# newly verified and generated sliced project for the current G-code.
+activity=root/"app/src/main/java/com/u1/slicer/MainActivity.kt"
+a=activity.read_text()
+gate='''if (!canSendSliceArtifactToPrinter(selectedSliceArtifact, previewActivePrinter)) {'''
+assert a.count(gate)==2, "unexpected Bambu send/upload branches; STOP"
+block='''if (gcodePath.isNotBlank() &&
+                                    previewActivePrinter?.kind == com.u1.slicer.data.PrinterKind.BAMBU_LAN &&
+                                    bambuProject?.source != PreviewBambuProject.Source.GeneratedSliceArtifact
+                                ) {
+                                    printerViewModel.reportSendError(
+                                        "NIGHT PRINT安全検査: 印刷用3MFの材料検証に失敗しました。送信を中止しました。"
+                                    )
+                                } else if (!canSendSliceArtifactToPrinter(selectedSliceArtifact, previewActivePrinter)) {'''
+activity.write_text(a.replace(gate,block))
 kotlin=root/"app/src/main/java/com/u1/slicer/slice/NightPrintA1MiniMaterialPacket.kt"
 assert not kotlin.exists()
 kotlin.write_text((src/"NightPrintA1MiniMaterialPacket.kt").read_text())
