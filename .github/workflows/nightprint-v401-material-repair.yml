@@ -129,7 +129,10 @@ jobs:
             -storepass android -keypass android -alias androiddebugkey \
             -keyalg RSA -keysize 2048 -validity 3650 \
             -dname "CN=Android Debug,O=Android,C=US"
-      - name: JVM regression tests
+      - name: Focused JVM packaging regressions (4 previous synthetic-fixture failures)
+        working-directory: /tmp/u1-nightprint
+        run: bash ./gradlew :app:testDebugUnitTest --tests com.u1.slicer.SliceArtifactRoutingTest --no-daemon --stacktrace
+      - name: Full JVM regression tests
         working-directory: /tmp/u1-nightprint
         run: bash ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
       - name: Build actual V4 signed debug APK plus native test APK
