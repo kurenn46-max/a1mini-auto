@@ -1,0 +1,61 @@
+name: NIGHT PRINT V4.0.2 external spool candidate validation (NO RELEASE)
+on:
+  push:
+    branches:
+      - fix/nightprint-v4.0.2-a1mini-local-start-20261020
+    paths:
+      - night-print-android/NightPrintExternalSpoolPolicy.kt
+      - night-print-android/NightPrintExternalSpoolPolicyTest.kt
+      - night-print-android/apply_v402_external_spool_fix.py
+      - .github/workflows/nightprint-v402-external-spool-ci.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  external-spool-validation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pin Android upstream exactly as V4.0.1
+        run: |
+          git clone --depth 1 https://github.com/taylormadearmy/u1-slicer-for-android.git /tmp/np-v402
+          cd /tmp/np-v402
+          git fetch --depth 1 origin 712d9fc41e8d35b328a87cfd8144434049f77ae7
+          git checkout --detach 712d9fc41e8d35b328a87cfd8144434049f77ae7
+          mkdir -p app/src/main/cpp/orcaslicer/src/libslic3r
+          curl --fail --silent --show-error --location --retry 3 \
+            "https://raw.githubusercontent.com/taylormadearmy/OrcaSlicer/2535da4cbd89430cb3f3b31f42673b98cf4bc041/src/libslic3r/PrintObject.cpp" \
+            -o app/src/main/cpp/orcaslicer/src/libslic3r/PrintObject.cpp
+          test -s app/src/main/cpp/orcaslicer/src/libslic3r/PrintObject.cpp
+      - name: Apply V4.0.1 baseline and ONLY external spool change
+        run: |
+          python3 night-print-android/validate_release_contract.py
+          python3 night-print-android/apply_overlay.py /tmp/np-v402
+          python3 night-print-android/apply_v401_material_fix.py /tmp/np-v402
+          python3 night-print-android/apply_v402_external_spool_fix.py /tmp/np-v402
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path("/tmp/np-v402/app/src/main/java/com/u1/slicer/MainActivity.kt").read_text()
+          assert 'NightPrintExternalSpoolPolicy.singleLoadedExternalRoute(' in p
+          assert 'NightPrintExternalSpoolPolicy.mappingIssue(' in p
+          assert 'NightPrintExternalSpoolPolicy.useAms(' in p
+          assert p.count('sendBambuProjectAndPrint(')>=1
+          print("A1 mini external-only route guard staged; no printer called")
+          PY
+      - name: Install Java 17 and Android API 34
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0"
+      - name: Compile app and execute isolated external-spool JVM regressions
+        working-directory: /tmp/np-v402
+        run: bash ./gradlew :app:testDebugUnitTest --tests com.u1.slicer.NightPrintExternalSpoolPolicyTest --no-daemon --stacktrace
+      - name: Full JVM baseline regression (no APK release)
+        working-directory: /tmp/np-v402
+        run: bash ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
