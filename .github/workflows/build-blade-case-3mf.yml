@@ -1,0 +1,76 @@
+name: Build PETG Blade Case V3 Rebuild 3MF files (NOT APP RELEASE)
+
+on:
+  push:
+    branches:
+      - feature/blade-case-v3-profile-rebuild-20261020
+    paths:
+      - night-print-android/rebuild_blade_case_petg_3mf.py
+      - .github/workflows/build-blade-case-3mf.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  reconstruct-and-verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install geometry engine
+        run: python -m pip install --disable-pip-version-check 'numpy>=1.26,<3' 'trimesh>=4.0,<5' 'manifold3d>=3.0,<4'
+      - name: Build 13mm fit test and 79.6mm final trial models
+        run: python night-print-android/rebuild_blade_case_petg_3mf.py blade-case-output
+      - name: Validate exact 3MF dimensions, ZIP integrity and PETG profile
+        run: |
+          python - <<'PY'
+          import json, zipfile, xml.etree.ElementTree as ET
+          from pathlib import Path
+          root=Path("blade-case-output")
+          d=json.loads((root/"verification.json").read_text())
+          assert len(d["files"])==2
+          for file, expected_x in zip(d["files"],(13.0,79.6)):
+              assert file["watertight"] is True
+              assert file["physical_fit_tested"] is False
+              assert file["bounds_mm"] == [expected_x,17.25,14.1]
+              f=root/file["name"]
+              with zipfile.ZipFile(f) as z:
+                  assert z.testzip() is None
+                  md=json.loads(z.read("Metadata/project_settings.config"))
+                  assert md["filament_type"] == ["PETG"]
+                  assert md["nozzle_temperature"] == ["235"]
+                  assert md["textured_plate_temp"] == ["65"]
+                  model=ET.fromstring(z.read("3D/3dmodel.model"))
+                  ns="{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}"
+                  assert model.tag==ns+"model"
+                  assert len(model.findall(".//"+ns+"triangle"))>50
+          print("Passed: mesh manifold, dims, 3MF, material profile")
+          PY
+      - name: Publish two trial 3MF files as downloadable GitHub prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cat > /tmp/notes.txt <<'EOF'
+          **Blade sheath parametric reconstruction for PETG / A1 mini.**
+          13mm insertion test: 13 x 17.25 x 14.1mm; full shell:
+          79.6 x 17.25 x 14.1mm. Blade 8x2x68mm; rear collar
+          10x3.8x7mm; retention ribs and ring hole 3.4mm.
+          Profile PETG / nozzle 235C / textured bed 65C, 0.2mm layers.
+          **Important: Geometry is rebuilt from known measurements, NOT the same
+          mesh as the user's original V3.** Physical fit and true A1 mini
+          printer-start compatibility are NOT confirmed. Print 13mm test first;
+          do not start unattended and do not override PETG mismatch warnings.
+          These are model/project 3MF inputs; NOT directly executable
+          .gcode.3mf print jobs. No mobile APK changes were made.
+          EOF
+          gh release create nightprint-blade-case-v3-rebuild-20261020 \
+            blade-case-output/NIGHT_CASE_V3_REBUILD_13MM_TEST_PETG235.3mf \
+            blade-case-output/NIGHT_CASE_V3_REBUILD_FULL_PETG235.3mf \
+            blade-case-output/verification.json \
+            --repo kurenn46-max/a1mini-auto --target "$GITHUB_SHA" \
+            --title "Blade Case V3 Rebuild - PETG A1 Mini 13mm Test + Full" \
+            --notes-file /tmp/notes.txt --prerelease --latest=false
